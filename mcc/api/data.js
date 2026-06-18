@@ -58,6 +58,43 @@ export default async function handler(req, res) {
       }
       return res.status(200).json({ ok: true, obra: ob });
     }
+
+    // aplica desconto da licitação a TODOS os itens da EAP de uma obra (sobre custo sem BDI)
+    if (t === "eap_aplicar_desconto") {
+      const { obra_id, desconto } = req.body; // desconto fracionário (0.11)
+      const { data: itens } = await supabase.from("eap_itens").select("*").eq("obra_id", obra_id);
+      for (const it of itens || []) {
+        const csb = Number(it.custo_sem_bdi) || 0;
+        const csbDesc = csb * (1 - (Number(desconto) || 0));
+        const vu = csbDesc * (1 + (Number(it.bdi) || 0));
+        await supabase.from("eap_itens").update({
+          desconto: Number(desconto) || 0,
+          valor_unit: vu,
+          valor_total: vu * (Number(it.qtde) || 0),
+          meta_valor: it.meta_pct != null ? csbDesc * (Number(it.meta_pct) || 0) : it.meta_valor,
+        }).eq("id", it.id);
+      }
+      await supabase.from("obras").update({ desconto: Number(desconto) || 0 }).eq("id", obra_id);
+      return res.status(200).json({ ok: true, n: (itens || []).length });
+    }
+
+    // define meta de custo: % sobre custo SEM BDI (já com desconto), p/ todos ou itens específicos
+    if (t === "eap_definir_meta") {
+      const { obra_id, meta_pct, ids } = req.body; // ids opcional (subset)
+      let q = supabase.from("eap_itens").select("*").eq("obra_id", obra_id);
+      if (Array.isArray(ids) && ids.length) q = q.in("id", ids);
+      const { data: itens } = await q;
+      for (const it of itens || []) {
+        const csbDesc = (Number(it.custo_sem_bdi) || 0) * (1 - (Number(it.desconto) || 0));
+        await supabase.from("eap_itens").update({
+          meta_pct: Number(meta_pct) || 0,
+          meta_valor: csbDesc * (Number(meta_pct) || 0),
+        }).eq("id", it.id);
+      }
+      if (!Array.isArray(ids) || !ids.length) await supabase.from("obras").update({ meta_pct_padrao: Number(meta_pct) || 0 }).eq("id", obra_id);
+      return res.status(200).json({ ok: true, n: (itens || []).length });
+    }
+
     if (!TABELAS[t] && t !== "rdo_completo") return res.status(400).json({ error: "Recurso não permitido" });
     if (SO_GESTOR.has(t) && s.papel !== "gestor") return res.status(403).json({ error: "Acesso restrito a gestores" });
 

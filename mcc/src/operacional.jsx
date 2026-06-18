@@ -1,15 +1,16 @@
 import React, { useState, useEffect, useMemo, useRef } from "react";
-import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell } from "recharts";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie } from "recharts";
 import * as XLSX from "xlsx";
 import {
-  C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, CLIMAS, ATRIBUICOES,
+  C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, CLIMAS, ATRIBUICOES, VINCULOS,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi,
+  aplicarDesconto, definirMeta, uploadFoto,
 } from "./core.jsx";
 import { gerarPdfRdo } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
 
-const OP_TABS = [["rdo", "RDO-i"], ["rso", "RSO-i · Serviços"], ["oc", "OC-i · Materiais"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
+const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
 
 export function ModuloOperacional({ usuario }) {
   const [sub, setSub] = useState("rdo");
@@ -44,9 +45,10 @@ export function ModuloOperacional({ usuario }) {
         ))}
       </div>
       {sub === "rdo" && <RdoI usuario={usuario} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
-      {sub === "rso" && <RsoI obras={obras} eapPorObra={eapPorObra} contratos={contratos} funcionarios={funcionarios} onMudou={carregar} />}
+      {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} onMudou={carregar} />}
       {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} onMudou={carregar} />}
-      {sub === "eap" && <EapCustos obras={obras} eapPorObra={eapPorObra} ocs={ocs} rdos={rdos} onMudou={carregar} />}
+      {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
+      {sub === "eap" && <EapCustos obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} onMudou={carregar} />}
       {sub === "obras" && <Obras obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
     </div>
   );
@@ -74,18 +76,60 @@ function ComboEap({ itens, valor, onSelect, placeholder }) {
   );
 }
 
+/* Seleção de MÚLTIPLOS itens da EAP com valor por item — usado em OC-i e OS-i */
+function MultiEapPicker({ itens, valor = [], onChange, comValor = true, labelValor = "Valor (R$)" }) {
+  const add = (it) => { if (valor.some((x) => x.eap_codigo === it.codigo)) return; onChange([...valor, { eap_codigo: it.codigo, descricao: it.descricao, valor: 0 }]); };
+  const upd = (i, patch) => onChange(valor.map((x, j) => (j === i ? { ...x, ...patch } : x)));
+  const del = (i) => onChange(valor.filter((_, j) => j !== i));
+  return (
+    <div>
+      <ComboEap itens={itens.filter((i) => !valor.some((x) => x.eap_codigo === i.codigo))} valor="" onSelect={add} placeholder="+ Adicionar item da EAP…" />
+      {valor.length > 0 && (
+        <div style={{ marginTop: 8, border: `1px solid ${C.linha}`, borderRadius: 8, overflow: "hidden" }}>
+          {valor.map((x, i) => (
+            <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 8px", borderBottom: i < valor.length - 1 ? `1px solid ${C.linha}` : "none", background: i % 2 ? "#fafafa" : "#fff" }}>
+              <span style={{ background: C.preto, color: C.laranja, fontWeight: 800, fontSize: 11, borderRadius: 5, padding: "2px 7px", whiteSpace: "nowrap" }}>{x.eap_codigo}</span>
+              <span style={{ fontSize: 12, color: C.texto, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.descricao}</span>
+              {comValor && <NumInput w={130} value={x.valor} onChange={(v) => upd(i, { valor: v })} />}
+              <button onClick={() => del(i)} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer", fontSize: 15 }}>✕</button>
+            </div>
+          ))}
+          {comValor && <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: C.preto, color: "#fff", fontSize: 12, fontWeight: 700 }}>
+            <span>{valor.length} {valor.length === 1 ? "item" : "itens"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{fmtR(sum(valor.map((x) => x.valor)))}</span></div>}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const DRAFT = "mcc_rdo_draft_v1";
 function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, onMudou }) {
   const novaAtv = () => ({ k: uid(), eapId: "", qtde: 0, comentarios: "", funcionarioIds: [] });
   const novaRestr = () => ({ k: uid(), eapId: "", material: "", dataSolicitacao: hojeISO() });
-  const vazio = (obraId) => ({ obraId: obraId || obras[0]?.id || "", numero: "", data: hojeISO(), clima: CLIMAS[0], efetivo: 0, ocorrencias: "", comentarios: "", atividades: [novaAtv()], equipe: [], restricoes: [] });
-  const [form, setForm] = useState(() => { try { const d = JSON.parse(localStorage.getItem(DRAFT)); if (d?.atividades) return d; } catch {} return vazio(); });
+  const vazio = (obraId) => ({ obraId: obraId || obras[0]?.id || "", numero: "", data: hojeISO(), clima: CLIMAS[0], efetivo: 0, ocorrencias: "", comentarios: "", atividades: [novaAtv()], equipe: [], restricoes: [], fotos: [] });
+  const [form, setForm] = useState(() => { try { const d = JSON.parse(localStorage.getItem(DRAFT)); if (d?.atividades) return { fotos: [], ...d }; } catch {} return vazio(); });
   const [salvando, setSalvando] = useState(false); const [msg, setMsg] = useState(null);
+  const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const fotoRef = useRef(null);
 
   useEffect(() => { localStorage.setItem(DRAFT, JSON.stringify(form)); }, [form]);
   const obra = obras.find((o) => o.id === form.obraId);
   const eapItens = eapPorObra[form.obraId] || [];
   const semEap = form.obraId && eapItens.length === 0;
+
+  const adicionarFotos = async (files) => {
+    setEnviandoFoto(true);
+    try {
+      for (const file of files) {
+        const dataUrl = await new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+        const { url, path } = await uploadFoto(dataUrl, file.name, obra?.codigo);
+        setForm((f) => ({ ...f, fotos: [...(f.fotos || []), { url, path, eap_codigo: "", legenda: "" }] }));
+      }
+    } catch (e) { setMsg({ tipo: "erro", txt: `Falha ao enviar foto: ${e.message}` }); }
+    finally { setEnviandoFoto(false); }
+  };
+  const upFoto = (i, patch) => setForm((f) => ({ ...f, fotos: f.fotos.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
+  const delFoto = (i) => setForm((f) => ({ ...f, fotos: f.fotos.filter((_, j) => j !== i) }));
 
   const execAcum = useMemo(() => { const m = {}; rdos.filter((r) => r.obra_id === form.obraId).forEach((r) => (r.atividades || []).forEach((a) => { m[a.eap] = (m[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); })); return m; }, [rdos, form.obraId]);
   const upAtv = (k, patch) => setForm((f) => ({ ...f, atividades: f.atividades.map((a) => a.k === k ? { ...a, ...patch } : a) }));
@@ -112,6 +156,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, onMud
       const equipe = [...new Set(form.atividades.flatMap((a) => a.funcionarioIds))].map((id) => { const f = funcionarios.find((x) => x.id === id); return f ? { ocupacao: f.atribuicao, nome: f.nome } : null; }).filter(Boolean);
       const rdo = { obra_id: form.obraId, numero: form.numero || null, data: form.data, usuario_id: usuario.id, responsavel_nome: usuario.nome,
         clima: form.clima, efetivo: efetivoCalc, ocorrencias: form.ocorrencias, comentarios: form.comentarios, atividades, equipe,
+        fotos: (form.fotos || []).map((f) => ({ url: f.url, path: f.path, eap_codigo: f.eap_codigo, legenda: f.legenda })),
         payload: { ...form, salvoEm: new Date().toISOString() } };
       const restricoes = form.restricoes.filter((x) => x.eapId && x.material).map((x) => { const it = eapItens.find((i) => i.id === x.eapId); return { eap_codigo: it?.codigo || "", material: x.material, data_solicitacao: x.dataSolicitacao || null }; });
       await criarRdoCompleto(rdo, restricoes);
@@ -193,6 +238,33 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, onMud
             <Btn kind="ghost" small onClick={() => setForm((f) => ({ ...f, restricoes: [...f.restricoes, novaRestr()] }))}>+ Restrição de material</Btn>
           </div>
 
+          {/* FOTOS — anexadas ao RDO, cada uma vinculada a um item da EAP */}
+          <div style={{ marginTop: 16, border: `1.5px solid ${C.linha}`, borderLeft: `5px solid ${C.laranja}`, borderRadius: 10, padding: 14 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+              <div style={{ fontWeight: 800, fontSize: 12, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em" }}>📷 Fotos do dia</div>
+              <Btn small kind="ghost" disabled={enviandoFoto} onClick={() => fotoRef.current?.click()}>{enviandoFoto ? "Enviando…" : "+ Adicionar fotos"}</Btn>
+              <input ref={fotoRef} type="file" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) adicionarFotos([...e.target.files]); e.target.value = ""; }} />
+            </div>
+            {(form.fotos || []).length === 0 && <div style={{ fontSize: 12, color: C.dim }}>Anexe fotos da obra e selecione a qual item da EAP cada uma se refere.</div>}
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
+              {(form.fotos || []).map((ft, i) => (
+                <div key={i} style={{ border: `1px solid ${C.linha}`, borderRadius: 8, overflow: "hidden", background: "#fafafa" }}>
+                  <div style={{ position: "relative" }}>
+                    <img src={ft.url} alt="" style={{ width: "100%", height: 130, objectFit: "cover", display: "block" }} />
+                    <button onClick={() => delFoto(i)} style={{ position: "absolute", top: 6, right: 6, background: "rgba(0,0,0,0.6)", color: "#fff", border: "none", borderRadius: "50%", width: 24, height: 24, cursor: "pointer", fontSize: 13 }}>✕</button>
+                  </div>
+                  <div style={{ padding: 8 }}>
+                    <select value={ft.eap_codigo} onChange={(e) => upFoto(i, { eap_codigo: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box", fontSize: 12, padding: "5px 8px", marginBottom: 6 })}>
+                      <option value="">— item da EAP —</option>
+                      {eapItens.map((it) => <option key={it.id} value={it.codigo}>{it.codigo} — {it.descricao.slice(0, 40)}</option>)}
+                    </select>
+                    <input value={ft.legenda} onChange={(e) => upFoto(i, { legenda: e.target.value })} placeholder="Legenda (opcional)" style={inp({ width: "100%", boxSizing: "border-box", fontSize: 12, padding: "5px 8px" })} />
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           <div style={{ display: "flex", gap: 12, alignItems: "center", marginTop: 16 }}>
             <div style={{ fontSize: 13, color: C.dim }}>Efetivo: <b style={{ color: C.preto }}>{efetivoCalc}</b></div>
             <div style={{ fontSize: 13, color: C.dim }}>Medição do RDO: <b style={{ color: C.verde, fontSize: 17 }}>{fmtR(medicaoRdo)}</b></div>
@@ -219,54 +291,103 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, onMud
   );
 }
 
-/* ============================ RSO-i (contratos de serviço) ============================ */
-function RsoI({ obras, eapPorObra, contratos, funcionarios, onMudou }) {
-  const [ct, setCt] = useState({ obra_id: "", empresa: "", cnpj: "", responsavel: "", escopo_eap: "", valor: 0 });
+/* ============================ OS-i (Ordem de Serviço Inteligente) ============================ */
+function OsI({ obras, eapPorObra, contratos, onMudou }) {
+  const vazio = { obra_id: "", empresa: "", cnpj: "", responsavel: "", tipo: "indireto", custo_mensal: 0, meses: 1, itens_eap: [], valor: 0 };
+  const [ct, setCt] = useState(vazio);
   const [busy, setBusy] = useState(false);
   const cnpjMask = (v) => v.replace(/\D/g, "").slice(0, 14).replace(/(\d{2})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1/$2").replace(/(\d{4})(\d)/, "$1-$2");
-  const eaps = (id) => (eapPorObra[id] || []).map((i) => `${i.codigo} — ${i.descricao}`);
-  const salvar = async () => { setBusy(true); try { await criar("contratos_servico", { ...ct, obra_id: ct.obra_id || null, valor: Number(ct.valor) || 0 }); setCt({ obra_id: "", empresa: "", cnpj: "", responsavel: "", escopo_eap: "", valor: 0 }); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+  const eapItens = eapPorObra[ct.obra_id] || [];
+  const valorTotal = ct.tipo === "direto" ? (Number(ct.custo_mensal) || 0) * (Number(ct.meses) || 0) : sum(ct.itens_eap.map((x) => x.valor));
+  const salvar = async () => {
+    setBusy(true);
+    try {
+      await criar("contratos_servico", { obra_id: ct.obra_id || null, empresa: ct.empresa, cnpj: ct.cnpj, responsavel: ct.responsavel,
+        tipo: ct.tipo, custo_mensal: ct.tipo === "direto" ? Number(ct.custo_mensal) || 0 : null, meses: ct.tipo === "direto" ? Number(ct.meses) || 0 : null,
+        itens_eap: ct.itens_eap, escopo_eap: ct.itens_eap.map((x) => x.eap_codigo).join(", "), valor: valorTotal });
+      setCt({ ...vazio, obra_id: ct.obra_id }); onMudou();
+    } catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card title="RSO-i · Cadastro de contratos de serviço (empreiteiros) — por EAP">
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ minWidth: 150 }}><Lbl>Obra</Lbl><select value={ct.obra_id} onChange={(e) => setCt({ ...ct, obra_id: e.target.value })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
+      <Card title="OS-i · Ordem de Serviço Inteligente — contratos diretos e indiretos">
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+          <div style={{ minWidth: 140 }}><Lbl>Obra</Lbl><select value={ct.obra_id} onChange={(e) => setCt({ ...ct, obra_id: e.target.value, itens_eap: [] })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
           <div style={{ flex: 1, minWidth: 160 }}><Lbl>Empresa</Lbl><input value={ct.empresa} onChange={(e) => setCt({ ...ct, empresa: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
           <div><Lbl>CNPJ</Lbl><input value={ct.cnpj} onChange={(e) => setCt({ ...ct, cnpj: cnpjMask(e.target.value) })} placeholder="00.000.000/0000-00" style={inp({ width: 165 })} /></div>
           <div style={{ minWidth: 150 }}><Lbl>Responsável em obra</Lbl><input value={ct.responsavel} onChange={(e) => setCt({ ...ct, responsavel: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-          <div style={{ flex: 1, minWidth: 180 }}><Lbl>Escopo (EAP)</Lbl><input list="eaps-rso" value={ct.escopo_eap} onChange={(e) => setCt({ ...ct, escopo_eap: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /><datalist id="eaps-rso">{eaps(ct.obra_id).map((x) => <option key={x} value={x} />)}</datalist></div>
-          <div><Lbl>Valor contrato</Lbl><NumInput value={ct.valor} onChange={(v) => setCt({ ...ct, valor: v })} /></div>
-          <Btn small disabled={busy || !ct.cnpj || !ct.responsavel} onClick={salvar}>+ Cadastrar</Btn>
+          <div><Lbl>Tipo de contrato</Lbl><select value={ct.tipo} onChange={(e) => setCt({ ...ct, tipo: e.target.value })} style={inp()}><option value="indireto">Indireto (por escopo)</option><option value="direto">Direto (custo mensal)</option></select></div>
+        </div>
+        {ct.tipo === "direto" && (
+          <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12, background: C.laranjaClaro, borderRadius: 8, padding: "10px 12px" }}>
+            <div><Lbl>Custo mensal</Lbl><NumInput value={ct.custo_mensal} onChange={(v) => setCt({ ...ct, custo_mensal: v })} /></div>
+            <div><Lbl>Por quantos meses</Lbl><input type="number" min="1" value={ct.meses} onChange={(e) => setCt({ ...ct, meses: e.target.value })} style={inp({ width: 90, textAlign: "right" })} /></div>
+            <div style={{ fontSize: 13, color: C.dim, paddingBottom: 4 }}>Valor total: <b style={{ color: C.verde, fontSize: 16 }}>{fmtR(valorTotal)}</b></div>
+          </div>
+        )}
+        <div style={{ marginBottom: 12 }}>
+          <Lbl>Itens da EAP cobertos por este contrato (um ou mais)</Lbl>
+          {ct.obra_id ? <MultiEapPicker itens={eapItens} valor={ct.itens_eap} onChange={(v) => setCt({ ...ct, itens_eap: v })} comValor={ct.tipo === "indireto"} labelValor="Valor do item" />
+            : <div style={{ fontSize: 12, color: C.dim }}>Selecione uma obra para listar a EAP.</div>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ fontSize: 13, color: C.dim }}>Valor do contrato: <b style={{ color: C.verde, fontSize: 16 }}>{fmtR(valorTotal)}</b></div>
+          <div style={{ flex: 1 }} />
+          <Btn small disabled={busy || !ct.cnpj || !ct.responsavel || ct.itens_eap.length === 0} onClick={salvar}>+ Cadastrar OS</Btn>
         </div>
       </Card>
-      <Card title={`Contratos de serviço (${contratos.length})`}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Obra</Th><Th>Empresa</Th><Th>CNPJ</Th><Th>Responsável</Th><Th>Escopo EAP</Th><Th right>Valor</Th><Th /></tr></thead>
-          <tbody>{contratos.map((x) => { const o = obras.find((y) => y.id === x.obra_id); return <tr key={x.id}><Td>{o?.codigo || "—"}</Td><Td style={{ fontWeight: 600 }}>{x.empresa || "—"}</Td><Td>{x.cnpj}</Td><Td>{x.responsavel}</Td><Td style={{ fontSize: 12 }}>{x.escopo_eap || "—"}</Td><Td right>{fmtR(x.valor)}</Td><Td><button onClick={async () => { if (confirm("Excluir?")) { await remover("contratos_servico", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>; })}
-            {contratos.length === 0 && <tr><Td colSpan={7} color={C.dim} style={{ padding: 14 }}>Nenhum contrato de serviço.</Td></tr>}</tbody></table>
+      <Card title={`Ordens de serviço (${contratos.length})`}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Obra</Th><Th>Empresa</Th><Th>CNPJ</Th><Th>Tipo</Th><Th>Itens EAP</Th><Th right>Mensal × meses</Th><Th right>Valor</Th><Th /></tr></thead>
+          <tbody>{contratos.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap : (x.escopo_eap ? [{ eap_codigo: x.escopo_eap }] : []); return (
+            <tr key={x.id}><Td>{o?.codigo || "—"}</Td><Td style={{ fontWeight: 600 }}>{x.empresa || "—"}</Td><Td>{x.cnpj}</Td>
+              <Td><span style={{ background: x.tipo === "direto" ? C.laranja : C.cinza2, color: x.tipo === "direto" ? "#fff" : C.dim, borderRadius: 5, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>{x.tipo || "indireto"}</span></Td>
+              <Td style={{ fontSize: 12 }}>{itens.map((i) => i.eap_codigo).join(", ") || "—"}</Td>
+              <Td right>{x.tipo === "direto" ? `${fmtR(x.custo_mensal)} × ${x.meses}` : "—"}</Td>
+              <Td right color={C.verde} style={{ fontWeight: 700 }}>{fmtR(x.valor)}</Td>
+              <Td><button onClick={async () => { if (confirm("Excluir OS?")) { await remover("contratos_servico", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>
+          ); })}
+            {contratos.length === 0 && <tr><Td colSpan={8} color={C.dim} style={{ padding: 14 }}>Nenhuma ordem de serviço.</Td></tr>}</tbody></table>
       </Card>
     </div>
   );
 }
 
-/* ============================ OC-i (materiais) ============================ */
+/* ============================ OC-i (materiais) — múltiplos itens de EAP ============================ */
 function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
-  const [oc, setOc] = useState({ obra_id: "", numero: "", fornecedor: "", data: hojeISO(), eap_codigo: "", material: "", valor: 0 });
+  const vazio = { obra_id: "", numero: "", fornecedor: "", data: hojeISO(), itens_eap: [] };
+  const [oc, setOc] = useState(vazio);
   const [busy, setBusy] = useState(false);
-  const eaps = (id) => (eapPorObra[id] || []).map((i) => `${i.codigo} — ${i.descricao}`);
-  const salvar = async () => { setBusy(true); try { await criar("ordens_compra", { ...oc, obra_id: oc.obra_id || null, valor: Number(oc.valor) || 0 }); setOc({ obra_id: oc.obra_id, numero: "", fornecedor: "", data: hojeISO(), eap_codigo: "", material: "", valor: 0 }); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+  const eapItens = eapPorObra[oc.obra_id] || [];
+  const valorTotal = sum(oc.itens_eap.map((x) => x.valor));
+  const salvar = async () => {
+    setBusy(true);
+    try {
+      const primeiro = oc.itens_eap[0] || {};
+      await criar("ordens_compra", { obra_id: oc.obra_id || null, numero: oc.numero, fornecedor: oc.fornecedor, data: oc.data,
+        itens_eap: oc.itens_eap, eap_codigo: oc.itens_eap.map((x) => x.eap_codigo).join(", "),
+        material: oc.itens_eap.map((x) => x.material || x.descricao).filter(Boolean).join("; "), valor: valorTotal });
+      setOc({ ...vazio, obra_id: oc.obra_id }); onMudou();
+    } catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
   const restAbertas = restricoes.filter((r) => !r.resolvida);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card title="OC-i · Ordens de compra de materiais — por EAP">
-        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
-          <div style={{ minWidth: 140 }}><Lbl>Obra</Lbl><select value={oc.obra_id} onChange={(e) => setOc({ ...oc, obra_id: e.target.value })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
+      <Card title="OC-i · Ordens de compra de materiais — um ou mais itens da EAP">
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+          <div style={{ minWidth: 140 }}><Lbl>Obra</Lbl><select value={oc.obra_id} onChange={(e) => setOc({ ...oc, obra_id: e.target.value, itens_eap: [] })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
           <div><Lbl>OC nº</Lbl><input value={oc.numero} onChange={(e) => setOc({ ...oc, numero: e.target.value })} style={inp({ width: 100 })} /></div>
-          <div style={{ minWidth: 150 }}><Lbl>Fornecedor</Lbl><input value={oc.fornecedor} onChange={(e) => setOc({ ...oc, fornecedor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div style={{ flex: 1, minWidth: 160 }}><Lbl>Fornecedor</Lbl><input value={oc.fornecedor} onChange={(e) => setOc({ ...oc, fornecedor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
           <div><Lbl>Data</Lbl><input type="date" value={oc.data} onChange={(e) => setOc({ ...oc, data: e.target.value })} style={inp({ boxSizing: "border-box" })} /></div>
-          <div style={{ minWidth: 150 }}><Lbl>EAP</Lbl><input list="eaps-oc" value={oc.eap_codigo} onChange={(e) => setOc({ ...oc, eap_codigo: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /><datalist id="eaps-oc">{eaps(oc.obra_id).map((x) => <option key={x} value={x} />)}</datalist></div>
-          <div style={{ flex: 1, minWidth: 160 }}><Lbl>Material</Lbl><input value={oc.material} onChange={(e) => setOc({ ...oc, material: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-          <div><Lbl>Valor</Lbl><NumInput value={oc.valor} onChange={(v) => setOc({ ...oc, valor: v })} /></div>
-          <Btn small disabled={busy || !oc.material} onClick={salvar}>+ Lançar OC</Btn>
+        </div>
+        <div style={{ marginBottom: 12 }}>
+          <Lbl>Itens da EAP nesta compra (alguns fornecimentos cobrem mais de um item)</Lbl>
+          {oc.obra_id ? <MultiEapPicker itens={eapItens} valor={oc.itens_eap} onChange={(v) => setOc({ ...oc, itens_eap: v })} labelValor="Valor do item" />
+            : <div style={{ fontSize: 12, color: C.dim }}>Selecione uma obra para listar a EAP.</div>}
+        </div>
+        <div style={{ display: "flex", alignItems: "center" }}>
+          <div style={{ fontSize: 13, color: C.dim }}>Total da OC: <b style={{ color: C.laranja, fontSize: 16 }}>{fmtR(valorTotal)}</b></div>
+          <div style={{ flex: 1 }} />
+          <Btn small disabled={busy || oc.itens_eap.length === 0} onClick={salvar}>+ Lançar OC</Btn>
         </div>
       </Card>
 
@@ -279,44 +400,274 @@ function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
       )}
 
       <Card title={`Ordens de compra (${ocs.length})`}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Data</Th><Th>Fornecedor</Th><Th>EAP</Th><Th>Material</Th><Th right>Valor</Th><Th /></tr></thead>
-          <tbody>{ocs.map((x) => { const o = obras.find((y) => y.id === x.obra_id); return <tr key={x.id}><Td>{x.numero || "—"}</Td><Td>{o?.codigo || "—"}</Td><Td>{dataBR(x.data)}</Td><Td>{x.fornecedor || "—"}</Td><Td>{x.eap_codigo || "—"}</Td><Td style={{ fontSize: 12 }}>{x.material}</Td><Td right color={C.laranja}>{fmtR(x.valor)}</Td><Td><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>; })}
+        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Data</Th><Th>Fornecedor</Th><Th>Itens EAP</Th><Th>Material</Th><Th right>Valor</Th><Th /></tr></thead>
+          <tbody>{ocs.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap.map((i) => i.eap_codigo).join(", ") : (x.eap_codigo || "—"); return <tr key={x.id}><Td>{x.numero || "—"}</Td><Td>{o?.codigo || "—"}</Td><Td>{dataBR(x.data)}</Td><Td>{x.fornecedor || "—"}</Td><Td style={{ fontSize: 12 }}>{itens}</Td><Td style={{ fontSize: 12 }}>{x.material}</Td><Td right color={C.laranja}>{fmtR(x.valor)}</Td><Td><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>; })}
             {ocs.length === 0 && <tr><Td colSpan={8} color={C.dim} style={{ padding: 14 }}>Nenhuma OC lançada.</Td></tr>}</tbody></table>
       </Card>
     </div>
   );
 }
 
-/* ============================ EAP & Custos ============================ */
-function EapCustos({ obras, eapPorObra, ocs, rdos, onMudou }) {
-  const [obraId, setObraId] = useState(obras[0]?.id || "");
-  const [busca, setBusca] = useState("");
-  useEffect(() => { if (!obraId && obras[0]) setObraId(obras[0].id); }, [obras]);
-  const itens = eapPorObra[obraId] || [];
-  const obra = obras.find((o) => o.id === obraId);
-  const realizado = useMemo(() => { const m = {}; ocs.filter((o) => o.obra_id === obraId).forEach((o) => { const c = (o.eap_codigo || "").split(" ")[0]; m[c] = (m[c] || 0) + (Number(o.valor) || 0); }); return m; }, [ocs, obraId]);
-  const exec = useMemo(() => { const m = {}; rdos.filter((r) => r.obra_id === obraId).forEach((r) => (r.atividades || []).forEach((a) => { m[a.eap] = (m[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); })); return m; }, [rdos, obraId]);
-  const rows = itens.filter((e) => !busca || norm(`${e.codigo} ${e.descricao}`).includes(norm(busca))).map((e) => {
-    const real = realizado[e.codigo] || 0; const meta = (Number(e.valor_total) || 0); const ex = exec[e.codigo] || 0;
-    const avFis = e.qtde ? Math.min(ex / e.qtde, 1) : 0; const idc = meta ? real / meta : 0;
-    const cpi = real > 0 ? (avFis * meta) / real : null;
-    return { ...e, real, meta, avFis, idc, cpi };
-  });
+/* ============================ Prestadores em obra (diretos × indiretos) ============================ */
+function Prestadores({ obras, funcionarios, contratos, onMudou }) {
+  const vazio = { nome: "", atribuicao: ATRIBUICOES[0], vinculo: "direto", obra_id: "", custo_mensal: 0, contrato_id: "" };
+  const [f, setF] = useState(vazio);
+  const [filtro, setFiltro] = useState("todos");
+  const [busy, setBusy] = useState(false);
+  const salvar = async () => { setBusy(true); try { await criar("funcionarios", { ...f, obra_id: f.obra_id || null, contrato_id: f.contrato_id || null, custo_mensal: Number(f.custo_mensal) || null }); setF({ ...vazio, vinculo: f.vinculo, obra_id: f.obra_id }); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+  const lista = funcionarios.filter((x) => filtro === "todos" || (x.vinculo || "direto") === filtro);
+  const diretos = funcionarios.filter((x) => (x.vinculo || "direto") === "direto");
+  const indiretos = funcionarios.filter((x) => x.vinculo === "indireto");
+  const custoDiretos = sum(diretos.map((x) => x.custo_mensal));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card title="EAP & Custos — índice de custo por atividade (OCs × meta)" right={<div style={{ display: "flex", gap: 8 }}>
-        <input placeholder="Buscar item…" value={busca} onChange={(e) => setBusca(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px", width: 160 })} />
-        <select value={obraId} onChange={(e) => setObraId(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>}>
-        <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>Realizado vem das OCs (OC-i); avanço físico vem dos RDOs. CPI = (avanço × meta) ÷ realizado.{obra?.desconto ? ` Desconto da licitação: ${pct(obra.desconto, 0)}.` : ""}</div>
-        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>EAP</Th><Th>Atividade</Th><Th>Unid.</Th><Th right>Meta (c/BDI)</Th><Th right>Realizado OCs</Th><Th right>%gasto</Th><Th right>Avanço físico</Th><Th right>CPI</Th></tr></thead>
-          <tbody>{rows.map((r) => <tr key={r.id}><Td>{r.codigo}</Td><Td style={{ fontSize: 12 }}>{r.descricao.length > 50 ? r.descricao.slice(0, 50) + "…" : r.descricao}</Td><Td><b style={{ color: C.laranja }}>{r.unidade}</b></Td><Td right>{fmt(r.meta)}</Td><Td right>{fmt(r.real)}</Td><Td right color={r.idc > 1 ? C.vermelho : C.texto}>{pct(r.idc)}</Td><Td right color={C.azul}>{pct(r.avFis)}</Td><Td right color={r.cpi === null ? C.dim : r.cpi >= 1 ? C.verde : C.vermelho}>{r.cpi === null ? "—" : r.cpi.toFixed(2)}</Td></tr>)}
-            {rows.length === 0 && <tr><Td colSpan={8} color={C.dim} style={{ padding: 14 }}>{itens.length === 0 ? "Faça o upload da EAP desta obra (aba Obras)." : "Nenhum item encontrado."}</Td></tr>}</tbody>
-        </table></div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Kpi label="Prestadores diretos" value={diretos.length} sub={`custo mensal ${fmtR(custoDiretos)}`} accent={C.laranja} />
+        <Kpi label="Prestadores indiretos" value={indiretos.length} />
+        <Kpi label="Total cadastrado" value={funcionarios.length} dark />
+      </div>
+      <Card title="Cadastro de prestadores em obra">
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div style={{ flex: 1, minWidth: 170 }}><Lbl>Nome completo</Lbl><input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Atribuição</Lbl><select value={f.atribuicao} onChange={(e) => setF({ ...f, atribuicao: e.target.value })} style={inp({ maxWidth: 230 })}>{ATRIBUICOES.map((x) => <option key={x}>{x}</option>)}</select></div>
+          <div><Lbl>Vínculo</Lbl><select value={f.vinculo} onChange={(e) => setF({ ...f, vinculo: e.target.value })} style={inp()}><option value="direto">Direto</option><option value="indireto">Indireto</option></select></div>
+          <div style={{ minWidth: 130 }}><Lbl>Obra</Lbl><select value={f.obra_id} onChange={(e) => setF({ ...f, obra_id: e.target.value })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
+          {f.vinculo === "direto" && <div><Lbl>Custo mensal</Lbl><NumInput value={f.custo_mensal} onChange={(v) => setF({ ...f, custo_mensal: v })} /></div>}
+          {f.vinculo === "indireto" && <div style={{ minWidth: 180 }}><Lbl>Contrato (OS-i)</Lbl><select value={f.contrato_id} onChange={(e) => setF({ ...f, contrato_id: e.target.value })} style={inp({ width: "100%" })}><option value="">—</option>{contratos.map((c) => <option key={c.id} value={c.id}>{c.empresa || c.responsavel}</option>)}</select></div>}
+          <Btn small disabled={busy || !f.nome.trim()} onClick={salvar}>+ Cadastrar</Btn>
+        </div>
+      </Card>
+      <Card title={`Prestadores (${lista.length})`} right={
+        <div style={{ display: "flex", gap: 4 }}>{["todos", "direto", "indireto"].map((v) => <button key={v} onClick={() => setFiltro(v)} style={{ background: filtro === v ? C.preto : C.branco, color: filtro === v ? "#fff" : C.dim, border: `1px solid ${filtro === v ? C.preto : C.linha}`, borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{v}</button>)}</div>}>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Nome</Th><Th>Atribuição</Th><Th>Vínculo</Th><Th>Obra</Th><Th>Contrato</Th><Th right>Custo mensal</Th><Th /></tr></thead>
+          <tbody>{lista.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const c = contratos.find((y) => y.id === x.contrato_id); return (
+            <tr key={x.id}><Td style={{ fontWeight: 600 }}>{x.nome}</Td><Td>{x.atribuicao}</Td>
+              <Td><span style={{ background: (x.vinculo || "direto") === "direto" ? C.laranja : C.cinza2, color: (x.vinculo || "direto") === "direto" ? "#fff" : C.dim, borderRadius: 5, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>{x.vinculo || "direto"}</span></Td>
+              <Td>{o?.codigo || "—"}</Td><Td style={{ fontSize: 12 }}>{c ? (c.empresa || c.responsavel) : "—"}</Td><Td right>{x.custo_mensal ? fmtR(x.custo_mensal) : "—"}</Td>
+              <Td><button onClick={async () => { if (confirm("Excluir prestador?")) { await remover("funcionarios", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>
+          ); })}
+            {lista.length === 0 && <tr><Td colSpan={7} color={C.dim} style={{ padding: 14 }}>Nenhum prestador cadastrado.</Td></tr>}</tbody></table>
       </Card>
     </div>
   );
 }
+
+/* ============================ EAP & Custos ============================ */
+// realizado por item: soma OCs + OS, considerando os arrays itens_eap (múltiplas EAPs) e legado eap_codigo
+function realizadoPorItem(ocs, contratos, obraId) {
+  const m = {};
+  const add = (cod, val) => { const c = String(cod || "").split(" ")[0].trim(); if (!c) return; m[c] = (m[c] || 0) + (Number(val) || 0); };
+  ocs.filter((o) => o.obra_id === obraId).forEach((o) => {
+    if (Array.isArray(o.itens_eap) && o.itens_eap.length) o.itens_eap.forEach((x) => add(x.eap_codigo, x.valor));
+    else add(o.eap_codigo, o.valor);
+  });
+  contratos.filter((c) => c.obra_id === obraId).forEach((c) => {
+    if (Array.isArray(c.itens_eap) && c.itens_eap.length) {
+      if (c.tipo === "direto") { const v = (Number(c.custo_mensal) || 0) * (Number(c.meses) || 0); const n = c.itens_eap.length || 1; c.itens_eap.forEach((x) => add(x.eap_codigo, v / n)); }
+      else c.itens_eap.forEach((x) => add(x.eap_codigo, x.valor));
+    } else add(c.escopo_eap, c.valor);
+  });
+  return m;
+}
+// meta de custo do item: meta_valor × qtde, com fallback (custo s/BDI × desconto × meta%)
+function metaItem(e) {
+  const csb = Number(e.custo_sem_bdi);
+  if (e.meta_valor != null) return Number(e.meta_valor) * (Number(e.qtde) || 0);
+  if (csb && e.meta_pct != null) return csb * (1 - (Number(e.desconto) || 0)) * (Number(e.meta_pct) || 0) * (Number(e.qtde) || 0);
+  return Number(e.valor_total) || 0; // sem meta definida → usa o contratado c/ desconto
+}
+
+function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
+  const [obraId, setObraId] = useState("");
+  const [busca, setBusca] = useState("");
+  const [descModal, setDescModal] = useState(false);
+  const [metaModal, setMetaModal] = useState(false);
+  const [descVal, setDescVal] = useState(0.11);
+  const [metaVal, setMetaVal] = useState(0.85);
+  const [metaItemId, setMetaItemId] = useState(null);
+  const [metaItemPct, setMetaItemPct] = useState(0.85);
+  const [busy, setBusy] = useState(false);
+  const [verDash, setVerDash] = useState(true);
+  useEffect(() => { if (!obraId && obras[0]) setObraId(obras[0].id); }, [obras]);
+  const itens = eapPorObra[obraId] || [];
+  const obra = obras.find((o) => o.id === obraId);
+
+  const realizado = useMemo(() => realizadoPorItem(ocs, contratos, obraId), [ocs, contratos, obraId]);
+  const exec = useMemo(() => { const m = {}; rdos.filter((r) => r.obra_id === obraId).forEach((r) => (r.atividades || []).forEach((a) => { m[a.eap] = (m[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); })); return m; }, [rdos, obraId]);
+
+  const linhas = itens.map((e) => {
+    const real = realizado[e.codigo] || 0;
+    const meta = metaItem(e);
+    const ex = exec[e.codigo] || 0;
+    const avFis = e.qtde ? Math.min(ex / e.qtde, 1) : 0;
+    const metaProporcional = meta * avFis;        // meta esperada para o que já foi executado
+    const desvio = metaProporcional - real;        // > 0 = abaixo da meta (bom)
+    const idc = meta ? real / meta : 0;            // % da meta total já gasto
+    const cpi = real > 0 ? metaProporcional / real : null; // >=1 dentro da meta
+    return { ...e, real, meta, ex, avFis, metaProporcional, desvio, idc, cpi };
+  });
+  const rows = linhas.filter((e) => !busca || norm(`${e.codigo} ${e.descricao}`).includes(norm(busca)));
+
+  const totMeta = sum(linhas.map((l) => l.meta));
+  const totReal = sum(linhas.map((l) => l.real));
+  const totMetaProp = sum(linhas.map((l) => l.metaProporcional));
+  const cpiGlobal = totReal > 0 ? totMetaProp / totReal : null;
+  const comMeta = linhas.filter((l) => l.meta_pct != null).length;
+
+  const aplicarDesc = async () => { setBusy(true); try { await aplicarDesconto(obraId, Number(descVal) || 0); setDescModal(false); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+  const aplicarMetaGlobal = async () => { setBusy(true); try { await definirMeta(obraId, Number(metaVal) || 0); setMetaModal(false); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+  const aplicarMetaItem = async () => { setBusy(true); try { await definirMeta(obraId, Number(metaItemPct) || 0, [metaItemId]); setMetaItemId(null); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card title="EAP & Custos — metas e desempenho das contratações" right={<div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        <input placeholder="Buscar item…" value={busca} onChange={(e) => setBusca(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px", width: 150 })} />
+        <select value={obraId} onChange={(e) => setObraId(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select>
+      </div>}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+          <Btn small kind="ghost" onClick={() => { setDescVal(obra?.desconto || 0.11); setDescModal(true); }} disabled={!itens.length}>% Aplicar desconto da licitação</Btn>
+          <Btn small onClick={() => { setMetaVal(obra?.meta_pct_padrao && obra.meta_pct_padrao !== 1 ? obra.meta_pct_padrao : 0.85); setMetaModal(true); }} disabled={!itens.length}>◎ Definir meta de custo (global)</Btn>
+          <div style={{ flex: 1 }} />
+          <Btn small kind={verDash ? "dark" : "ghost"} onClick={() => setVerDash((v) => !v)}>{verDash ? "Ver tabela" : "Ver dashboard"}</Btn>
+        </div>
+        <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>
+          Meta = % sobre o custo SEM BDI (já com desconto da licitação). Realizado vem das OC-i e OS-i. CPI = meta proporcional ao avanço ÷ realizado (≥ 1 = dentro da meta).
+          {obra?.desconto ? ` Desconto aplicado: ${pct(obra.desconto, 1)}.` : " Nenhum desconto aplicado ainda."} {comMeta > 0 ? `${comMeta}/${itens.length} itens com meta.` : "Nenhuma meta definida."}
+        </div>
+
+        {/* modais simples */}
+        {descModal && <ModalMini titulo="Aplicar desconto da licitação a TODA a EAP" onFechar={() => setDescModal(false)}>
+          <p style={{ fontSize: 13, color: C.dim }}>Aplica o desconto sobre o custo de cada item (recalcula valor com BDI). Útil quando a planilha veio só com preço de referência, sem o desconto do pregão.</p>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div><Lbl>Desconto</Lbl><input type="number" step="0.001" value={descVal} onChange={(e) => setDescVal(e.target.value)} style={inp({ width: 110, textAlign: "right" })} /><span style={{ fontSize: 11, color: C.dim, marginLeft: 6 }}>(0,11 = 11%)</span></div>
+            <Btn small onClick={aplicarDesc} disabled={busy}>{busy ? "Aplicando…" : "Aplicar a todos os itens"}</Btn>
+          </div>
+        </ModalMini>}
+        {metaModal && <ModalMini titulo="Definir meta de custo (global)" onFechar={() => setMetaModal(false)}>
+          <p style={{ fontSize: 13, color: C.dim }}>Percentual sobre o custo SEM BDI (com desconto) pelo qual cada item deve ser fechado. Ex.: 0,85 = meta de fechar por 85% do custo. Aplica a todos; depois você pode ajustar item a item na tabela.</p>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div><Lbl>Meta %</Lbl><input type="number" step="0.01" value={metaVal} onChange={(e) => setMetaVal(e.target.value)} style={inp({ width: 110, textAlign: "right" })} /><span style={{ fontSize: 11, color: C.dim, marginLeft: 6 }}>(0,85 = 85%)</span></div>
+            <Btn small onClick={aplicarMetaGlobal} disabled={busy}>{busy ? "Aplicando…" : "Aplicar a todos os itens"}</Btn>
+          </div>
+        </ModalMini>}
+        {metaItemId && <ModalMini titulo="Meta específica do item" onFechar={() => setMetaItemId(null)}>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+            <div><Lbl>Meta % deste item</Lbl><input type="number" step="0.01" value={metaItemPct} onChange={(e) => setMetaItemPct(e.target.value)} style={inp({ width: 110, textAlign: "right" })} /></div>
+            <Btn small onClick={aplicarMetaItem} disabled={busy}>Salvar meta do item</Btn>
+          </div>
+        </ModalMini>}
+
+        {!verDash && <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><Th>EAP</Th><Th>Atividade</Th><Th>Unid.</Th><Th right>Custo s/BDI</Th><Th right>Meta %</Th><Th right>Meta (R$)</Th><Th right>Realizado</Th><Th right>Avanço</Th><Th right>CPI</Th><Th /></tr></thead>
+          <tbody>{rows.map((r) => <tr key={r.id}>
+            <Td>{r.codigo}</Td><Td style={{ fontSize: 12 }}>{r.descricao.length > 44 ? r.descricao.slice(0, 44) + "…" : r.descricao}</Td>
+            <Td><b style={{ color: C.laranja }}>{r.unidade}</b></Td><Td right>{r.custo_sem_bdi != null ? fmt(r.custo_sem_bdi) : "—"}</Td>
+            <Td right color={r.meta_pct != null ? C.preto : C.dim}>{r.meta_pct != null ? pct(r.meta_pct, 0) : "—"}</Td>
+            <Td right>{fmt(r.meta)}</Td><Td right color={r.real > r.meta ? C.vermelho : C.texto}>{fmt(r.real)}</Td>
+            <Td right color={C.azul}>{pct(r.avFis, 0)}</Td>
+            <Td right color={r.cpi === null ? C.dim : r.cpi >= 1 ? C.verde : C.vermelho} style={{ fontWeight: 700 }}>{r.cpi === null ? "—" : r.cpi.toFixed(2)}</Td>
+            <Td><button onClick={() => { setMetaItemId(r.id); setMetaItemPct(r.meta_pct || 0.85); }} title="Meta específica" style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 5, padding: "2px 8px", fontSize: 11, cursor: "pointer", color: C.dim }}>◎</button></Td>
+          </tr>)}
+            {rows.length === 0 && <tr><Td colSpan={10} color={C.dim} style={{ padding: 14 }}>{itens.length === 0 ? "Faça o upload da EAP desta obra (aba Obras)." : "Nenhum item encontrado."}</Td></tr>}</tbody>
+        </table></div>}
+
+        {verDash && <DashboardMeta linhas={linhas} obra={obra} totMeta={totMeta} totReal={totReal} totMetaProp={totMetaProp} cpiGlobal={cpiGlobal} />}
+      </Card>
+
+      <DashboardConsolidado obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} />
+    </div>
+  );
+}
+
+function ModalMini({ titulo, children, onFechar }) {
+  return (
+    <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)", zIndex: 200, display: "flex", alignItems: "center", justifyContent: "center" }} onClick={onFechar}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: "#fff", borderRadius: 12, padding: 22, width: 460, maxWidth: "90vw", borderTop: `5px solid ${C.laranja}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+          <b style={{ fontSize: 15 }}>{titulo}</b><button onClick={onFechar} style={{ background: "none", border: "none", fontSize: 18, cursor: "pointer", color: C.dim }}>✕</button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function DashboardMeta({ linhas, obra, totMeta, totReal, totMetaProp, cpiGlobal }) {
+  const comReal = linhas.filter((l) => l.real > 0);
+  const dentro = comReal.filter((l) => l.cpi != null && l.cpi >= 1).length;
+  const fora = comReal.filter((l) => l.cpi != null && l.cpi < 1).length;
+  const top = comReal.slice().sort((a, b) => Math.abs(b.desvio) - Math.abs(a.desvio)).slice(0, 10)
+    .map((l) => ({ nome: l.codigo, "Meta (proporcional)": l.metaProporcional, "Realizado": l.real }));
+  const pie = [{ name: "Dentro da meta", value: dentro, fill: C.verde }, { name: "Acima da meta", value: fora, fill: C.vermelho }];
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <Kpi label="Meta de custo total" value={fmtR(totMeta)} sub={obra ? obra.codigo : ""} />
+        <Kpi label="Realizado (OC + OS)" value={fmtR(totReal)} accent={totReal > totMetaProp ? C.vermelho : C.verde} />
+        <Kpi label="CPI global" value={cpiGlobal == null ? "—" : cpiGlobal.toFixed(2)} accent={cpiGlobal == null ? C.dim : cpiGlobal >= 1 ? C.verde : C.vermelho} sub="≥ 1 = dentro da meta" dark />
+        <Kpi label="Itens dentro / acima" value={`${dentro} / ${fora}`} sub={`${comReal.length} itens com gasto`} />
+      </div>
+      {top.length > 0 ? (
+        <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
+          <div>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 6, fontWeight: 700 }}>Meta × Realizado — itens com maior desvio</div>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={top} margin={{ top: 5, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid stroke={C.linha} strokeDasharray="2 4" vertical={false} />
+                <XAxis dataKey="nome" tick={{ fill: C.dim, fontSize: 10 }} /><YAxis tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} width={66} />
+                <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Meta (proporcional)" fill={C.cinza2} radius={[3, 3, 0, 0]} /><Bar dataKey="Realizado" fill={C.laranja} radius={[3, 3, 0, 0]}>
+                  {top.map((d, i) => <Cell key={i} fill={d["Realizado"] > d["Meta (proporcional)"] ? C.vermelho : C.verde} />)}
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+          <div>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 6, fontWeight: 700 }}>Aderência à meta</div>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart><Pie data={pie} dataKey="value" nameKey="name" cx="50%" cy="45%" outerRadius={85} label={(e) => `${e.value}`}>{pie.map((p, i) => <Cell key={i} fill={p.fill} />)}</Pie>
+                <Tooltip content={<ChartTip money={false} />} /><Legend wrapperStyle={{ fontSize: 11 }} /></PieChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      ) : <div style={{ fontSize: 13, color: C.dim, padding: 12 }}>Ainda não há OCs/OS lançadas nesta obra para comparar com a meta.</div>}
+    </div>
+  );
+}
+
+function DashboardConsolidado({ obras, eapPorObra, ocs, contratos, rdos }) {
+  const dados = obras.map((o) => {
+    const itens = eapPorObra[o.id] || [];
+    const real = realizadoPorItem(ocs, contratos, o.id);
+    const exec = {}; rdos.filter((r) => r.obra_id === o.id).forEach((r) => (r.atividades || []).forEach((a) => { exec[a.eap] = (exec[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); }));
+    let meta = 0, realizado = 0, metaProp = 0;
+    itens.forEach((e) => { const m = metaItem(e); const rl = real[e.codigo] || 0; const av = e.qtde ? Math.min((exec[e.codigo] || 0) / e.qtde, 1) : 0; meta += m; realizado += rl; metaProp += m * av; });
+    return { codigo: o.codigo, meta, realizado, metaProp, cpi: realizado > 0 ? metaProp / realizado : null };
+  }).filter((d) => d.meta > 0 || d.realizado > 0);
+  const totMeta = sum(dados.map((d) => d.meta)), totReal = sum(dados.map((d) => d.realizado)), totProp = sum(dados.map((d) => d.metaProp));
+  const cpiEmpresa = totReal > 0 ? totProp / totReal : null;
+  const chart = dados.map((d) => ({ nome: d.codigo, "Meta proporcional": d.metaProp, "Realizado": d.realizado }));
+  return (
+    <Card title="Desempenho consolidado — empresa (todas as obras)">
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
+        <Kpi dark label="Meta de custo — empresa" value={fmtR(totMeta)} sub={`${dados.length} obras`} />
+        <Kpi label="Realizado total (OC + OS)" value={fmtR(totReal)} accent={totReal > totProp ? C.vermelho : C.verde} />
+        <Kpi label="CPI consolidado" value={cpiEmpresa == null ? "—" : cpiEmpresa.toFixed(2)} accent={cpiEmpresa == null ? C.dim : cpiEmpresa >= 1 ? C.verde : C.vermelho} sub="≥ 1 = dentro da meta" />
+      </div>
+      {chart.length > 0 ? (
+        <ResponsiveContainer width="100%" height={Math.max(180, dados.length * 48)}>
+          <BarChart data={chart} layout="vertical" margin={{ left: 8, right: 16 }}>
+            <CartesianGrid stroke={C.linha} strokeDasharray="2 4" horizontal={false} />
+            <XAxis type="number" tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} /><YAxis type="category" dataKey="nome" width={130} tick={{ fill: C.dim, fontSize: 11 }} />
+            <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+            <Bar dataKey="Meta proporcional" fill={C.cinza2} radius={[0, 3, 3, 0]} /><Bar dataKey="Realizado" radius={[0, 3, 3, 0]}>{chart.map((d, i) => <Cell key={i} fill={d["Realizado"] > d["Meta proporcional"] ? C.vermelho : C.verde} />)}</Bar>
+          </BarChart>
+        </ResponsiveContainer>
+      ) : <div style={{ fontSize: 13, color: C.dim }}>Sem dados de meta/realizado para consolidar.</div>}
+    </Card>
+  );
+}
+
 
 /* ============================ Obras (upload EAP) ============================ */
 function Obras({ obras, eapPorObra, onMudou }) {
@@ -335,9 +686,21 @@ function Obras({ obras, eapPorObra, onMudou }) {
   const confirmar = async () => {
     setLendo(true);
     try {
+      const desc = Number(preview.desconto) || 0;
       await criarObraComEap(
-        { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, prazo_dias: Number(preview.prazo_dias) || null, desconto: Number(preview.desconto) || 0, data_inicio: hojeISO() },
-        preview.itens.map((it) => ({ codigo: String(it.codigo || ""), descricao: String(it.descricao || ""), unidade: String(it.unidade || "un"), qtde: Number(it.qtde) || 1, valor_unit: Number(it.valorUnit) || (Number(it.valorTotal) || 0) / (Number(it.qtde) || 1), valor_total: Number(it.valorTotal) || 0, disciplina: it.disciplina || "", ambiente: it.ambiente === "externo" ? "externo" : "interno", ordem: it.ordem }))
+        { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, prazo_dias: Number(preview.prazo_dias) || null, desconto: desc, data_inicio: hojeISO() },
+        preview.itens.map((it) => {
+          const qtde = Number(it.qtde) || 1;
+          const csb = Number(it.custoSemBdi) || (Number(it.custoUnit) || 0);
+          const bdi = Number(it.bdi) || 0;
+          // se a IA já trouxe valor com BDI, deriva csb; senão usa o custo informado
+          const csbFinal = csb || (Number(it.valorUnit) ? Number(it.valorUnit) / (1 + (bdi || 0)) : (Number(it.valorTotal) || 0) / qtde / (1 + (bdi || 0)));
+          const vuComBdi = csbFinal * (1 - desc) * (1 + bdi);
+          return { codigo: String(it.codigo || ""), descricao: String(it.descricao || ""), unidade: String(it.unidade || "un"),
+            qtde, custo_sem_bdi: csbFinal, bdi, desconto: desc,
+            valor_unit: vuComBdi, valor_total: vuComBdi * qtde,
+            disciplina: it.disciplina || "", ambiente: it.ambiente === "externo" ? "externo" : "interno", ordem: it.ordem };
+        })
       );
       setPreview(null); onMudou();
     } catch (e) { setErro(`Falha ao salvar: ${e.message}`); } finally { setLendo(false); }

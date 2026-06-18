@@ -28,6 +28,7 @@ create table if not exists obras (
   prazo_dias int,                            -- prazo contratual em dias
   data_inicio date,
   desconto numeric not null default 0,       -- desconto da licitação (0.11 = 11%)
+  meta_pct_padrao numeric default 1,         -- meta% padrão p/ novos itens
   ativa boolean not null default true,
   criado_em timestamptz not null default now()
 );
@@ -44,16 +45,25 @@ create table if not exists eap_itens (
   valor_total numeric,
   disciplina text,
   ambiente text not null default 'interno',  -- 'interno' | 'externo' (afeta projeção c/ clima)
+  custo_sem_bdi numeric,                     -- custo unitário SEM BDI (base da meta)
+  bdi numeric default 0,                     -- BDI fracionário (0.27 = 27%)
+  desconto numeric default 0,                -- desconto da licitação aplicado (0.11 = 11%)
+  meta_pct numeric,                          -- % sobre custo SEM BDI que define a meta
+  meta_valor numeric,                        -- meta de custo unitária resultante (R$)
   ordem int
 );
 create index if not exists idx_eap_obra on eap_itens(obra_id);
 
 -- ---------- Cadastros operacionais ----------
-create table if not exists contratos_servico (   -- RSO-i (empreiteiros/serviços)
+create table if not exists contratos_servico (   -- OS-i (Ordem de Serviço Inteligente)
   id uuid primary key default gen_random_uuid(),
   obra_id uuid references obras(id) on delete set null,
   empresa text, cnpj text, responsavel text,
-  escopo_eap text,                                -- itens da EAP cobertos
+  escopo_eap text,                                -- (legado) item único da EAP
+  itens_eap jsonb not null default '[]',          -- múltiplos itens [{eap_codigo, descricao, valor}]
+  tipo text default 'indireto',                   -- 'direto' | 'indireto'
+  custo_mensal numeric,                           -- p/ contratos diretos
+  meses int,                                      -- duração em meses (diretos)
   valor numeric,
   criado_em timestamptz not null default now()
 );
@@ -62,14 +72,18 @@ create table if not exists ordens_compra (        -- OC-i (materiais)
   id uuid primary key default gen_random_uuid(),
   obra_id uuid references obras(id) on delete set null,
   numero text, fornecedor text, data date,
-  eap_codigo text,                                -- EAP do material
+  eap_codigo text,                                -- (legado) item único da EAP
+  itens_eap jsonb not null default '[]',          -- múltiplos itens [{eap_codigo, material, valor}]
   material text, valor numeric,
   criado_em timestamptz not null default now()
 );
 
-create table if not exists funcionarios (
+create table if not exists funcionarios (          -- prestadores em obra (diretos × indiretos)
   id uuid primary key default gen_random_uuid(),
   nome text not null, atribuicao text,
+  vinculo text default 'direto',                  -- 'direto' | 'indireto'
+  obra_id uuid references obras(id) on delete set null,
+  custo_mensal numeric,
   contrato_id uuid references contratos_servico(id) on delete set null,
   criado_em timestamptz not null default now()
 );
@@ -90,6 +104,7 @@ create table if not exists rdos (
   atividades jsonb not null default '[]',         -- [{eap,descricao,unidade,qtde_dia,pct_dia,equipe[]}]
   equipe jsonb not null default '[]',             -- [{ocupacao,nome,he_inicio,he_fim}]
   equipamentos jsonb not null default '[]',
+  fotos jsonb not null default '[]',              -- [{url, eap_codigo, legenda, path}]
   payload jsonb,                                  -- snapshot completo p/ recuperação
   criado_em timestamptz not null default now()
 );
@@ -128,3 +143,6 @@ alter table funcionarios        enable row level security;
 alter table rdos                enable row level security;
 alter table restricoes_material enable row level security;
 alter table financeiro_estado   enable row level security;
+
+-- ---------- Storage: bucket de fotos do RDO ----------
+insert into storage.buckets (id, name, public) values ('rdo-fotos','rdo-fotos',true) on conflict (id) do nothing;

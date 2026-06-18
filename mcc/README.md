@@ -1,5 +1,28 @@
 # Miriad Construction Control (MCC)
 
+> **Atualização v2 (em produção):** antes de subir o novo código, rode a migração do banco.
+> No Supabase → SQL Editor, execute **uma vez** o arquivo `supabase/migration_v2.sql`.
+> Ele preserva todos os dados já existentes (ALTER TABLE idempotente), cria as colunas de
+> meta/desconto, os arrays de múltiplas EAPs em OC/OS, os campos de prestadores
+> diretos/indiretos, a coluna de fotos do RDO e o **bucket de Storage `rdo-fotos`**.
+> Depois, faça o deploy normal (push no GitHub → Vercel). As novas funções `/api/upload`
+> já vão junto. Nenhuma variável de ambiente nova é necessária.
+
+## Novidades da v2
+- **RDO-i com fotos**: anexe imagens (galeria ou câmera no celular) e vincule cada foto a um
+  item da EAP; as fotos entram no PDF do cliente. Armazenadas no Supabase Storage.
+- **OS-i** (antiga RSO-i): Ordem de Serviço Inteligente, com escolha **direto/indireto**;
+  contratos diretos pedem **custo mensal × nº de meses**; ambos aceitam **vários itens da EAP**.
+- **OC-i** com **múltiplos itens da EAP** por ordem de compra (um fornecimento pode cobrir
+  vários itens).
+- **Prestadores** (nova aba): cadastro segmentado em **diretos e indiretos**, com custo mensal
+  e vínculo a obra/contrato.
+- **EAP & Custos** com **Meta de Custo**: aplique o **desconto da licitação** a toda a EAP de
+  uma vez (para planilhas que vieram só com preço de referência) e **defina a meta** como um
+  percentual sobre o custo SEM BDI — global ou item a item. Inclui **dashboards** de
+  desempenho vs meta por obra e **consolidado da empresa**.
+
+
 Plataforma única de gestão de obras da Miriad, unificando **gestão financeira** e
 **operação de campo (RDO-i)** sobre o mesmo banco de dados.
 

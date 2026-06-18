@@ -77,6 +77,10 @@ export const remover = (t, id) => req("/api/data", { method: "DELETE", body: JSO
 export const parseEapApi = (linhas, nomeObra) => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ linhas, nomeObra }) }).then((d) => d.eap);
 export const getFin = (chave) => req(`/api/data?t=financeiro_estado&chave=${chave}`).then((d) => d.valor);
 export const setFin = (chave, valor) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "financeiro_estado", chave, valor }) });
+export const aplicarDesconto = (obra_id, desconto) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "eap_aplicar_desconto", obra_id, desconto }) });
+export const definirMeta = (obra_id, meta_pct, ids) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "eap_definir_meta", obra_id, meta_pct, ids }) });
+export const uploadFoto = (dataUrl, nome, obraCodigo) => req("/api/upload", { method: "POST", body: JSON.stringify({ dataUrl, nome, obraCodigo }) });
+export const VINCULOS = ["direto", "indireto"];
 
 /* ---------------- UI primitives ---------------- */
 export const Card = ({ title, right, children, style }) => (
@@ -103,11 +107,11 @@ export const Btn = ({ children, onClick, kind = "primary", small, disabled, type
 export const inp = (extra = {}) => ({ background: C.branco, border: `1.5px solid ${C.linha}`, color: C.texto, borderRadius: 8, padding: "8px 10px", fontSize: 14, outline: "none", ...extra });
 export const Lbl = ({ children }) => <div style={{ fontSize: 11, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{children}</div>;
 export const Th = ({ children, right }) => <th style={{ padding: "8px 10px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: C.branco, background: C.preto, textAlign: right ? "right" : "left", whiteSpace: "nowrap" }}>{children}</th>;
-export const Td = ({ children, right, color, style, colSpan, onClick }) => <td colSpan={colSpan} onClick={onClick} style={{ padding: "7px 10px", fontSize: 13, color: color || C.texto, textAlign: right ? "right" : "left", borderBottom: `1px solid ${C.linha}`, ...style }}>{children}</td>;
+export const Td = ({ children, right, color, style, colSpan, onClick }) => <td colSpan={colSpan} onClick={onClick} style={{ padding: "7px 10px", fontSize: 13, color: color || C.texto, textAlign: right ? "right" : "left", borderBottom: `1px solid ${C.linha}`, ...(right ? { fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" } : {}), ...style }}>{children}</td>;
 export const Kpi = ({ label, value, sub, dark, accent }) => (
   <div style={{ background: dark ? C.preto : C.branco, border: `1px solid ${dark ? C.preto : C.linha}`, borderRadius: 12, padding: "16px 18px", flex: 1, minWidth: 175 }}>
     <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: dark ? "#a3a3a3" : C.dim, fontWeight: 700 }}>{label}</div>
-    <div style={{ fontSize: 23, fontWeight: 800, color: accent || (dark ? C.laranja : C.preto), marginTop: 4, fontVariantNumeric: "tabular-nums" }}>{value}</div>
+    <div style={{ fontSize: 23, fontWeight: 800, color: accent || (dark ? C.laranja : C.preto), marginTop: 4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
     {sub && <div style={{ fontSize: 11, color: dark ? "#a3a3a3" : C.dim, marginTop: 3 }}>{sub}</div>}
   </div>
 );
@@ -118,11 +122,12 @@ export const ChartTip = ({ active, payload, label, money = true }) => {
     {payload.map((p, i) => <div key={i} style={{ color: p.color || C.laranja }}>{p.name}: {money ? fmtK(p.value) : fmt(p.value)}</div>)}
   </div>;
 };
-export const NumInput = ({ value, onChange, w = 110, dec = 0, ...rest }) => {
+export const NumInput = ({ value, onChange, w = 124, dec = 0, ...rest }) => {
   const [ed, setEd] = useState(false); const [txt, setTxt] = useState("");
-  if (dec) return <input type="number" value={value === 0 ? 0 : value || ""} step="0.001" onChange={(e) => onChange(parseFloat(e.target.value) || 0)} style={inp({ width: w, textAlign: "right", color: C.azul, fontFamily: "ui-monospace,monospace", padding: "4px 8px", fontSize: 13 })} {...rest} />;
+  const base = { width: w, minWidth: w, textAlign: "right", color: C.azul, fontFamily: "ui-monospace,monospace", padding: "4px 8px", fontSize: 13, whiteSpace: "nowrap" };
+  if (dec) return <input type="number" value={value === 0 ? 0 : value || ""} step="0.001" onChange={(e) => onChange(parseFloat(e.target.value) || 0)} style={inp(base)} {...rest} />;
   return <input type="text" inputMode="decimal" value={ed ? txt : (value ? Number(value).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : "0,00")}
     onFocus={(e) => { setEd(true); setTxt(value ? String(value).replace(".", ",") : ""); requestAnimationFrame(() => e.target.select()); }}
     onChange={(e) => { setTxt(e.target.value); onChange(parseBR(e.target.value)); }} onBlur={() => setEd(false)}
-    style={inp({ width: w, textAlign: "right", color: C.azul, fontFamily: "ui-monospace,monospace", padding: "4px 8px", fontSize: 13 })} {...rest} />;
+    style={inp(base)} {...rest} />;
 };

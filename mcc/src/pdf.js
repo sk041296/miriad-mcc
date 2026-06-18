@@ -49,6 +49,12 @@ export function gerarPdfRdo(rdo, obra, usuarioNome) {
     <div class="sec">Comentários</div>
     <div class="obs">${(rdo.comentarios || "").replace(/</g, "&lt;") || "—"}</div>
     ${rdo.ocorrencias ? `<div class="sec">Ocorrências</div><div class="obs">${rdo.ocorrencias.replace(/</g, "&lt;")}</div>` : ""}
+    ${(rdo.fotos && rdo.fotos.length) ? `<div class="sec">Registro fotográfico</div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px">${rdo.fotos.map((f) => `
+      <div style="width:31%;border:1px solid #c9c9c9;border-radius:4px;overflow:hidden">
+        <img src="${f.url}" style="width:100%;height:120px;object-fit:cover;display:block">
+        <div style="padding:3px 5px;font-size:9px">${f.eap_codigo ? `<b>EAP ${f.eap_codigo}</b> ` : ""}${(f.legenda || "").replace(/</g, "&lt;")}</div>
+      </div>`).join("")}</div>` : ""}
     <div class="assin"><div>Responsável MIRIAD<br>${usuarioNome || rdo.responsavel_nome || ""}</div><div>Responsável CONTRATANTE<br>&nbsp;</div></div>
     <script>window.onload=()=>{setTimeout(()=>window.print(),350)}</script>
   </body></html>`;

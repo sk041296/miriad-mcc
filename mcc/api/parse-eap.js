@@ -9,11 +9,11 @@ export default async function handler(req, res) {
   if (!linhas) return res.status(400).json({ error: "Conteúdo da planilha ausente" });
 
   const prompt = `Conteúdo textual de uma planilha orçamentária analítica de obra (colunas separadas por " | ").
-Extraia a Estrutura Analítica do Projeto (EAP): itens com código/numeração, descrição, UNIDADE DE MEDIDA (m, m2, m3, un, kg, vb, % etc.), quantidade, valor unitário e valor total.
+Extraia a Estrutura Analítica do Projeto (EAP): itens com código/numeração, descrição, UNIDADE DE MEDIDA (m, m2, m3, un, kg, vb, % etc.), quantidade, CUSTO UNITÁRIO SEM BDI, BDI (se houver, fracionário) e valor total.
 Para cada item, classifique o campo "ambiente" como "externo" se a atividade ocorre em área externa/exposta ao tempo (cobertura, telhado, drenagem, pavimentação, pintura externa, fachada, muro, terraplenagem, impermeabilização externa, calçada) ou "interno" caso contrário.
-Regras: ignore cabeçalhos, BDI isolado, resumos e totais gerais; se faltar qtde/valor unit mas houver total, use unidade "%", qtde 100, valorUnit=total/100. Sugira um código curto para a obra.
+Regras: ignore cabeçalhos, BDI isolado, resumos e totais gerais; se faltar qtde/valor unit mas houver total, use unidade "%", qtde 100, custoSemBdi=total/100. Se a planilha tiver só custo de referência (sem BDI explícito), informe bdi 0 e custoSemBdi = valor unitário. Sugira um código curto para a obra.
 Responda APENAS com JSON válido, sem markdown:
-{"nomeObra":"...","codigoSugerido":"...","itens":[{"codigo":"1.1","descricao":"...","unidade":"m2","qtde":120.5,"valorUnit":35.2,"valorTotal":4241.6,"disciplina":"...","ambiente":"interno"}]}
+{"nomeObra":"...","codigoSugerido":"...","itens":[{"codigo":"1.1","descricao":"...","unidade":"m2","qtde":120.5,"custoSemBdi":28.5,"bdi":0.27,"valorTotal":4360.0,"disciplina":"...","ambiente":"interno"}]}
 Obra de referência: ${nomeObra || "(derivar)"}.
 PLANILHA:\n${String(linhas).slice(0, 150000)}`;
 
