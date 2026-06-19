@@ -541,6 +541,10 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
   const totReal = sum(linhas.map((l) => l.real));
   const totMetaProp = sum(linhas.map((l) => l.metaProporcional));
   const cpiGlobal = totReal > 0 ? totMetaProp / totReal : null;
+  // totais por coluna (linha de soma da tabela) — só faz sentido somar valores totais, não unitários
+  const totCustoTotal = sum(rows.map((l) => l.custoTotalDesc));
+  const totMetaCol = sum(rows.map((l) => l.meta));
+  const totRealCol = sum(rows.map((l) => l.real));
   const comMeta = linhas.filter((l) => l.meta_pct != null).length;
 
   const aplicarDesc = async () => { setBusy(true); try { await aplicarDesconto(obraId, Number(descVal) || 0); setDescModal(false); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
@@ -601,7 +605,16 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
             <Td right color={r.cpi === null ? C.dim : r.cpi >= 1 ? C.verde : C.vermelho} style={{ fontWeight: 700 }}>{r.cpi === null ? "—" : r.cpi.toFixed(2)}</Td>
             <Td><button onClick={() => { setMetaItemId(r.id); setMetaItemPct(r.meta_pct || 0.85); }} title="Meta específica" style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 5, padding: "2px 8px", fontSize: 11, cursor: "pointer", color: C.dim }}>◎</button></Td>
           </tr>)}
-            {rows.length === 0 && <tr><Td colSpan={13} color={C.dim} style={{ padding: 14 }}>{itens.length === 0 ? "Faça o upload da EAP desta obra (aba Obras)." : "Nenhum item encontrado."}</Td></tr>}</tbody>
+            {rows.length === 0 && <tr><Td colSpan={13} color={C.dim} style={{ padding: 14 }}>{itens.length === 0 ? "Faça o upload da EAP desta obra (aba Obras)." : "Nenhum item encontrado."}</Td></tr>}
+            {rows.length > 0 && <tr style={{ background: C.preto }}>
+              <Td colSpan={3} style={{ color: "#fff", fontWeight: 800 }}>TOTAL ({rows.length} itens)</Td>
+              <Td /><Td /><Td />
+              <Td right style={{ color: "#fff", fontWeight: 800 }}>{fmt(totCustoTotal)}</Td>
+              <Td />
+              <Td right style={{ color: C.laranja, fontWeight: 800 }}>{fmt(totMetaCol)}</Td>
+              <Td right style={{ color: "#fff", fontWeight: 800 }}>{fmt(totRealCol)}</Td>
+              <Td /><Td />
+            </tr>}</tbody>
         </table></div>}
 
         {verDash && <DashboardMeta linhas={linhas} obra={obra} totMeta={totMeta} totReal={totReal} totMetaProp={totMetaProp} cpiGlobal={cpiGlobal} />}
@@ -816,6 +829,13 @@ function Obras({ obras, eapPorObra, onMudou }) {
     } catch (e) { setErro(`Falha ao salvar: ${e.message}`); } finally { setLendo(false); }
   };
   const toggleAmb = (i) => setPreview((p) => ({ ...p, itens: p.itens.map((it, j) => j === i ? { ...it, ambiente: it.ambiente === "externo" ? "interno" : "externo" } : it) }));
+  const [editObra, setEditObra] = useState(null); // {id, codigo, nome, contratante, contrato, local, prazo_dias}
+  const salvarEditObra = async () => {
+    try {
+      await editar("obras", editObra.id, { codigo: editObra.codigo, nome: editObra.nome, contratante: editObra.contratante, contrato: editObra.contrato, local: editObra.local, prazo_dias: Number(editObra.prazo_dias) || null });
+      setEditObra(null); onMudou();
+    } catch (e) { alert(e.message); }
+  };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -866,7 +886,28 @@ function Obras({ obras, eapPorObra, onMudou }) {
         )}
       </Card>
       {obras.map((o) => (
-        <Card key={o.id} title={`${o.codigo} · ${o.nome}`} right={<Btn kind="danger" small onClick={async () => { if (confirm(`Excluir ${o.codigo} e todos os dados?`)) { await remover("obras", o.id); onMudou(); } }}>Excluir</Btn>}>
+        <Card key={o.id} title={`${o.codigo} · ${o.nome}`} right={<div style={{ display: "flex", gap: 8 }}>
+          <Btn kind="ghost" small onClick={() => setEditObra({ id: o.id, codigo: o.codigo, nome: o.nome, contratante: o.contratante || "", contrato: o.contrato || "", local: o.local || "", prazo_dias: o.prazo_dias || "" })}>✎ Editar</Btn>
+          <Btn kind="danger" small onClick={async () => { if (confirm(`Excluir ${o.codigo} e todos os dados?`)) { await remover("obras", o.id); onMudou(); } }}>Excluir</Btn>
+        </div>}>
+          {editObra?.id === o.id && (
+            <div style={{ border: `2px solid ${C.laranja}`, borderRadius: 10, padding: 14, marginBottom: 12, background: C.laranjaClaro }}>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+                <div><Lbl>Código (padrão da empresa)</Lbl><input value={editObra.codigo} onChange={(e) => setEditObra({ ...editObra, codigo: e.target.value })} style={inp({ width: 150 })} /></div>
+                <div style={{ flex: 1, minWidth: 200 }}><Lbl>Nome da obra</Lbl><input value={editObra.nome} onChange={(e) => setEditObra({ ...editObra, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+                <div><Lbl>Prazo (dias)</Lbl><input type="number" value={editObra.prazo_dias} onChange={(e) => setEditObra({ ...editObra, prazo_dias: e.target.value })} style={inp({ width: 90, textAlign: "right" })} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 10 }}>
+                <div style={{ flex: 1, minWidth: 180 }}><Lbl>Contratante</Lbl><input value={editObra.contratante} onChange={(e) => setEditObra({ ...editObra, contratante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+                <div style={{ flex: 1, minWidth: 180 }}><Lbl>Local</Lbl><input value={editObra.local} onChange={(e) => setEditObra({ ...editObra, local: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+                <div style={{ flex: 1, minWidth: 180 }}><Lbl>Contrato</Lbl><input value={editObra.contrato} onChange={(e) => setEditObra({ ...editObra, contrato: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
+                <Btn small onClick={salvarEditObra} disabled={!editObra.codigo || !editObra.nome}>Salvar</Btn>
+                <Btn small kind="ghost" onClick={() => setEditObra(null)}>Cancelar</Btn>
+              </div>
+            </div>
+          )}
           <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{(eapPorObra[o.id] || []).length} itens de EAP · {o.contratante || "sem contratante"} · prazo {o.prazo_dias || "—"} dias</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Unid.</Th><Th right>Qtde</Th><Th right>Valor c/BDI</Th><Th>Ambiente</Th></tr></thead>
             <tbody>{(eapPorObra[o.id] || []).slice(0, 200).map((it) => <tr key={it.id}><Td>{it.codigo}</Td><Td style={{ fontSize: 12 }}>{it.descricao}</Td><Td><b style={{ color: C.laranja }}>{it.unidade}</b></Td><Td right>{fmt(it.qtde)}</Td><Td right>{fmt(it.valor_total)}</Td><Td>{it.ambiente === "externo" ? "🌦️ externo" : "interno"}</Td></tr>)}</tbody></table>

@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import {
   C, fmt, fmtK, fmtR, pct, sum, z8, Card, Btn, Kpi, Th, Td, Lbl, NumInput, ChartTip,
-  getFin, setFin,
+  getFin, setFin, listar,
 } from "./core.jsx";
 
 /* ================================================================
@@ -100,7 +100,7 @@ function autoAnticipate(p) {
 }
 
 /* ---------- Sub-abas do módulo financeiro ---------- */
-const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"]];
+const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"]];
 
 export function ModuloFinanceiro() {
   const [sub, setSub] = useState("premissas");
@@ -122,6 +122,7 @@ export function ModuloFinanceiro() {
       {sub === "antecipacao" && <Antecipacao premissas={premissas} setPremissas={setPremissas} cf={cf} />}
       {sub === "comparativo" && <Comparativo premissas={premissas} cf={cf} />}
       {sub === "sensibilidade" && <Sensibilidade premissas={premissas} />}
+      {sub === "resultado" && <Resultado premissas={premissas} />}
     </div>
   );
 }
@@ -275,6 +276,135 @@ function Sensibilidade({ premissas }) {
       <Card title="Sensibilidade bidimensional — custo × atraso de medição (pior saldo)">
         <table style={{ borderCollapse: "collapse" }}><thead><tr><Th>Custo ↓ / Atraso →</Th>{atrasos.map((h) => <Th key={h} right>{pct(h, 0)}</Th>)}</tr></thead>
           <tbody>{mults.map((cm, i) => <tr key={cm}><Td>{lbl(cm)}</Td>{atrasos.map((h, j) => <Td key={j} right style={{ background: heat(grid[i][j].piorSaldo), minWidth: 110 }} color={grid[i][j].piorSaldo >= 0 ? C.verde : C.preto}>{fmt(grid[i][j].piorSaldo)}</Td>)}</tr>)}</tbody></table>
+      </Card>
+    </div>
+  );
+}
+
+/* ================================================================
+   RESULTADO — projetado × realizado por obra
+   Valor total (venda EAP) − impostos − custo (meta projetada / realizado efetivo)
+   ================================================================ */
+// replica a lógica de meta/realizado do módulo operacional (mantém consistência)
+function metaItemFin(e) {
+  const csb = Number(e.custo_sem_bdi);
+  if (e.meta_valor != null) return Number(e.meta_valor) * (Number(e.qtde) || 0);
+  if (csb && e.meta_pct != null) return csb * (1 - (Number(e.desconto) || 0)) * (Number(e.meta_pct) || 0) * (Number(e.qtde) || 0);
+  return Number(e.valor_total) || 0;
+}
+function realizadoPorItemFin(ocs, contratos, obraId) {
+  const m = {};
+  const add = (cod, val) => { const c = String(cod || "").split(" ")[0].trim(); if (!c) return; m[c] = (m[c] || 0) + (Number(val) || 0); };
+  ocs.filter((o) => o.obra_id === obraId).forEach((o) => { if (Array.isArray(o.itens_eap) && o.itens_eap.length) o.itens_eap.forEach((x) => add(x.eap_codigo, x.valor)); else add(o.eap_codigo, o.valor); });
+  contratos.filter((c) => c.obra_id === obraId).forEach((c) => {
+    if (Array.isArray(c.itens_eap) && c.itens_eap.length) { if (c.tipo === "direto") { const v = (Number(c.custo_mensal) || 0) * (Number(c.meses) || 0); const n = c.itens_eap.length || 1; c.itens_eap.forEach((x) => add(x.eap_codigo, v / n)); } else c.itens_eap.forEach((x) => add(x.eap_codigo, x.valor)); }
+    else add(c.escopo_eap, c.valor);
+  });
+  return m;
+}
+
+function Resultado({ premissas }) {
+  const [dados, setDados] = useState(null);
+  const [matrizes, setMatrizes] = useState({}); // { obraId: {iss:1,...} }
+  const [salvo, setSalvo] = useState(false);
+
+  useEffect(() => { (async () => {
+    const obras = await listar("obras");
+    const eap = {}, ocs = [], contratos = await listar("contratos_servico"), todasOcs = await listar("ordens_compra");
+    await Promise.all(obras.map(async (o) => { eap[o.id] = await listar("eap_itens", { obra_id: o.id }); }));
+    const mtz = (await getFin("matrizes_resultado")) || {};
+    setMatrizes(mtz);
+    setDados({ obras, eap, contratos, ocs: todasOcs });
+  })(); }, []);
+
+  const salvarMatrizes = async (nova) => { setMatrizes(nova); await setFin("matrizes_resultado", nova).catch(() => {}); setSalvo(true); setTimeout(() => setSalvo(false), 1500); };
+  const toggleImposto = (obraId, k) => { const atual = matrizes[obraId] || { ...MATRIZ_PADRAO }; salvarMatrizes({ ...matrizes, [obraId]: { ...atual, [k]: atual[k] ? 0 : 1 } }); };
+  const retencaoObra = (obraId) => { const mtz = matrizes[obraId] || MATRIZ_PADRAO; return IMPOSTOS_DEF.reduce((s, [k]) => s + (mtz[k] ? (premissas.impostos[k] || 0) : 0), 0); };
+
+  if (!dados) return <div style={{ color: C.dim, padding: 20 }}>Carregando obras e custos…</div>;
+
+  const linhas = dados.obras.map((o) => {
+    const itens = dados.eap[o.id] || [];
+    const real = realizadoPorItemFin(dados.ocs, dados.contratos, o.id);
+    const valorTotal = sum(itens.map((e) => Number(e.valor_total) || 0)); // venda EAP (c/ BDI e desconto)
+    const ret = retencaoObra(o.id);
+    const impostos = valorTotal * ret;
+    const metaTotal = sum(itens.map((e) => metaItemFin(e)));
+    // realizado: para itens COM realizado lançado usa o custo real; para os SEM, usa a meta
+    let custoRealizadoMix = 0;
+    itens.forEach((e) => { const rl = real[e.codigo] || 0; custoRealizadoMix += rl > 0 ? rl : metaItemFin(e); });
+    const custoRealEfetivo = sum(itens.map((e) => real[e.codigo] || 0));
+    const projetado = valorTotal - impostos - metaTotal;
+    const realizado = valorTotal - impostos - custoRealizadoMix;
+    return { o, valorTotal, ret, impostos, metaTotal, custoRealEfetivo, custoRealizadoMix, projetado, realizado,
+      margemProj: valorTotal ? projetado / valorTotal : 0, margemReal: valorTotal ? realizado / valorTotal : 0 };
+  });
+  const tot = (k) => sum(linhas.map((l) => l[k]));
+  const chk = (on) => ({ width: 15, height: 15, borderRadius: 3, cursor: "pointer", display: "inline-block", background: on ? C.laranja : C.cinza2, border: `1px solid ${on ? C.laranja : C.linha}` });
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Kpi dark label="Resultado projetado — empresa" value={fmtR(tot("projetado"))} accent={tot("projetado") >= 0 ? C.laranja : C.vermelho} sub="valor − impostos − meta de custo" />
+        <Kpi label="Resultado realizado — empresa" value={fmtR(tot("realizado"))} accent={tot("realizado") >= 0 ? C.verde : C.vermelho} sub="custo real nos itens executados" />
+        <Kpi label="Valor total contratado" value={fmtR(tot("valorTotal"))} />
+        <Kpi label="Impostos totais" value={fmtR(tot("impostos"))} accent={C.dim} />
+      </div>
+
+      <Card title="Matriz de retenção por obra — selecione os impostos que incidem" right={salvo && <span style={{ color: C.verde, fontSize: 12, fontWeight: 700 }}>salvo</span>}>
+        <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>Clique para marcar/desmarcar cada imposto. As alíquotas vêm da aba Premissas. A retenção define a medição líquida de cada projeto.</div>
+        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><Th>Obra</Th>{IMPOSTOS_DEF.map(([k, n]) => <Th key={k} right>{n}</Th>)}<Th right>% Retenção</Th></tr></thead>
+          <tbody>{dados.obras.map((o) => { const mtz = matrizes[o.id] || MATRIZ_PADRAO; return (
+            <tr key={o.id}><Td style={{ fontWeight: 600 }}>{o.codigo}</Td>
+              {IMPOSTOS_DEF.map(([k]) => <Td key={k} right><span style={chk(mtz[k])} onClick={() => toggleImposto(o.id, k)} /></Td>)}
+              <Td right color={C.laranja} style={{ fontWeight: 700 }}>{pct(retencaoObra(o.id), 2)}</Td></tr>
+          ); })}</tbody>
+        </table></div>
+      </Card>
+
+      <Card title="Resultado por obra — projetado × realizado">
+        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><Th>Obra</Th><Th right>Valor total</Th><Th right>% Ret.</Th><Th right>Impostos</Th><Th right>Meta custo</Th><Th right>Realizado (efetivo)</Th><Th right>Result. Projetado</Th><Th right>Margem proj.</Th><Th right>Result. Realizado</Th><Th right>Margem real.</Th></tr></thead>
+          <tbody>{linhas.map((l) => (
+            <tr key={l.o.id}>
+              <Td style={{ fontWeight: 600 }}>{l.o.codigo}</Td>
+              <Td right>{fmt(l.valorTotal)}</Td>
+              <Td right color={C.dim}>{pct(l.ret, 1)}</Td>
+              <Td right color={C.dim}>{fmt(l.impostos)}</Td>
+              <Td right>{fmt(l.metaTotal)}</Td>
+              <Td right color={C.azul}>{fmt(l.custoRealEfetivo)}</Td>
+              <Td right color={l.projetado >= 0 ? C.preto : C.vermelho} style={{ fontWeight: 700 }}>{fmt(l.projetado)}</Td>
+              <Td right color={l.margemProj >= 0 ? C.laranja : C.vermelho}>{pct(l.margemProj)}</Td>
+              <Td right color={l.realizado >= 0 ? C.verde : C.vermelho} style={{ fontWeight: 700 }}>{fmt(l.realizado)}</Td>
+              <Td right color={l.margemReal >= 0 ? C.verde : C.vermelho}>{pct(l.margemReal)}</Td>
+            </tr>
+          ))}
+            <tr style={{ background: C.preto }}>
+              <Td style={{ color: "#fff", fontWeight: 800 }}>TOTAL</Td>
+              <Td right style={{ color: "#fff", fontWeight: 800 }}>{fmt(tot("valorTotal"))}</Td><Td />
+              <Td right style={{ color: "#fff", fontWeight: 700 }}>{fmt(tot("impostos"))}</Td>
+              <Td right style={{ color: "#fff", fontWeight: 700 }}>{fmt(tot("metaTotal"))}</Td>
+              <Td right style={{ color: "#fff", fontWeight: 700 }}>{fmt(tot("custoRealEfetivo"))}</Td>
+              <Td right style={{ color: C.laranja, fontWeight: 800 }}>{fmt(tot("projetado"))}</Td><Td />
+              <Td right style={{ color: C.verde, fontWeight: 800 }}>{fmt(tot("realizado"))}</Td><Td />
+            </tr>
+          </tbody>
+        </table></div>
+        <div style={{ fontSize: 11, color: C.dim, marginTop: 10 }}>
+          <b>Projetado</b> = Valor total − impostos − meta de custo (todos os itens). <b>Realizado</b> = Valor total − impostos − [custo real dos itens já executados/comprados/contratados + meta dos itens ainda não realizados]. À medida que OC-i, OS-i e RDO-i alimentam o realizado, o resultado realizado converge do projetado para o efetivo.
+        </div>
+      </Card>
+
+      <Card title="Projetado × Realizado por obra">
+        <ResponsiveContainer width="100%" height={Math.max(180, linhas.length * 54)}>
+          <BarChart data={linhas.map((l) => ({ nome: l.o.codigo, Projetado: l.projetado, Realizado: l.realizado }))} layout="vertical" margin={{ left: 8, right: 16 }}>
+            <CartesianGrid stroke={C.linha} strokeDasharray="2 4" horizontal={false} />
+            <XAxis type="number" tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} /><YAxis type="category" dataKey="nome" width={120} tick={{ fill: C.dim, fontSize: 11 }} />
+            <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} /><ReferenceLine x={0} stroke={C.vermelho} />
+            <Bar dataKey="Projetado" fill={C.laranja} radius={[0, 3, 3, 0]} /><Bar dataKey="Realizado" fill={C.verde} radius={[0, 3, 3, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
       </Card>
     </div>
   );

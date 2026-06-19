@@ -1,5 +1,18 @@
 # Miriad Construction Control (MCC)
 
+## Novidades da v3.4
+- **Linha de totais** na tabela de EAP & Custos: soma de Custo total, Meta total e
+  Realizado ao pé da tabela (colunas de valor unitário não são somadas, por não fazer sentido).
+- **Editar obra** (aba Obras do Operacional): botão ✎ Editar para ajustar código, nome,
+  contratante, contrato, local e prazo — útil para aplicar os códigos-padrão da empresa.
+- **Resultado** (nova aba do Financeiro): resultado **projetado × realizado** por obra.
+  - Projetado = Valor total (venda da EAP) − impostos − meta de custo de todos os itens.
+  - Realizado = Valor total − impostos − [custo real dos itens já comprados/executados/
+    contratados + meta dos itens ainda não realizados]. Alimentado por RDO-i, OS-i e OC-i.
+  - **Matriz de retenção selecionável por obra** (define a medição líquida); alíquotas vêm
+    das Premissas. Inclui consolidado da empresa e gráfico projetado × realizado.
+
+
 ## Correção v3.3 — extração da EAP, meta unitária e Supervisor Residente
 - **Valores exorbitantes corrigidos**: a planilha SINAPI/SECID tem colunas repetidas
   (custo unitário e custo total ambos com "MATERIAL/MÃO DE OBRA"), e a IA confundia a
