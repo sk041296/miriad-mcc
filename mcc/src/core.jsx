@@ -71,10 +71,11 @@ export const apiAuth = (body) => fetch("/api/auth", { method: "POST", headers: {
 export const listar = (t, params = {}) => req(`/api/data?t=${t}&` + new URLSearchParams(params)).then((d) => d.rows || []);
 export const criar = (t, row) => req("/api/data", { method: "POST", body: JSON.stringify({ t, row }) }).then((d) => d.row);
 export const criarObraComEap = (obra, itens) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "obra_com_eap", obra, itens }) });
-export const criarRdoCompleto = (rdo, restricoes) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rdo_completo", rdo, restricoes }) }).then((d) => d.row);
+export const criarRdoCompleto = (rdo, restricoes, rdo_id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rdo_completo", rdo, restricoes, rdo_id }) }).then((d) => d.row);
 export const editar = (t, id, patch) => req("/api/data", { method: "PATCH", body: JSON.stringify({ t, id, patch }) });
 export const remover = (t, id) => req("/api/data", { method: "DELETE", body: JSON.stringify({ t, id }) });
 export const parseEapApi = (linhas, nomeObra) => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ linhas, nomeObra }) }).then((d) => d.eap);
+export const diagnosticarEap = () => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ diagnostico: true }) });
 export const getFin = (chave) => req(`/api/data?t=financeiro_estado&chave=${chave}`).then((d) => d.valor);
 export const setFin = (chave, valor) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "financeiro_estado", chave, valor }) });
 export const aplicarDesconto = (obra_id, desconto) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "eap_aplicar_desconto", obra_id, desconto }) });

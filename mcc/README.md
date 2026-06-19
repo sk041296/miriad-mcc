@@ -1,5 +1,24 @@
 # Miriad Construction Control (MCC)
 
+## Novidades da v3
+- **Edição de RDO**: na lista "RDOs registrados", o botão **Editar** carrega o relatório no
+  formulário (atividades, equipe, fotos e restrições); salvar grava por cima do mesmo registro.
+- **Legenda no PDF**: a legenda de cada foto aparece em destaque no PDF do cliente, com o
+  código da EAP como rótulo secundário (antes saía só o número da EAP).
+- **Upload de EAP robusto** (corrige a falha "Não foi possível identificar a EAP"):
+  - o serviço agora **tenta vários modelos** e **recupera JSON truncado** de planilhas grandes;
+  - mensagens de erro passam a indicar a **causa real** (chave, modelo, truncamento, formato);
+  - botão **Executar diagnóstico** na aba Obras: mostra se a chave está configurada e
+    **lista os modelos disponíveis na sua conta** da Anthropic.
+
+### Se o upload da EAP falhar
+1. Na aba **Operacional → Obras**, tente o upload; se falhar, clique em **Executar diagnóstico**.
+2. Veja o nome de um modelo válido na linha "Modelos disponíveis na sua conta".
+3. No **Vercel → Settings → Environment Variables**, defina/ajuste **`ANTHROPIC_MODEL`** com esse
+   nome exato e faça **Redeploy**. (A causa mais comum da falha é o `ANTHROPIC_MODEL` antigo
+   apontar para um modelo que não existe mais na API.)
+
+
 > **Atualização v2 (em produção):** antes de subir o novo código, rode a migração do banco.
 > No Supabase → SQL Editor, execute **uma vez** o arquivo `supabase/migration_v2.sql`.
 > Ele preserva todos os dados já existentes (ALTER TABLE idempotente), cria as colunas de

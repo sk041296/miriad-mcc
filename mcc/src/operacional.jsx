@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import {
   C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, CLIMAS, ATRIBUICOES, VINCULOS,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
-  listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi,
+  listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, diagnosticarEap,
   aplicarDesconto, definirMeta, uploadFoto,
 } from "./core.jsx";
 import { gerarPdfRdo } from "./pdf.js";
@@ -44,7 +44,7 @@ export function ModuloOperacional({ usuario }) {
           <button key={id} onClick={() => setSub(id)} style={{ background: sub === id ? C.preto : C.branco, color: sub === id ? "#fff" : C.dim, border: `1px solid ${sub === id ? C.preto : C.linha}`, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
         ))}
       </div>
-      {sub === "rdo" && <RdoI usuario={usuario} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
+      {sub === "rdo" && <RdoI usuario={usuario} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} restricoes={restricoes} onMudou={carregar} />}
       {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} onMudou={carregar} />}
       {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} onMudou={carregar} />}
       {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
@@ -103,16 +103,36 @@ function MultiEapPicker({ itens, valor = [], onChange, comValor = true, labelVal
 }
 
 const DRAFT = "mcc_rdo_draft_v1";
-function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, onMudou }) {
+function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restricoes = [], onMudou }) {
   const novaAtv = () => ({ k: uid(), eapId: "", qtde: 0, comentarios: "", funcionarioIds: [] });
   const novaRestr = () => ({ k: uid(), eapId: "", material: "", dataSolicitacao: hojeISO() });
   const vazio = (obraId) => ({ obraId: obraId || obras[0]?.id || "", numero: "", data: hojeISO(), clima: CLIMAS[0], efetivo: 0, ocorrencias: "", comentarios: "", atividades: [novaAtv()], equipe: [], restricoes: [], fotos: [] });
   const [form, setForm] = useState(() => { try { const d = JSON.parse(localStorage.getItem(DRAFT)); if (d?.atividades) return { fotos: [], ...d }; } catch {} return vazio(); });
   const [salvando, setSalvando] = useState(false); const [msg, setMsg] = useState(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
+  const [editandoId, setEditandoId] = useState(null);
   const fotoRef = useRef(null);
+  const topoRef = useRef(null);
 
-  useEffect(() => { localStorage.setItem(DRAFT, JSON.stringify(form)); }, [form]);
+  // carrega um RDO existente no formulário para edição (reconstrói a partir do payload + atividades salvas)
+  const editarRdo = (r) => {
+    const itensObra = eapPorObra[r.obra_id] || [];
+    const acharId = (cod) => itensObra.find((i) => i.codigo === cod)?.id || "";
+    const atividades = (r.atividades || []).map((a) => ({
+      k: uid(), eapId: acharId(a.eap), qtde: Number(a.qtde_dia ?? a.avanco) || 0, comentarios: a.comentarios || "",
+      funcionarioIds: (a.funcionarios || []).map((fn) => funcionarios.find((f) => f.nome === fn.nome)?.id).filter(Boolean),
+    }));
+    const restrDoRdo = restricoes.filter((x) => x.rdo_id === r.id);
+    const restricoesForm = restrDoRdo.map((x) => ({ k: uid(), eapId: acharId(x.eap_codigo), material: x.material, dataSolicitacao: x.data_solicitacao || hojeISO() }));
+    setForm({ obraId: r.obra_id, numero: r.numero || "", data: (r.data || "").slice(0, 10), clima: r.clima || CLIMAS[0],
+      efetivo: r.efetivo || 0, ocorrencias: r.ocorrencias || "", comentarios: r.comentarios || "",
+      atividades: atividades.length ? atividades : [novaAtv()], equipe: r.equipe || [], restricoes: restricoesForm, fotos: r.fotos || [] });
+    setEditandoId(r.id); setMsg(null);
+    topoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+  const cancelarEdicao = () => { setEditandoId(null); setForm(vazio(form.obraId)); localStorage.removeItem(DRAFT); };
+
+  useEffect(() => { if (!editandoId) localStorage.setItem(DRAFT, JSON.stringify(form)); }, [form, editandoId]);
   const obra = obras.find((o) => o.id === form.obraId);
   const eapItens = eapPorObra[form.obraId] || [];
   const semEap = form.obraId && eapItens.length === 0;
@@ -159,16 +179,19 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, onMud
         fotos: (form.fotos || []).map((f) => ({ url: f.url, path: f.path, eap_codigo: f.eap_codigo, legenda: f.legenda })),
         payload: { ...form, salvoEm: new Date().toISOString() } };
       const restricoes = form.restricoes.filter((x) => x.eapId && x.material).map((x) => { const it = eapItens.find((i) => i.id === x.eapId); return { eap_codigo: it?.codigo || "", material: x.material, data_solicitacao: x.dataSolicitacao || null }; });
-      await criarRdoCompleto(rdo, restricoes);
+      await criarRdoCompleto(rdo, restricoes, editandoId || undefined);
       localStorage.removeItem(DRAFT); setForm(vazio(form.obraId));
-      setMsg({ tipo: "ok", txt: "RDO registrado no banco." }); onMudou();
+      setMsg({ tipo: "ok", txt: editandoId ? "RDO atualizado." : "RDO registrado no banco." }); setEditandoId(null); onMudou();
     } catch (e) { setMsg({ tipo: "erro", txt: `Falha ao salvar: ${e.message}. Rascunho preservado neste aparelho.` }); }
     finally { setSalvando(false); }
   };
 
   return (
-    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card title={`RDO-i · Relatório Diário Inteligente — ${dataBR(form.data)}`} right={msg && <span style={{ color: msg.tipo === "ok" ? C.verde : C.vermelho, fontSize: 13, fontWeight: 700 }}>{msg.txt}</span>}>
+    <div ref={topoRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card title={`${editandoId ? "✎ Editando RDO" : "RDO-i · Relatório Diário Inteligente"} — ${dataBR(form.data)}`} right={<div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        {editandoId && <Btn small kind="ghost" onClick={cancelarEdicao}>Cancelar edição</Btn>}
+        {msg && <span style={{ color: msg.tipo === "ok" ? C.verde : C.vermelho, fontSize: 13, fontWeight: 700 }}>{msg.txt}</span>}
+      </div>}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
           <div><Lbl>Obra</Lbl><select value={form.obraId} onChange={(e) => setForm({ ...form, obraId: e.target.value, atividades: [novaAtv()], restricoes: [] })} style={inp({ width: "100%" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
           <div><Lbl>Relatório nº</Lbl><input value={form.numero} onChange={(e) => setForm({ ...form, numero: e.target.value })} placeholder="00371" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
@@ -269,7 +292,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, onMud
             <div style={{ fontSize: 13, color: C.dim }}>Efetivo: <b style={{ color: C.preto }}>{efetivoCalc}</b></div>
             <div style={{ fontSize: 13, color: C.dim }}>Medição do RDO: <b style={{ color: C.verde, fontSize: 17 }}>{fmtR(medicaoRdo)}</b></div>
             <div style={{ flex: 1 }} />
-            <Btn onClick={salvar} disabled={salvando}>{salvando ? "Salvando…" : "Registrar RDO-i"}</Btn>
+            <Btn onClick={salvar} disabled={salvando}>{salvando ? "Salvando…" : editandoId ? "Salvar alterações" : "Registrar RDO-i"}</Btn>
           </div>
         </>}
         <div style={{ fontSize: 11, color: C.dim, marginTop: 10 }}>Rascunho salvo automaticamente neste aparelho; ao registrar, o snapshot completo vai ao banco para recuperação.</div>
@@ -277,11 +300,14 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, onMud
 
       <Card title="RDOs registrados">
         <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Nº</Th><Th>Obra</Th><Th>Data</Th><Th>Clima</Th><Th right>Efetivo</Th><Th right>Atividades</Th><Th right>Medição</Th><Th>PDF</Th><Th /></tr></thead>
+          <thead><tr><Th>Nº</Th><Th>Obra</Th><Th>Data</Th><Th>Clima</Th><Th right>Efetivo</Th><Th right>Atividades</Th><Th right>Medição</Th><Th>Ações</Th><Th /></tr></thead>
           <tbody>{rdos.slice().sort((a, b) => (a.data < b.data ? 1 : -1)).map((r) => { const o = obras.find((x) => x.id === r.obra_id); return (
-            <tr key={r.id}><Td>{r.numero || "—"}</Td><Td>{o?.codigo}</Td><Td>{dataBR(r.data)}</Td><Td>{r.clima}</Td><Td right>{r.efetivo || 0}</Td><Td right>{(r.atividades || []).length}</Td>
+            <tr key={r.id} style={editandoId === r.id ? { background: C.laranjaClaro } : {}}><Td>{r.numero || "—"}</Td><Td>{o?.codigo}</Td><Td>{dataBR(r.data)}</Td><Td>{r.clima}</Td><Td right>{r.efetivo || 0}</Td><Td right>{(r.atividades || []).length}</Td>
               <Td right color={C.verde} style={{ fontWeight: 700 }}>{fmtR(sum((r.atividades || []).map((a) => a.medicao)))}</Td>
-              <Td><button onClick={() => gerarPdfRdo(r, o || {}, r.responsavel_nome)} style={{ background: "none", border: `1px solid ${C.laranja}`, color: C.laranja, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>PDF timbrado</button></Td>
+              <Td><div style={{ display: "flex", gap: 6 }}>
+                <button onClick={() => editarRdo(r)} style={{ background: "none", border: `1px solid ${C.preto}`, color: C.preto, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Editar</button>
+                <button onClick={() => gerarPdfRdo(r, o || {}, r.responsavel_nome)} style={{ background: "none", border: `1px solid ${C.laranja}`, color: C.laranja, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>PDF</button>
+              </div></Td>
               <Td><button onClick={async () => { if (confirm("Excluir RDO?")) { await remover("rdos", r.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>
           ); })}
           {rdos.length === 0 && <tr><Td colSpan={9} color={C.dim} style={{ padding: 14 }}>Nenhum RDO registrado.</Td></tr>}</tbody>
@@ -673,15 +699,21 @@ function DashboardConsolidado({ obras, eapPorObra, ocs, contratos, rdos }) {
 function Obras({ obras, eapPorObra, onMudou }) {
   const fileRef = useRef(null);
   const [lendo, setLendo] = useState(false); const [erro, setErro] = useState(null); const [preview, setPreview] = useState(null);
+  const [diag, setDiag] = useState(null); const [diagLoad, setDiagLoad] = useState(false);
+  const rodarDiagnostico = async () => {
+    setDiagLoad(true); setDiag(null);
+    try { setDiag(await diagnosticarEap()); } catch (e) { setDiag({ erro: e.message }); } finally { setDiagLoad(false); }
+  };
   const lerPlanilha = async (file) => {
     setLendo(true); setErro(null);
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); const linhas = [];
       wb.SheetNames.forEach((sn) => { linhas.push(`### ABA: ${sn}`); XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" }).slice(0, 800).forEach((r) => { const l = r.map((c) => String(c ?? "").trim()).join(" | ").trim(); if (l.replace(/\|/g, "").trim()) linhas.push(l); }); });
       const nomeBase = file.name.replace(/\.(xlsx|xls|csv)$/i, "").replace(/[_-]+/g, " ");
+      if (linhas.length < 2) { setErro("A planilha parece vazia ou em formato não suportado. Salve como .xlsx e tente novamente."); setLendo(false); return; }
       const eap = await parseEapApi(linhas.join("\n").slice(0, 150000), nomeBase);
       setPreview({ nome: eap.nomeObra || nomeBase, codigo: eap.codigoSugerido || nomeBase.slice(0, 12).toUpperCase(), desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0, itens: (eap.itens || []).map((it, i) => ({ ...it, ordem: i + 1 })) });
-    } catch (e) { setErro(`Não foi possível interpretar: ${e.message}`); } finally { setLendo(false); }
+    } catch (e) { setErro(e.message); } finally { setLendo(false); }
   };
   const confirmar = async () => {
     setLendo(true);
@@ -712,7 +744,20 @@ function Obras({ obras, eapPorObra, onMudou }) {
       <Card title="Obras — upload da EAP analítica (obrigatória antes do RDO)" right={<Btn small onClick={() => fileRef.current?.click()} disabled={lendo}>{lendo ? "Interpretando…" : "⇪ Upload planilha orçamentária"}</Btn>}>
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) lerPlanilha(f); e.target.value = ""; }} />
         <div style={{ fontSize: 13, color: C.dim }}>A IA identifica os itens da EAP (código, descrição, unidade, quantidade, valores) e classifica cada um como interno/externo para a projeção de término por clima. Revise antes de salvar.</div>
-        {erro && <div style={{ color: C.vermelho, fontSize: 13, marginTop: 10 }}>{erro}</div>}
+        {erro && <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: "10px 12px", color: C.vermelho, fontSize: 13, marginTop: 10 }}>
+          <b>Falha no upload:</b> {erro}
+          <div style={{ marginTop: 8 }}><Btn small kind="ghost" onClick={rodarDiagnostico} disabled={diagLoad}>{diagLoad ? "Verificando…" : "Executar diagnóstico"}</Btn></div>
+        </div>}
+        {diag && <div style={{ background: C.cinza, border: `1px solid ${C.linha}`, borderRadius: 8, padding: "10px 12px", marginTop: 10, fontSize: 12 }}>
+          <b style={{ fontSize: 12 }}>Diagnóstico do serviço de IA</b>
+          {diag.erro ? <div style={{ color: C.vermelho, marginTop: 4 }}>Erro ao diagnosticar: {diag.erro}</div> : <div style={{ marginTop: 6, lineHeight: 1.7 }}>
+            <div>Chave da Anthropic configurada: <b style={{ color: diag.temChave ? C.verde : C.vermelho }}>{diag.temChave ? "sim" : "NÃO — configure ANTHROPIC_API_KEY no Vercel"}</b></div>
+            <div>Modelo configurado (ANTHROPIC_MODEL): <b>{diag.modeloConfigurado}</b></div>
+            {diag.erroLista && <div style={{ color: C.vermelho }}>Erro ao listar modelos: {diag.erroLista}</div>}
+            {diag.modelosDisponiveis && <div>Modelos disponíveis na sua conta: <b style={{ color: C.preto }}>{diag.modelosDisponiveis.join(", ")}</b>
+              <div style={{ color: C.dim, marginTop: 4 }}>Defina <code>ANTHROPIC_MODEL</code> no Vercel com um destes nomes (recomendado: o sonnet mais recente da lista) e refaça o deploy.</div></div>}
+          </div>}
+        </div>}
         {preview && (
           <div style={{ marginTop: 14, border: `2px solid ${C.laranja}`, borderRadius: 10, padding: 14 }}>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>

@@ -100,9 +100,19 @@ export default async function handler(req, res) {
 
     // RDO + restrições de material (restrições nunca vão ao PDF do cliente)
     if (t === "rdo_completo") {
-      const { rdo, restricoes } = req.body;
-      const { data: r, error } = await supabase.from("rdos").insert(rdo).select().single();
-      if (error) return res.status(500).json({ error: error.message });
+      const { rdo, restricoes, rdo_id } = req.body;
+      let r;
+      if (rdo_id) {
+        // edição: atualiza o RDO e substitui as restrições vinculadas
+        const { data, error } = await supabase.from("rdos").update(rdo).eq("id", rdo_id).select().single();
+        if (error) return res.status(500).json({ error: error.message });
+        r = data;
+        await supabase.from("restricoes_material").delete().eq("rdo_id", rdo_id);
+      } else {
+        const { data, error } = await supabase.from("rdos").insert(rdo).select().single();
+        if (error) return res.status(500).json({ error: error.message });
+        r = data;
+      }
       if (Array.isArray(restricoes) && restricoes.length) {
         await supabase.from("restricoes_material").insert(restricoes.map((x) => ({ ...x, rdo_id: r.id, obra_id: rdo.obra_id })));
       }
