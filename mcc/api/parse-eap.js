@@ -33,7 +33,7 @@ export default async function handler(req, res) {
   if (!linhas) return res.status(400).json({ error: "Conteúdo da planilha ausente" });
   if (!process.env.ANTHROPIC_API_KEY) return res.status(500).json({ error: "ANTHROPIC_API_KEY não configurada no servidor (Vercel → Settings → Environment Variables)" });
 
-  const conteudo = String(linhas).slice(0, 120000);
+  const conteudo = String(linhas).slice(0, 70000);
   const prompt = `Conteúdo textual de uma planilha orçamentária analítica de obra (colunas separadas por " | ").
 Extraia a Estrutura Analítica do Projeto (EAP): itens com código/numeração, descrição, UNIDADE DE MEDIDA (m, m2, m3, un, kg, vb, % etc.), quantidade, CUSTO UNITÁRIO SEM BDI, BDI (se houver, fracionário) e valor total.
 Para cada item, classifique "ambiente" como "externo" se a atividade ocorre em área exposta ao tempo (cobertura, telhado, drenagem, pavimentação, pintura externa, fachada, muro, terraplenagem, impermeabilização externa, calçada) ou "interno" caso contrário.
@@ -44,7 +44,9 @@ Obra de referência: ${nomeObra || "(derivar)"}.
 PLANILHA:
 ${conteudo}`;
 
-  const modelos = process.env.ANTHROPIC_MODEL ? [process.env.ANTHROPIC_MODEL, ...MODELOS_FALLBACK] : MODELOS_FALLBACK;
+  // se ANTHROPIC_MODEL está definido, usa SÓ ele (evita cascata lenta que estoura o tempo do Vercel);
+  // só cai para os fallbacks se o modelo configurado não existir.
+  const modelos = process.env.ANTHROPIC_MODEL ? [process.env.ANTHROPIC_MODEL] : MODELOS_FALLBACK;
   let ultimoErro = "";
 
   for (const modelo of modelos) {
@@ -52,14 +54,17 @@ ${conteudo}`;
       const resp = await fetch("https://api.anthropic.com/v1/messages", {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-api-key": process.env.ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01" },
-        body: JSON.stringify({ model: modelo, max_tokens: 16000, messages: [{ role: "user", content: prompt }] }),
+        body: JSON.stringify({ model: modelo, max_tokens: 8000, messages: [{ role: "user", content: prompt }] }),
       });
       const data = await resp.json();
       if (!resp.ok) {
         ultimoErro = data?.error?.message || `HTTP ${resp.status}`;
-        // se o modelo não existe, tenta o próximo; outros erros (auth) param já
-        if (/model/i.test(ultimoErro) && /not.*found|does not exist|invalid/i.test(ultimoErro)) continue;
-        if (/authentication|api[_ ]?key|x-api-key|401/i.test(ultimoErro)) return res.status(502).json({ error: `Erro de autenticação na API da Anthropic: ${ultimoErro}. Verifique ANTHROPIC_API_KEY no Vercel.` });
+        if (/model/i.test(ultimoErro) && /not.*found|does not exist|invalid/i.test(ultimoErro)) {
+          // modelo configurado inválido: tenta os fallbacks
+          for (const fb of MODELOS_FALLBACK) { if (fb !== modelo) modelos.push(fb); }
+          continue;
+        }
+        if (/authentication|api[_ ]?key|x-api-key|401|invalid header/i.test(ultimoErro)) return res.status(502).json({ error: `Erro de autenticação na API da Anthropic: ${ultimoErro}. Verifique se ANTHROPIC_API_KEY contém apenas a chave (sk-ant-...), sem texto extra.` });
         continue;
       }
       const stop = data.stop_reason;

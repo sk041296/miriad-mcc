@@ -1,1 +1,8 @@
-{ "buildCommand": "", "outputDirectory": "." }
+{
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "functions": {
+    "api/parse-eap.js": { "maxDuration": 60 },
+    "api/upload.js": { "maxDuration": 30 }
+  }
+}

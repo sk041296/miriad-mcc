@@ -1,5 +1,16 @@
 # Miriad Construction Control (MCC)
 
+## Correção v3.1 — upload de EAP (erro 504 / timeout)
+- A planilha agora é **pré-filtrada no navegador** antes de ir à IA: enviamos só as linhas
+  que são itens da EAP (código 1, 1.1, 2.3…) mais o cabeçalho, reduzindo o conteúdo em ~75%.
+  Isso elimina o timeout em planilhas grandes (ex.: 1000+ linhas).
+- `max_tokens` reduzido e, com `ANTHROPIC_MODEL` definido, a função não testa mais vários
+  modelos em cascata (era o que estourava o tempo). `vercel.json` fixa `maxDuration` de 60s
+  para `api/parse-eap`.
+- **Importante:** defina `ANTHROPIC_MODEL = claude-sonnet-4-6` no Vercel (confirmado como
+  modelo válido da sua conta pelo diagnóstico) e garanta que `ANTHROPIC_API_KEY` contém
+  **apenas a chave `sk-ant-...`**, sem texto/comando em volta.
+
 ## Novidades da v3
 - **Edição de RDO**: na lista "RDOs registrados", o botão **Editar** carrega o relatório no
   formulário (atividades, equipe, fotos e restrições); salvar grava por cima do mesmo registro.

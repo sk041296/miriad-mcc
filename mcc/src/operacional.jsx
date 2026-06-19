@@ -707,11 +707,30 @@ function Obras({ obras, eapPorObra, onMudou }) {
   const lerPlanilha = async (file) => {
     setLendo(true); setErro(null);
     try {
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" }); const linhas = [];
-      wb.SheetNames.forEach((sn) => { linhas.push(`### ABA: ${sn}`); XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" }).slice(0, 800).forEach((r) => { const l = r.map((c) => String(c ?? "").trim()).join(" | ").trim(); if (l.replace(/\|/g, "").trim()) linhas.push(l); }); });
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      // monta linhas e PRÉ-FILTRA para reduzir o payload (planilhas grandes causavam timeout):
+      // mantém o cabeçalho/topo (contexto) + linhas que parecem itens da EAP (começam com código tipo 1, 1.1, 2.3.4)
+      const todas = [];
+      wb.SheetNames.forEach((sn) => {
+        todas.push(`### ABA: ${sn}`);
+        XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" }).forEach((r) => {
+          const cels = r.map((c) => String(c ?? "").trim());
+          const l = cels.join(" | ").trim();
+          if (l.replace(/\|/g, "").trim()) todas.push({ l, c0: cels[0] || "" });
+        });
+      });
+      const ehItem = (c0) => /^\d+(\.\d+)*\.?$/.test(c0.replace(",", "."));
+      const idxAbas = todas.map((x, i) => (typeof x === "string" ? i : -1)).filter((i) => i >= 0);
+      const relevantes = [];
+      todas.forEach((x, i) => {
+        if (typeof x === "string") { relevantes.push(x); return; }
+        const ehTopo = idxAbas.some((ai) => i > ai && i <= ai + 9); // ~9 linhas de contexto após cada cabeçalho de aba
+        if (ehItem(x.c0) || ehTopo) relevantes.push(x.l);
+      });
       const nomeBase = file.name.replace(/\.(xlsx|xls|csv)$/i, "").replace(/[_-]+/g, " ");
-      if (linhas.length < 2) { setErro("A planilha parece vazia ou em formato não suportado. Salve como .xlsx e tente novamente."); setLendo(false); return; }
-      const eap = await parseEapApi(linhas.join("\n").slice(0, 150000), nomeBase);
+      const itensDetectados = todas.filter((x) => typeof x !== "string" && ehItem(x.c0)).length;
+      if (itensDetectados < 1) { setErro("Não encontrei itens com numeração (1, 1.1, 2.3…) na planilha. Confirme que é a planilha analítica/sintética com a coluna ITEM e tente novamente."); setLendo(false); return; }
+      const eap = await parseEapApi(relevantes.join("\n").slice(0, 80000), nomeBase);
       setPreview({ nome: eap.nomeObra || nomeBase, codigo: eap.codigoSugerido || nomeBase.slice(0, 12).toUpperCase(), desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0, itens: (eap.itens || []).map((it, i) => ({ ...it, ordem: i + 1 })) });
     } catch (e) { setErro(e.message); } finally { setLendo(false); }
   };
