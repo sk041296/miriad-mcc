@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## Correção v3.2 — upload de EAP em LOTES (plano Vercel Hobby)
+No plano Hobby do Vercel toda função tem teto fixo de **10 segundos**, e gerar uma EAP
+inteira numa só chamada estourava esse limite (erro 504). Agora o upload processa a
+planilha **em lotes de ~20 itens**: o navegador faz várias chamadas curtas ao
+`/api/parse-eap` (cada uma bem abaixo de 10s) e junta o resultado, com **barra de
+progresso**. Uma planilha de ~100 itens vira ~6 chamadas rápidas. Não precisa plano pago.
+
 ## Correção v3.1 — upload de EAP (erro 504 / timeout)
 - A planilha agora é **pré-filtrada no navegador** antes de ir à IA: enviamos só as linhas
   que são itens da EAP (código 1, 1.1, 2.3…) mais o cabeçalho, reduzindo o conteúdo em ~75%.

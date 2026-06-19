@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import {
   C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, CLIMAS, ATRIBUICOES, VINCULOS,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
-  listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, diagnosticarEap,
+  listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap,
   aplicarDesconto, definirMeta, uploadFoto,
 } from "./core.jsx";
 import { gerarPdfRdo } from "./pdf.js";
@@ -699,40 +699,56 @@ function DashboardConsolidado({ obras, eapPorObra, ocs, contratos, rdos }) {
 function Obras({ obras, eapPorObra, onMudou }) {
   const fileRef = useRef(null);
   const [lendo, setLendo] = useState(false); const [erro, setErro] = useState(null); const [preview, setPreview] = useState(null);
+  const [progresso, setProgresso] = useState(null);
   const [diag, setDiag] = useState(null); const [diagLoad, setDiagLoad] = useState(false);
   const rodarDiagnostico = async () => {
     setDiagLoad(true); setDiag(null);
     try { setDiag(await diagnosticarEap()); } catch (e) { setDiag({ erro: e.message }); } finally { setDiagLoad(false); }
   };
   const lerPlanilha = async (file) => {
-    setLendo(true); setErro(null);
+    setLendo(true); setErro(null); setProgresso(null);
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      // monta linhas e PRÉ-FILTRA para reduzir o payload (planilhas grandes causavam timeout):
-      // mantém o cabeçalho/topo (contexto) + linhas que parecem itens da EAP (começam com código tipo 1, 1.1, 2.3.4)
-      const todas = [];
+      // extrai linhas e separa: contexto de topo (p/ nome/código da obra) + linhas de item da EAP
+      const linhasItem = []; const topo = [];
+      const ehItem = (c0) => /^\d+(\.\d+)*\.?$/.test(String(c0).replace(",", ".").trim());
       wb.SheetNames.forEach((sn) => {
-        todas.push(`### ABA: ${sn}`);
-        XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" }).forEach((r) => {
+        const grade = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
+        let n = 0;
+        grade.forEach((r) => {
           const cels = r.map((c) => String(c ?? "").trim());
           const l = cels.join(" | ").trim();
-          if (l.replace(/\|/g, "").trim()) todas.push({ l, c0: cels[0] || "" });
+          if (!l.replace(/\|/g, "").trim()) return;
+          n++;
+          if (n <= 10) topo.push(l);                       // topo p/ identificar a obra
+          if (ehItem(cels[0])) linhasItem.push(l);          // linhas de item da EAP
         });
       });
-      const ehItem = (c0) => /^\d+(\.\d+)*\.?$/.test(c0.replace(",", "."));
-      const idxAbas = todas.map((x, i) => (typeof x === "string" ? i : -1)).filter((i) => i >= 0);
-      const relevantes = [];
-      todas.forEach((x, i) => {
-        if (typeof x === "string") { relevantes.push(x); return; }
-        const ehTopo = idxAbas.some((ai) => i > ai && i <= ai + 9); // ~9 linhas de contexto após cada cabeçalho de aba
-        if (ehItem(x.c0) || ehTopo) relevantes.push(x.l);
-      });
       const nomeBase = file.name.replace(/\.(xlsx|xls|csv)$/i, "").replace(/[_-]+/g, " ");
-      const itensDetectados = todas.filter((x) => typeof x !== "string" && ehItem(x.c0)).length;
-      if (itensDetectados < 1) { setErro("Não encontrei itens com numeração (1, 1.1, 2.3…) na planilha. Confirme que é a planilha analítica/sintética com a coluna ITEM e tente novamente."); setLendo(false); return; }
-      const eap = await parseEapApi(relevantes.join("\n").slice(0, 80000), nomeBase);
-      setPreview({ nome: eap.nomeObra || nomeBase, codigo: eap.codigoSugerido || nomeBase.slice(0, 12).toUpperCase(), desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0, itens: (eap.itens || []).map((it, i) => ({ ...it, ordem: i + 1 })) });
-    } catch (e) { setErro(e.message); } finally { setLendo(false); }
+      if (linhasItem.length === 0) { setErro("Não encontrei itens com numeração (1, 1.1, 2.3…). Confirme que é a planilha analítica/sintética com a coluna ITEM."); setLendo(false); return; }
+
+      // identifica nome/código da obra a partir do topo (chamada curta e barata)
+      let nomeObra = nomeBase, codigoSugerido = nomeBase.slice(0, 12).toUpperCase();
+      try {
+        const meta = await parseEapApi(topo.join("\n"), nomeBase); // topo pequeno → rápido
+        if (meta?.nomeObra) nomeObra = meta.nomeObra;
+        if (meta?.codigoSugerido) codigoSugerido = meta.codigoSugerido;
+      } catch { /* se falhar, usa o nome do arquivo */ }
+
+      // processa os itens em LOTES pequenos (cada chamada < 10s, cabe no plano Hobby)
+      const TAM = 20;
+      const lotes = [];
+      for (let i = 0; i < linhasItem.length; i += TAM) lotes.push(linhasItem.slice(i, i + TAM));
+      const todos = [];
+      for (let i = 0; i < lotes.length; i++) {
+        setProgresso({ atual: i + 1, total: lotes.length, itens: todos.length });
+        const itens = await parseEapLote(lotes[i].join("\n"));
+        todos.push(...itens);
+      }
+      setProgresso(null);
+      if (todos.length === 0) { setErro("Os lotes não retornaram itens. Tente novamente ou use o diagnóstico."); setLendo(false); return; }
+      setPreview({ nome: nomeObra, codigo: codigoSugerido, desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0, itens: todos.map((it, i) => ({ ...it, ordem: i + 1 })) });
+    } catch (e) { setErro(e.message); setProgresso(null); } finally { setLendo(false); }
   };
   const confirmar = async () => {
     setLendo(true);
@@ -760,7 +776,11 @@ function Obras({ obras, eapPorObra, onMudou }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card title="Obras — upload da EAP analítica (obrigatória antes do RDO)" right={<Btn small onClick={() => fileRef.current?.click()} disabled={lendo}>{lendo ? "Interpretando…" : "⇪ Upload planilha orçamentária"}</Btn>}>
+      <Card title="Obras — upload da EAP analítica (obrigatória antes do RDO)" right={<Btn small onClick={() => fileRef.current?.click()} disabled={lendo}>{lendo ? (progresso ? `Lote ${progresso.atual}/${progresso.total}…` : "Lendo…") : "⇪ Upload planilha orçamentária"}</Btn>}>
+        {progresso && <div style={{ marginBottom: 12 }}>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 4 }}>Interpretando a planilha em lotes — {progresso.itens} itens até agora ({progresso.atual} de {progresso.total} lotes)</div>
+          <div style={{ height: 8, background: C.cinza2, borderRadius: 4, overflow: "hidden" }}><div style={{ width: `${(progresso.atual / progresso.total) * 100}%`, height: "100%", background: C.laranja, transition: "width .2s" }} /></div>
+        </div>}
         <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" style={{ display: "none" }} onChange={(e) => { const f = e.target.files?.[0]; if (f) lerPlanilha(f); e.target.value = ""; }} />
         <div style={{ fontSize: 13, color: C.dim }}>A IA identifica os itens da EAP (código, descrição, unidade, quantidade, valores) e classifica cada um como interno/externo para a projeção de término por clima. Revise antes de salvar.</div>
         {erro && <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: "10px 12px", color: C.vermelho, fontSize: 13, marginTop: 10 }}>

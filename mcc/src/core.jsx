@@ -75,6 +75,7 @@ export const criarRdoCompleto = (rdo, restricoes, rdo_id) => req("/api/data", { 
 export const editar = (t, id, patch) => req("/api/data", { method: "PATCH", body: JSON.stringify({ t, id, patch }) });
 export const remover = (t, id) => req("/api/data", { method: "DELETE", body: JSON.stringify({ t, id }) });
 export const parseEapApi = (linhas, nomeObra) => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ linhas, nomeObra }) }).then((d) => d.eap);
+export const parseEapLote = (linhas) => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ linhas, lote: true }) }).then((d) => d.itens || []);
 export const diagnosticarEap = () => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ diagnostico: true }) });
 export const getFin = (chave) => req(`/api/data?t=financeiro_estado&chave=${chave}`).then((d) => d.valor);
 export const setFin = (chave, valor) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "financeiro_estado", chave, valor }) });
