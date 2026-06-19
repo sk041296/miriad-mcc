@@ -12,7 +12,8 @@ create table if not exists usuarios (
   nome text not null,
   email text unique not null,
   senha_hash text not null,                 -- sha-256 (hash no servidor)
-  papel text not null default 'supervisor', -- 'gestor' | 'supervisor'
+  papel text not null default 'supervisor', -- 'gestor' | 'supervisor' | 'residente'
+  obra_id uuid references obras(id) on delete set null,  -- obra designada (papel 'residente')
   ativo boolean not null default true,
   criado_em timestamptz not null default now()
 );

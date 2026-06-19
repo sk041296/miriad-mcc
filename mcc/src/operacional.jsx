@@ -526,11 +526,14 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
     const meta = metaItem(e);
     const ex = exec[e.codigo] || 0;
     const avFis = e.qtde ? Math.min(ex / e.qtde, 1) : 0;
+    const custoUnitDesc = (Number(e.custo_sem_bdi) || 0) * (1 - (Number(e.desconto) || 0)); // unitário s/BDI já com desconto
+    const custoTotalDesc = custoUnitDesc * (Number(e.qtde) || 0);                            // base total p/ comparar com a meta
+    const metaUnit = e.qtde ? meta / Number(e.qtde) : (e.meta_valor != null ? Number(e.meta_valor) : (custoUnitDesc * (Number(e.meta_pct) || 0))); // meta por unidade
     const metaProporcional = meta * avFis;        // meta esperada para o que já foi executado
     const desvio = metaProporcional - real;        // > 0 = abaixo da meta (bom)
     const idc = meta ? real / meta : 0;            // % da meta total já gasto
     const cpi = real > 0 ? metaProporcional / real : null; // >=1 dentro da meta
-    return { ...e, real, meta, ex, avFis, metaProporcional, desvio, idc, cpi };
+    return { ...e, real, meta, ex, avFis, custoUnitDesc, custoTotalDesc, metaUnit, metaProporcional, desvio, idc, cpi };
   });
   const rows = linhas.filter((e) => !busca || norm(`${e.codigo} ${e.descricao}`).includes(norm(busca)));
 
@@ -584,17 +587,21 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
         </ModalMini>}
 
         {!verDash && <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>EAP</Th><Th>Atividade</Th><Th>Unid.</Th><Th right>Custo s/BDI</Th><Th right>Meta %</Th><Th right>Meta (R$)</Th><Th right>Realizado</Th><Th right>Avanço</Th><Th right>CPI</Th><Th /></tr></thead>
+          <thead><tr><Th>EAP</Th><Th>Atividade</Th><Th>Unid.</Th><Th right>Qtde</Th><Th right>Custo unit.</Th><Th right>Meta unit.</Th><Th right>Custo total</Th><Th right>Meta %</Th><Th right>Meta total</Th><Th right>Realizado</Th><Th right>Avanço</Th><Th right>CPI</Th><Th /></tr></thead>
           <tbody>{rows.map((r) => <tr key={r.id}>
-            <Td>{r.codigo}</Td><Td style={{ fontSize: 12 }}>{r.descricao.length > 44 ? r.descricao.slice(0, 44) + "…" : r.descricao}</Td>
-            <Td><b style={{ color: C.laranja }}>{r.unidade}</b></Td><Td right>{r.custo_sem_bdi != null ? fmt(r.custo_sem_bdi) : "—"}</Td>
+            <Td>{r.codigo}</Td><Td style={{ fontSize: 12 }}>{r.descricao.length > 36 ? r.descricao.slice(0, 36) + "…" : r.descricao}</Td>
+            <Td><b style={{ color: C.laranja }}>{r.unidade}</b></Td>
+            <Td right>{fmt(r.qtde)}</Td>
+            <Td right>{r.custoUnitDesc ? fmt(r.custoUnitDesc) : "—"}</Td>
+            <Td right color={C.verde} style={{ fontWeight: 600 }}>{r.metaUnit ? fmt(r.metaUnit) : "—"}</Td>
+            <Td right style={{ fontWeight: 600 }}>{r.custoTotalDesc ? fmt(r.custoTotalDesc) : "—"}</Td>
             <Td right color={r.meta_pct != null ? C.preto : C.dim}>{r.meta_pct != null ? pct(r.meta_pct, 0) : "—"}</Td>
-            <Td right>{fmt(r.meta)}</Td><Td right color={r.real > r.meta ? C.vermelho : C.texto}>{fmt(r.real)}</Td>
+            <Td right color={r.meta > r.custoTotalDesc ? C.vermelho : C.preto}>{fmt(r.meta)}</Td><Td right color={r.real > r.meta ? C.vermelho : C.texto}>{fmt(r.real)}</Td>
             <Td right color={C.azul}>{pct(r.avFis, 0)}</Td>
             <Td right color={r.cpi === null ? C.dim : r.cpi >= 1 ? C.verde : C.vermelho} style={{ fontWeight: 700 }}>{r.cpi === null ? "—" : r.cpi.toFixed(2)}</Td>
             <Td><button onClick={() => { setMetaItemId(r.id); setMetaItemPct(r.meta_pct || 0.85); }} title="Meta específica" style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 5, padding: "2px 8px", fontSize: 11, cursor: "pointer", color: C.dim }}>◎</button></Td>
           </tr>)}
-            {rows.length === 0 && <tr><Td colSpan={10} color={C.dim} style={{ padding: 14 }}>{itens.length === 0 ? "Faça o upload da EAP desta obra (aba Obras)." : "Nenhum item encontrado."}</Td></tr>}</tbody>
+            {rows.length === 0 && <tr><Td colSpan={13} color={C.dim} style={{ padding: 14 }}>{itens.length === 0 ? "Faça o upload da EAP desta obra (aba Obras)." : "Nenhum item encontrado."}</Td></tr>}</tbody>
         </table></div>}
 
         {verDash && <DashboardMeta linhas={linhas} obra={obra} totMeta={totMeta} totReal={totReal} totMetaProp={totMetaProp} cpiGlobal={cpiGlobal} />}
@@ -709,44 +716,80 @@ function Obras({ obras, eapPorObra, onMudou }) {
     setLendo(true); setErro(null); setProgresso(null);
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      // extrai linhas e separa: contexto de topo (p/ nome/código da obra) + linhas de item da EAP
-      const linhasItem = []; const topo = [];
-      const ehItem = (c0) => /^\d+(\.\d+)*\.?$/.test(String(c0).replace(",", ".").trim());
-      wb.SheetNames.forEach((sn) => {
+      const norm = (s) => String(s ?? "").trim().toUpperCase();
+      const ehItem = (c0) => /^\d+(\.\d+)+\.?$/.test(String(c0).replace(",", ".").trim());
+      const numBR = (v) => { if (v === null || v === undefined || v === "" || v === "-") return 0; const n = typeof v === "number" ? v : parseFloat(String(v).replace(/\./g, "").replace(",", ".")); return isNaN(n) ? 0 : n; };
+
+      let itensBrutos = []; const topo = [];
+      let achouCabecalho = false;
+      for (const sn of wb.SheetNames) {
         const grade = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
-        let n = 0;
-        grade.forEach((r) => {
-          const cels = r.map((c) => String(c ?? "").trim());
-          const l = cels.join(" | ").trim();
-          if (!l.replace(/\|/g, "").trim()) return;
-          n++;
-          if (n <= 10) topo.push(l);                       // topo p/ identificar a obra
-          if (ehItem(cels[0])) linhasItem.push(l);          // linhas de item da EAP
-        });
-      });
-      const nomeBase = file.name.replace(/\.(xlsx|xls|csv)$/i, "").replace(/[_-]+/g, " ");
-      if (linhasItem.length === 0) { setErro("Não encontrei itens com numeração (1, 1.1, 2.3…). Confirme que é a planilha analítica/sintética com a coluna ITEM."); setLendo(false); return; }
+        // localizar cabeçalho padrão (ITEM + DESCRIÇÃO + QUANTIDADE + CUSTO)
+        let hdr = -1, col = {};
+        for (let i = 0; i < Math.min(grade.length, 20); i++) {
+          const cs = grade[i].map(norm);
+          if (cs.includes("ITEM") && cs.some((c) => c.includes("DESCRI"))) {
+            hdr = i;
+            cs.forEach((c, j) => {
+              if (c === "ITEM" && col.item == null) col.item = j;
+              else if (c.includes("DESCRI") && col.desc == null) col.desc = j;
+              else if ((c.includes("UNIDADE") || c === "UND" || c === "UN") && col.unid == null) col.unid = j;
+              else if (c.includes("QUANTI") && c.includes("DADE") && col.qtde == null) col.qtde = j;
+              else if (c.includes("CUSTO UNIT") && col.cu == null) col.cu = j;
+              else if (c.includes("CUSTO TOTAL") && col.ct == null) col.ct = j;
+            });
+            break;
+          }
+        }
+        // topo p/ identificar a obra
+        grade.slice(0, hdr >= 0 ? hdr + 1 : 10).forEach((r) => { const l = r.map((c) => String(c ?? "").trim()).join(" | ").trim(); if (l.replace(/\|/g, "").trim()) topo.push(l); });
 
-      // identifica nome/código da obra a partir do topo (chamada curta e barata)
-      let nomeObra = nomeBase, codigoSugerido = nomeBase.slice(0, 12).toUpperCase();
-      try {
-        const meta = await parseEapApi(topo.join("\n"), nomeBase); // topo pequeno → rápido
-        if (meta?.nomeObra) nomeObra = meta.nomeObra;
-        if (meta?.codigoSugerido) codigoSugerido = meta.codigoSugerido;
-      } catch { /* se falhar, usa o nome do arquivo */ }
-
-      // processa os itens em LOTES pequenos (cada chamada < 10s, cabe no plano Hobby)
-      const TAM = 20;
-      const lotes = [];
-      for (let i = 0; i < linhasItem.length; i += TAM) lotes.push(linhasItem.slice(i, i + TAM));
-      const todos = [];
-      for (let i = 0; i < lotes.length; i++) {
-        setProgresso({ atual: i + 1, total: lotes.length, itens: todos.length });
-        const itens = await parseEapLote(lotes[i].join("\n"));
-        todos.push(...itens);
+        if (hdr >= 0 && col.item != null && col.qtde != null && col.cu != null) {
+          achouCabecalho = true;
+          for (let i = hdr + 1; i < grade.length; i++) {
+            const r = grade[i]; const c0 = String(r[col.item] ?? "").trim();
+            if (!ehItem(c0)) continue;
+            const qt = numBR(r[col.qtde]); const cu = numBR(r[col.cu]);
+            const ct = col.ct != null ? numBR(r[col.ct]) : cu * qt;
+            const desc = String(r[col.desc] ?? "").trim();
+            const unid = String(r[col.unid] ?? "").trim() || "un";
+            if (!desc || qt <= 0) continue;
+            itensBrutos.push({ codigo: c0, descricao: desc, unidade: unid, qtde: qt, custoSemBdi: cu, custoTotal: ct, bdi: 0 });
+          }
+        }
       }
+
+      const nomeBase = file.name.replace(/\.(xlsx|xls|csv)$/i, "").replace(/[_-]+/g, " ");
+
+      // identificar nome/código da obra (chamada curta à IA; se falhar, usa nome do arquivo)
+      let nomeObra = nomeBase, codigoSugerido = nomeBase.slice(0, 12).toUpperCase();
+      try { const meta = await parseEapApi(topo.join("\n"), nomeBase); if (meta?.nomeObra) nomeObra = meta.nomeObra; if (meta?.codigoSugerido) codigoSugerido = meta.codigoSugerido; } catch {}
+
+      if (achouCabecalho && itensBrutos.length > 0) {
+        // classificar ambiente (interno/externo) em lotes — só classificação, valores já estão certos
+        const TAM = 40;
+        for (let i = 0; i < itensBrutos.length; i += TAM) {
+          setProgresso({ atual: Math.floor(i / TAM) + 1, total: Math.ceil(itensBrutos.length / TAM), itens: i });
+          const bloco = itensBrutos.slice(i, i + TAM);
+          try {
+            const classif = await parseEapLote(bloco.map((it) => `${it.codigo} | ${it.descricao}`).join("\n"));
+            bloco.forEach((it) => { const m = (classif || []).find((c) => String(c.codigo) === it.codigo); it.ambiente = m?.ambiente === "externo" ? "externo" : "interno"; });
+          } catch { bloco.forEach((it) => { it.ambiente = "interno"; }); }
+        }
+        setProgresso(null);
+        setPreview({ nome: nomeObra, codigo: codigoSugerido, desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0,
+          itens: itensBrutos.map((it, i) => ({ ...it, valorTotal: it.custoTotal, ordem: i + 1 })) });
+        return;
+      }
+
+      // fallback: planilha sem cabeçalho padrão → IA por lote (como antes)
+      const linhasItem = [];
+      wb.SheetNames.forEach((sn) => { XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" }).forEach((r) => { const cels = r.map((c) => String(c ?? "").trim()); if (ehItem(cels[0])) linhasItem.push(cels.join(" | ")); }); });
+      if (linhasItem.length === 0) { setErro("Não encontrei itens com numeração (1.1, 2.3…) nem o cabeçalho padrão (ITEM/DESCRIÇÃO/QUANTIDADE/CUSTO). Confirme que é a planilha analítica/sintética."); setLendo(false); return; }
+      const TAM = 20; const todos = [];
+      for (let i = 0; i < linhasItem.length; i += TAM) { setProgresso({ atual: Math.floor(i / TAM) + 1, total: Math.ceil(linhasItem.length / TAM), itens: todos.length }); todos.push(...await parseEapLote(linhasItem.slice(i, i + TAM).join("\n"))); }
       setProgresso(null);
-      if (todos.length === 0) { setErro("Os lotes não retornaram itens. Tente novamente ou use o diagnóstico."); setLendo(false); return; }
+      if (!todos.length) { setErro("Os lotes não retornaram itens."); setLendo(false); return; }
       setPreview({ nome: nomeObra, codigo: codigoSugerido, desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0, itens: todos.map((it, i) => ({ ...it, ordem: i + 1 })) });
     } catch (e) { setErro(e.message); setProgresso(null); } finally { setLendo(false); }
   };

@@ -12,7 +12,7 @@ export function hashSenha(senha) {
   return crypto.createHash("sha256").update(senha + SECRET).digest("hex");
 }
 export function emitirToken(usuario) {
-  const payload = b64({ id: usuario.id, nome: usuario.nome, email: usuario.email, papel: usuario.papel,
+  const payload = b64({ id: usuario.id, nome: usuario.nome, email: usuario.email, papel: usuario.papel, obra_id: usuario.obra_id || null,
     exp: Date.now() + 1000 * 60 * 60 * 12 }); // 12h
   return `${payload}.${sign(payload)}`;
 }

@@ -8,7 +8,7 @@ export default async function handler(req, res) {
   if (acao === "login") {
     const { data: u } = await supabase.from("usuarios").select("*").eq("email", String(email || "").toLowerCase()).eq("ativo", true).maybeSingle();
     if (!u || u.senha_hash !== hashSenha(senha || "")) return res.status(401).json({ error: "E-mail ou senha inválidos" });
-    return res.status(200).json({ token: emitirToken(u), usuario: { nome: u.nome, email: u.email, papel: u.papel } });
+    return res.status(200).json({ token: emitirToken(u), usuario: { id: u.id, nome: u.nome, email: u.email, papel: u.papel, obra_id: u.obra_id || null } });
   }
 
   if (acao === "bootstrap") {

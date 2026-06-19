@@ -53,22 +53,33 @@ function Login({ onEntrar }) {
 
 /* ---------------- Gestão de usuários (gestor) ---------------- */
 function Usuarios() {
-  const [lista, setLista] = useState([]); const [u, setU] = useState({ nome: "", email: "", senha: "", papel: "supervisor" }); const [busy, setBusy] = useState(false); const [erro, setErro] = useState(null);
-  const carregar = () => listar("usuarios").then(setLista).catch(() => {});
+  const [lista, setLista] = useState([]); const [obras, setObras] = useState([]);
+  const [u, setU] = useState({ nome: "", email: "", senha: "", papel: "supervisor", obra_id: "" });
+  const [busy, setBusy] = useState(false); const [erro, setErro] = useState(null);
+  const carregar = () => { listar("usuarios").then(setLista).catch(() => {}); listar("obras").then(setObras).catch(() => {}); };
   useEffect(() => { carregar(); }, []);
-  const salvar = async () => { setBusy(true); setErro(null); try { const { criar } = await import("./core.jsx"); await criar("usuarios", u); setU({ nome: "", email: "", senha: "", papel: "supervisor" }); carregar(); } catch (e) { setErro(e.message); } finally { setBusy(false); } };
+  const salvar = async () => {
+    setBusy(true); setErro(null);
+    try { const { criar } = await import("./core.jsx"); await criar("usuarios", { ...u, obra_id: u.papel === "residente" ? (u.obra_id || null) : null }); setU({ nome: "", email: "", senha: "", papel: "supervisor", obra_id: "" }); carregar(); }
+    catch (e) { setErro(e.message); } finally { setBusy(false); }
+  };
+  const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
+  const papelLabel = { gestor: "Gestor", supervisor: "Supervisor", residente: "Sup. Residente" };
+  const papelCor = (p) => p === "gestor" ? C.preto : p === "residente" ? C.laranja : C.cinza2;
   return (
     <Card title="Usuários e permissões">
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-        <div style={{ flex: 1, minWidth: 160 }}><Lbl>Nome</Lbl><input value={u.nome} onChange={(e) => setU({ ...u, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-        <div style={{ flex: 1, minWidth: 160 }}><Lbl>E-mail</Lbl><input value={u.email} onChange={(e) => setU({ ...u, email: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-        <div><Lbl>Senha</Lbl><input type="password" value={u.senha} onChange={(e) => setU({ ...u, senha: e.target.value })} style={inp({ width: 130 })} /></div>
-        <div><Lbl>Papel</Lbl><select value={u.papel} onChange={(e) => setU({ ...u, papel: e.target.value })} style={inp()}><option value="supervisor">Supervisor</option><option value="gestor">Gestor</option></select></div>
-        <Btn small disabled={busy || !u.nome || !u.email || !u.senha} onClick={salvar}>+ Criar</Btn>
+        <div style={{ flex: 1, minWidth: 150 }}><Lbl>Nome</Lbl><input value={u.nome} onChange={(e) => setU({ ...u, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+        <div style={{ flex: 1, minWidth: 150 }}><Lbl>E-mail</Lbl><input value={u.email} onChange={(e) => setU({ ...u, email: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+        <div><Lbl>Senha</Lbl><input type="password" value={u.senha} onChange={(e) => setU({ ...u, senha: e.target.value })} style={inp({ width: 120 })} /></div>
+        <div><Lbl>Papel</Lbl><select value={u.papel} onChange={(e) => setU({ ...u, papel: e.target.value })} style={inp()}><option value="supervisor">Supervisor</option><option value="residente">Supervisor Residente</option><option value="gestor">Gestor</option></select></div>
+        {u.papel === "residente" && <div style={{ minWidth: 150 }}><Lbl>Obra designada</Lbl><select value={u.obra_id} onChange={(e) => setU({ ...u, obra_id: e.target.value })} style={inp({ width: "100%" })}><option value="">— selecione —</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>}
+        <Btn small disabled={busy || !u.nome || !u.email || !u.senha || (u.papel === "residente" && !u.obra_id)} onClick={salvar}>+ Criar</Btn>
       </div>
+      {u.papel === "residente" && <div style={{ fontSize: 12, color: C.dim, marginBottom: 10 }}>O Supervisor Residente acessa apenas o módulo Operacional e enxerga somente a obra designada.</div>}
       {erro && <div style={{ color: C.vermelho, fontSize: 12, marginBottom: 8 }}>{erro}</div>}
-      <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Nome", "E-mail", "Papel"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
-        <tbody>{lista.map((x) => <tr key={x.id}><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{x.nome}</td><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}>{x.email}</td><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}><span style={{ background: x.papel === "gestor" ? C.preto : C.cinza2, color: x.papel === "gestor" ? "#fff" : C.dim, borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{x.papel}</span></td></tr>)}</tbody></table>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Nome", "E-mail", "Papel", "Obra"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+        <tbody>{lista.map((x) => <tr key={x.id}><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{x.nome}</td><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}>{x.email}</td><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}><span style={{ background: papelCor(x.papel), color: x.papel === "supervisor" ? C.dim : "#fff", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{papelLabel[x.papel] || x.papel}</span></td><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}>{x.papel === "residente" ? nomeObra(x.obra_id) : "—"}</td></tr>)}</tbody></table>
     </Card>
   );
 }

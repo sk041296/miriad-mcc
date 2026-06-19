@@ -1,5 +1,28 @@
 # Miriad Construction Control (MCC)
 
+## Correção v3.3 — extração da EAP, meta unitária e Supervisor Residente
+- **Valores exorbitantes corrigidos**: a planilha SINAPI/SECID tem colunas repetidas
+  (custo unitário e custo total ambos com "MATERIAL/MÃO DE OBRA"), e a IA confundia a
+  coluna de quantidade com a de mão de obra, gerando metas de milhões. Agora, quando a
+  planilha tem o cabeçalho padrão (ITEM/DESCRIÇÃO/UNIDADE/QUANTIDADE/CUSTO UNITÁRIO/CUSTO
+  TOTAL), os valores são lidos **por posição de coluna** (determinístico, exato), e a IA
+  é usada só para classificar interno/externo e nomear a obra. Conferido na CENSE Londrina:
+  soma bate com o subtotal da planilha (R$ 315.104,13).
+- **Meta unitária**: a tabela de EAP & Custos agora mostra **Custo unit. × Meta unit.**
+  lado a lado (além das bases totais), para o Suprimentos negociar com o preço-alvo por
+  unidade em mãos.
+- **Supervisor Residente** (novo papel): o gestor cria o usuário e designa **uma obra**;
+  esse usuário acessa só o módulo Operacional e enxerga **apenas a sua obra** (filtro
+  aplicado no servidor). Requer a migração `supabase/migration_v3.sql`.
+
+## Correção v3.3 — coluna de meta de custo (apresentação)
+A tabela de EAP & Custos mostrava o **custo unitário** s/BDI ao lado da **meta total**,
+o que fazia a meta parecer maior que o custo. A matemática e os dados no banco sempre
+estiveram corretos — era só a apresentação. Agora a tabela exibe tudo em **base total**
+(Qtde · Custo unit. s/BDI · Custo total s/BDI · Meta % · Meta total · Realizado), de
+forma que a meta aparece corretamente como uma fração do custo total. Nada precisa ser
+reprocessado.
+
 ## Correção v3.2 — upload de EAP em LOTES (plano Vercel Hobby)
 No plano Hobby do Vercel toda função tem teto fixo de **10 segundos**, e gerar uma EAP
 inteira numa só chamada estourava esse limite (erro 504). Agora o upload processa a

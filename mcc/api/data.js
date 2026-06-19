@@ -33,14 +33,20 @@ export default async function handler(req, res) {
     }
   }
 
+  // tabelas que possuem coluna obra_id (para o filtro do Supervisor Residente)
+  const TEM_OBRA_ID = new Set(["obras", "eap_itens", "contratos_servico", "ordens_compra", "funcionarios", "rdos", "restricoes_material"]);
+  const ehResidente = s.papel === "residente" && s.obra_id;
+
   if (req.method === "GET") {
     const t = String(req.query.t || "");
     if (t === "ping") return res.status(200).json({ ok: true, papel: s.papel });
     const cfg = TABELAS[t];
     if (!cfg) return res.status(400).json({ error: "Recurso não permitido" });
     if (SO_GESTOR.has(t) && s.papel !== "gestor") return res.status(403).json({ error: "Acesso restrito a gestores" });
-    let q = supabase.from(t).select(t === "usuarios" ? "id,nome,email,papel,ativo,criado_em" : "*").order(cfg.ordem, { ascending: cfg.asc });
+    let q = supabase.from(t).select(t === "usuarios" ? "id,nome,email,papel,ativo,criado_em,obra_id" : "*").order(cfg.ordem, { ascending: cfg.asc });
     if (cfg.filtro && req.query[cfg.filtro]) q = q.eq(cfg.filtro, req.query[cfg.filtro]);
+    // Supervisor Residente: restringe tudo à sua obra
+    if (ehResidente && TEM_OBRA_ID.has(t)) q = q.eq(t === "obras" ? "id" : "obra_id", s.obra_id);
     const { data, error } = await q.limit(5000);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ rows: data });
