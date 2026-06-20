@@ -1,5 +1,13 @@
 # Miriad Construction Control (MCC)
 
+## v6.2 — Logo oficial da Miriad
+Substituído o logo genérico (cata-vento em SVG) pela **marca oficial da Miriad** em todo o
+sistema: ícone do menu lateral, tela de login e cabeçalho do PDF da Ordem de Compra. Os logos
+ficam embutidos em `src/logo.js` (gerados a partir de `MIRIAD.png`): `LOGO_FULL` (logo
+horizontal completo, usado em fundos claros) e `LOGO_MARK` (só o cata-vento, usado como ícone
+no menu escuro). Os PDFs de RDO e de medição continuam usando o papel timbrado oficial.
+
+
 ## v6.1 — OC-i gera PDF para o fornecedor
 A OC-i agora produz um **PDF de Ordem de Compra** pronto para enviar ao fornecedor, no padrão
 da Miriad. Novidades:

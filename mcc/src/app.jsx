@@ -5,21 +5,11 @@ import {
 import { ModuloFinanceiro } from "./financeiro.jsx";
 import { ModuloOperacional } from "./operacional.jsx";
 import { PainelGeral } from "./painel.jsx";
+import { LOGO_FULL, LOGO_MARK } from "./logo.js";
 
-/* Logo cata-vento Miriad em SVG (cores da marca) */
+/* Marca Miriad (cata-vento real) — usada como ícone no menu */
 function LogoMiriad({ size = 26 }) {
-  return (
-    <svg width={size} height={size} viewBox="0 0 100 100" style={{ flexShrink: 0 }}>
-      <g transform="translate(50,50)">
-        {[0, 90, 180, 270].map((rot) => (
-          <g key={rot} transform={`rotate(${rot})`}>
-            <path d="M0,0 L0,-42 L30,-30 Z" fill={C.vermelho} />
-            <path d="M0,0 L0,-42 L-30,-30 Z" fill={C.laranja} opacity="0.92" transform="rotate(-22)" />
-          </g>
-        ))}
-      </g>
-    </svg>
-  );
+  return <img src={LOGO_MARK} alt="Miriad" width={size} height={size} style={{ flexShrink: 0, objectFit: "contain" }} />;
 }
 
 /* ---------------- Login / bootstrap ---------------- */
@@ -38,8 +28,10 @@ function Login({ onEntrar }) {
   return (
     <div style={{ minHeight: "100vh", background: C.preto, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', system-ui, sans-serif" }}>
       <div style={{ background: C.branco, borderRadius: 16, padding: 36, width: 400, borderTop: `6px solid ${C.laranja}` }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}><LogoMiriad size={34} />
-          <div style={{ fontSize: 21, fontWeight: 900, color: C.preto, lineHeight: 1 }}>Miriad <span style={{ color: C.laranja }}>Construction Control</span></div></div>
+        <div style={{ marginBottom: 6 }}>
+          <img src={LOGO_FULL} alt="Miriad Construtora" style={{ width: 230, maxWidth: "100%", display: "block" }} />
+          <div style={{ fontSize: 14, fontWeight: 800, color: C.laranja, marginTop: 6, letterSpacing: ".02em" }}>Construction Control</div>
+        </div>
         <div style={{ fontSize: 13, color: C.dim, margin: "8px 0 22px" }}>{modo === "bootstrap" ? "Cadastre o primeiro acesso (gestor)." : "Acesse com seu e-mail e senha."}</div>
         {modo === "bootstrap" && <div style={{ marginBottom: 10 }}><Lbl>Nome completo</Lbl><input value={nome} onChange={(e) => setNome(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>}
         <div style={{ marginBottom: 10 }}><Lbl>E-mail</Lbl><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>

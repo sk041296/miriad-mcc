@@ -1,5 +1,6 @@
 import { TIMBRADO_HEADER } from "./timbrado.js";
 import { dataBR, addDiasISO } from "./core.jsx";
+import { LOGO_FULL } from "./logo.js";
 
 /* Geração do PDF do RDO no papel timbrado da Miriad (via janela de impressão do navegador).
    IMPORTANTE: as restrições de material NÃO entram aqui — são internas, não vão ao cliente. */
@@ -208,7 +209,7 @@ export function gerarPdfOC(oc, obra) {
     .empresa { display: flex; gap: 14px; align-items: center; border: 1px solid #c9c9c9; padding: 8px 12px; margin-bottom: 8px; }
     .empresa .nome { font-size: 13px; font-weight: 800; color: #c21000; }
     .empresa .l { font-size: 9.5px; line-height: 1.5; }
-    .logo { width: 64px; height: 64px; flex-shrink: 0; }
+    .logo { width: 165px; height: auto; flex-shrink: 0; }
     .k { background: #f3f3f1; font-weight: 700; width: 22%; }
     .tot td { background: #f37335; color: #fff; font-weight: 800; }
     .legal { font-size: 7.5px; color: #555; line-height: 1.4; margin-top: 8px; text-align: justify; }
@@ -227,9 +228,7 @@ export function gerarPdfOC(oc, obra) {
       </tr></tbody></table>
 
     <div class="empresa">
-      <svg class="logo" viewBox="0 0 100 100"><g transform="translate(50,50)">
-        ${[0, 90, 180, 270].map((r) => `<g transform="rotate(${r})"><path d="M0,0 L0,-42 L30,-30 Z" fill="#c21000"/><path d="M0,0 L0,-42 L-30,-30 Z" fill="#f37335" transform="rotate(-22)"/></g>`).join("")}
-      </g></svg>
+      <img class="logo" src="${LOGO_FULL}" alt="Miriad Construtora" />
       <div class="l">
         <div class="nome">${EMPRESA_OC.nome}</div>
         <div>${EMPRESA_OC.endereco}</div>
