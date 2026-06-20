@@ -327,6 +327,8 @@ function Resultado({ premissas }) {
     const itens = dados.eap[o.id] || [];
     const real = realizadoPorItemFin(dados.ocs, dados.contratos, o.id);
     const valorTotal = sum(itens.map((e) => Number(e.valor_total) || 0)); // venda EAP (c/ BDI e desconto)
+    const valorRef = sum(itens.map((e) => (Number(e.custo_sem_bdi) || 0) * (1 + (Number(e.bdi) || 0)) * (Number(e.qtde) || 0))); // referência s/ desconto (c/ BDI)
+    const desconto = Number(o.desconto) || 0;
     const ret = retencaoObra(o.id);
     const impostos = valorTotal * ret;
     const metaTotal = sum(itens.map((e) => metaItemFin(e)));
@@ -336,7 +338,7 @@ function Resultado({ premissas }) {
     const custoRealEfetivo = sum(itens.map((e) => real[e.codigo] || 0));
     const projetado = valorTotal - impostos - metaTotal;
     const realizado = valorTotal - impostos - custoRealizadoMix;
-    return { o, valorTotal, ret, impostos, metaTotal, custoRealEfetivo, custoRealizadoMix, projetado, realizado,
+    return { o, valorTotal, valorRef, desconto, ret, impostos, metaTotal, custoRealEfetivo, custoRealizadoMix, projetado, realizado,
       margemProj: valorTotal ? projetado / valorTotal : 0, margemReal: valorTotal ? realizado / valorTotal : 0 };
   });
   const tot = (k) => sum(linhas.map((l) => l[k]));
@@ -347,7 +349,8 @@ function Resultado({ premissas }) {
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Kpi dark label="Resultado projetado — empresa" value={fmtR(tot("projetado"))} accent={tot("projetado") >= 0 ? C.laranja : C.vermelho} sub="valor − impostos − meta de custo" />
         <Kpi label="Resultado realizado — empresa" value={fmtR(tot("realizado"))} accent={tot("realizado") >= 0 ? C.verde : C.vermelho} sub="custo real nos itens executados" />
-        <Kpi label="Valor total contratado" value={fmtR(tot("valorTotal"))} />
+        <Kpi label="Valor total contratado" value={fmtR(tot("valorTotal"))} sub="já com desconto da licitação" />
+        <Kpi label="Valor de referência (s/ desconto)" value={fmtR(tot("valorRef"))} sub="antes do desconto da licitação" />
         <Kpi label="Impostos totais" value={fmtR(tot("impostos"))} accent={C.dim} />
       </div>
 
@@ -365,10 +368,12 @@ function Resultado({ premissas }) {
 
       <Card title="Resultado por obra — projetado × realizado">
         <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Obra</Th><Th right>Valor total</Th><Th right>% Ret.</Th><Th right>Impostos</Th><Th right>Meta custo</Th><Th right>Realizado (efetivo)</Th><Th right>Result. Projetado</Th><Th right>Margem proj.</Th><Th right>Result. Realizado</Th><Th right>Margem real.</Th></tr></thead>
+          <thead><tr><Th>Obra</Th><Th right>Valor ref.</Th><Th right>Desc.</Th><Th right>Valor total</Th><Th right>% Ret.</Th><Th right>Impostos</Th><Th right>Meta custo</Th><Th right>Realizado (efetivo)</Th><Th right>Result. Projetado</Th><Th right>Margem proj.</Th><Th right>Result. Realizado</Th><Th right>Margem real.</Th></tr></thead>
           <tbody>{linhas.map((l) => (
             <tr key={l.o.id}>
               <Td style={{ fontWeight: 600 }}>{l.o.codigo}</Td>
+              <Td right color={C.dim}>{fmt(l.valorRef)}</Td>
+              <Td right color={l.desconto ? C.laranja : C.dim} style={{ fontWeight: l.desconto ? 700 : 400 }}>{l.desconto ? pct(l.desconto, 1) : "—"}</Td>
               <Td right>{fmt(l.valorTotal)}</Td>
               <Td right color={C.dim}>{pct(l.ret, 1)}</Td>
               <Td right color={C.dim}>{fmt(l.impostos)}</Td>
@@ -382,6 +387,7 @@ function Resultado({ premissas }) {
           ))}
             <tr style={{ background: C.preto }}>
               <Td style={{ color: "#fff", fontWeight: 800 }}>TOTAL</Td>
+              <Td right style={{ color: "#fff", fontWeight: 800 }}>{fmt(tot("valorRef"))}</Td><Td />
               <Td right style={{ color: "#fff", fontWeight: 800 }}>{fmt(tot("valorTotal"))}</Td><Td />
               <Td right style={{ color: "#fff", fontWeight: 700 }}>{fmt(tot("impostos"))}</Td>
               <Td right style={{ color: "#fff", fontWeight: 700 }}>{fmt(tot("metaTotal"))}</Td>

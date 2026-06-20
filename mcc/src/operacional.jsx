@@ -7,7 +7,7 @@ import {
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap,
   aplicarDesconto, definirMeta, uploadFoto,
 } from "./core.jsx";
-import { gerarPdfRdo } from "./pdf.js";
+import { gerarPdfRdo, gerarPdfMedicao } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
 
 const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
@@ -313,7 +313,72 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
           {rdos.length === 0 && <tr><Td colSpan={9} color={C.dim} style={{ padding: 14 }}>Nenhum RDO registrado.</Td></tr>}</tbody>
         </table>
       </Card>
+
+      <MedicaoGerador obras={obras} eapPorObra={eapPorObra} rdos={rdos} usuarioNome={usuario.nome} />
     </div>
+  );
+}
+
+/* ============================ Gerar Medição (boletim em PDF) ============================ */
+function MedicaoGerador({ obras, eapPorObra, rdos, usuarioNome }) {
+  const [obraId, setObraId] = useState("");
+  const [ini, setIni] = useState("");
+  const [fim, setFim] = useState(hojeISO());
+  const [modo, setModo] = useState("periodo"); // 'periodo' (incremental) | 'acumulada'
+  useEffect(() => { if (!obraId && obras[0]) setObraId(obras[0].id); }, [obras]);
+  const obra = obras.find((o) => o.id === obraId);
+  const itens = eapPorObra[obraId] || [];
+
+  // quantidade executada por código de EAP no critério escolhido
+  const execPorCodigo = useMemo(() => {
+    const m = {};
+    rdos.filter((r) => r.obra_id === obraId).forEach((r) => {
+      const d = String(r.data || "").slice(0, 10);
+      if (!d) return;
+      if (modo === "acumulada") { if (fim && d > fim) return; }
+      else { if (ini && d < ini) return; if (fim && d > fim) return; }
+      (r.atividades || []).forEach((a) => { m[a.eap] = (m[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); });
+    });
+    return m;
+  }, [rdos, obraId, ini, fim, modo]);
+
+  const linhas = useMemo(() => itens.map((e) => {
+    const qtde = Number(e.qtde) || 0;
+    const valorTotal = Number(e.valor_total) || 0;            // c/BDI, líquido de desconto
+    const bdi = Number(e.bdi) || 0;
+    const valorTotalSemBdi = valorTotal / (1 + bdi);
+    const execQtde = Math.max(0, execPorCodigo[e.codigo] || 0);
+    const pctExec = qtde ? Math.min(execQtde / qtde, 1) : 0;
+    return {
+      codigo: e.codigo, descricao: e.descricao, unidade: e.unidade, qtde,
+      valor_total: valorTotal, valorUnit: qtde ? valorTotal / qtde : 0, bdi,
+      execQtde, pctExec, valorComBdi: pctExec * valorTotal, valorSemBdi: pctExec * valorTotalSemBdi,
+    };
+  }), [itens, execPorCodigo]);
+
+  const totalComBdi = sum(linhas.map((l) => l.valorComBdi));
+  const totalSemBdi = sum(linhas.map((l) => l.valorSemBdi));
+  const semItens = obraId && itens.length === 0;
+
+  return (
+    <Card title="Gerar medição — boletim no papel timbrado (PDF)">
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+        <div style={{ minWidth: 150 }}><Lbl>Obra</Lbl><select value={obraId} onChange={(e) => setObraId(e.target.value)} style={inp({ width: "100%" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
+        <div><Lbl>Data inicial</Lbl><input type="date" value={ini} onChange={(e) => setIni(e.target.value)} disabled={modo === "acumulada"} style={inp({ boxSizing: "border-box", opacity: modo === "acumulada" ? 0.5 : 1 })} /></div>
+        <div><Lbl>Data final</Lbl><input type="date" value={fim} onChange={(e) => setFim(e.target.value)} style={inp({ boxSizing: "border-box" })} /></div>
+        <div><Lbl>Critério</Lbl><select value={modo} onChange={(e) => setModo(e.target.value)} style={inp()}>
+          <option value="periodo">Avanço no período (incremental)</option>
+          <option value="acumulada">Acumulada até a data final</option>
+        </select></div>
+        <Btn small disabled={semItens || !obraId} onClick={() => gerarPdfMedicao(obra || {}, linhas, { ini, fim, modo }, usuarioNome)}>⇩ Gerar PDF da medição</Btn>
+      </div>
+      {semItens && <div style={{ fontSize: 12, color: C.vermelho }}>Esta obra não tem EAP carregada. Faça o upload na aba Obras.</div>}
+      {!semItens && obraId && <div style={{ fontSize: 13, color: C.dim }}>
+        Prévia: <b style={{ color: C.verde }}>{fmtR(totalComBdi)}</b> c/BDI · <b style={{ color: C.preto }}>{fmtR(totalSemBdi)}</b> s/BDI ·
+        {" "}{linhas.filter((l) => l.pctExec > 0).length} de {linhas.length} itens com avanço no critério selecionado.
+        {modo === "periodo" ? " O PDF traz a planilha analítica completa com o avanço registrado entre as datas." : " O PDF traz a planilha analítica completa com o avanço acumulado até a data final."}
+      </div>}
+    </Card>
   );
 }
 
@@ -508,7 +573,7 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
   const [busca, setBusca] = useState("");
   const [descModal, setDescModal] = useState(false);
   const [metaModal, setMetaModal] = useState(false);
-  const [descVal, setDescVal] = useState(0.11);
+  const [descVal, setDescVal] = useState(0);
   const [metaVal, setMetaVal] = useState(0.85);
   const [metaItemId, setMetaItemId] = useState(null);
   const [metaItemPct, setMetaItemPct] = useState(0.85);
@@ -558,7 +623,7 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
         <select value={obraId} onChange={(e) => setObraId(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select>
       </div>}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-          <Btn small kind="ghost" onClick={() => { setDescVal(obra?.desconto || 0.11); setDescModal(true); }} disabled={!itens.length}>% Aplicar desconto da licitação</Btn>
+          <Btn small kind="ghost" onClick={() => { setDescVal(obra?.desconto || 0); setDescModal(true); }} disabled={!itens.length}>% Aplicar desconto da licitação</Btn>
           <Btn small onClick={() => { setMetaVal(obra?.meta_pct_padrao && obra.meta_pct_padrao !== 1 ? obra.meta_pct_padrao : 0.85); setMetaModal(true); }} disabled={!itens.length}>◎ Definir meta de custo (global)</Btn>
           <div style={{ flex: 1 }} />
           <Btn small kind={verDash ? "dark" : "ghost"} onClick={() => setVerDash((v) => !v)}>{verDash ? "Ver tabela" : "Ver dashboard"}</Btn>

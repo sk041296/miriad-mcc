@@ -67,3 +67,75 @@ export function gerarPdfRdo(rdo, obra, usuarioNome) {
   if (!w) { alert("Permita pop-ups para gerar o PDF do RDO."); return; }
   w.document.write(html); w.document.close();
 }
+
+/* Geração do PDF de MEDIÇÃO (boletim de medição) no papel timbrado da Miriad.
+   Usa o MESMO cabeçalho do RDO. Mostra a planilha analítica completa (sem as metas de custo),
+   aplicando o percentual executado de cada atividade (a partir dos RDOs do período) e obtendo
+   o valor com BDI de cada item. A última linha traz a somatória da medição COM e SEM BDI. */
+export function gerarPdfMedicao(obra, linhas, periodo, usuarioNome) {
+  const { ini, fim, modo } = periodo || {};
+  const modoLabel = modo === "acumulada" ? "Medição acumulada (até a data final)" : "Medição do período (avanço no intervalo)";
+  const totalComBdi = (linhas || []).reduce((s, l) => s + (Number(l.valorComBdi) || 0), 0);
+  const totalSemBdi = (linhas || []).reduce((s, l) => s + (Number(l.valorSemBdi) || 0), 0);
+  const totalContratoComBdi = (linhas || []).reduce((s, l) => s + (Number(l.valor_total) || 0), 0);
+  const fmtBR = (v) => (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const corpo = (linhas || []).map((l) => `
+    <tr>
+      <td>${l.codigo || ""}</td>
+      <td>${l.descricao || ""}</td>
+      <td style="text-align:center">${l.unidade || ""}</td>
+      <td style="text-align:right">${fmtBR(l.qtde)}</td>
+      <td style="text-align:right">${fmtBR(l.execQtde)}</td>
+      <td style="text-align:right">${((Number(l.pctExec) || 0) * 100).toFixed(1)}%</td>
+      <td style="text-align:right">${fmtBR(l.valorUnit)}</td>
+      <td style="text-align:right">${fmtBR(l.valorSemBdi)}</td>
+      <td style="text-align:right">${fmtBR(l.valorComBdi)}</td>
+    </tr>`).join("");
+
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+  <title>Medição — ${obra.codigo || ""}</title>
+  <style>
+    @page { size: A4 landscape; margin: 12mm 10mm; }
+    * { font-family: Arial, Helvetica, sans-serif; color: #1c1c1c; }
+    body { margin: 0; font-size: 10px; }
+    .header img { width: 100%; max-width: 900px; display: block; margin: 0 auto 6px; }
+    .titulo { text-align: center; font-size: 15px; font-weight: 800; color: #c21000; letter-spacing: .04em; margin: 6px 0 10px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th, td { border: 1px solid #c9c9c9; padding: 3px 6px; font-size: 9.5px; vertical-align: top; }
+    th { background: #141414; color: #fff; text-transform: uppercase; font-size: 8.5px; letter-spacing: .03em; }
+    .infogrid td:nth-child(odd) { background: #f3f3f1; font-weight: 700; width: 14%; }
+    .tot td { background: #f37335; color: #fff; font-weight: 800; font-size: 10.5px; }
+    .tot2 td { background: #141414; color: #fff; font-weight: 800; font-size: 10.5px; }
+    .assin { margin-top: 30px; display: flex; justify-content: space-between; font-size: 11px; }
+    .assin div { width: 45%; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
+  </style></head><body>
+    <div class="header"><img src="${TIMBRADO_HEADER}" alt="Miriad"></div>
+    <div class="titulo">BOLETIM DE MEDIÇÃO — ${obra.codigo || ""}</div>
+    <table class="infogrid">
+      <tr><td>Obra</td><td>${obra.codigo || ""}</td><td>Contratante</td><td colspan="3">${obra.contratante || ""}</td></tr>
+      <tr><td>Local</td><td colspan="3">${obra.local || ""}</td><td>Contrato</td><td>${obra.contrato || ""}</td></tr>
+      <tr><td>Período</td><td>${dataBR(ini)} a ${dataBR(fim)}</td><td>Critério</td><td>${modoLabel}</td><td>Emitido em</td><td>${dataBR(new Date().toISOString())}</td></tr>
+    </table>
+    <table>
+      <thead><tr>
+        <th>EAP</th><th>Descrição</th><th style="text-align:center">Unid.</th>
+        <th style="text-align:right">Qtde contratada</th><th style="text-align:right">Qtde medida</th><th style="text-align:right">% medido</th>
+        <th style="text-align:right">Valor unit. c/BDI</th><th style="text-align:right">Medição s/BDI</th><th style="text-align:right">Medição c/BDI</th>
+      </tr></thead>
+      <tbody>
+        ${corpo || '<tr><td colspan="9">Sem itens na EAP.</td></tr>'}
+        <tr class="tot"><td colspan="7" style="text-align:right">TOTAL DA MEDIÇÃO</td>
+          <td style="text-align:right">${fmtBR(totalSemBdi)}</td><td style="text-align:right">${fmtBR(totalComBdi)}</td></tr>
+        <tr class="tot2"><td colspan="7" style="text-align:right">VALOR TOTAL DO CONTRATO (c/BDI) · % MEDIDO</td>
+          <td style="text-align:right" colspan="2">${fmtBR(totalContratoComBdi)} · ${totalContratoComBdi ? ((totalComBdi / totalContratoComBdi) * 100).toFixed(1) : "0.0"}%</td></tr>
+      </tbody>
+    </table>
+    <div class="assin"><div>Responsável MIRIAD<br>${usuarioNome || ""}</div><div>Responsável CONTRATANTE<br>&nbsp;</div></div>
+    <script>window.onload=()=>{setTimeout(()=>window.print(),350)}</script>
+  </body></html>`;
+
+  const w = window.open("", "_blank");
+  if (!w) { alert("Permita pop-ups para gerar o PDF da medição."); return; }
+  w.document.write(html); w.document.close();
+}

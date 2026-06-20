@@ -9,7 +9,7 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
     const itens = eapPorObra[o.id] || [];
     const rdosObra = rdos.filter((r) => r.obra_id === o.id);
     const medAcum = sum(rdosObra.flatMap((r) => (r.atividades || []).map((a) => Number(a.medicao) || 0)));
-    const contrato = sum(itens.map((i) => Number(i.valor_total) || 0)) * (1 - (o.desconto || 0));
+    const contrato = sum(itens.map((i) => Number(i.valor_total) || 0)); // valor_total já é líquido do desconto da licitação
     const obs = observacoesPorItem(rdosObra.map((r) => ({ ...r, obra_id: o.id })), o.id);
     const ultimoRdo = rdosObra.slice().sort((a, b) => (a.data < b.data ? 1 : -1))[0];
     const climaRef = ultimoRdo?.clima || "Ensolarado";
@@ -23,7 +23,7 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
     const disciplinasAtivas = [...new Set(rdosObra.flatMap((r) => (r.atividades || []).map((a) => (a.descricao || "").split(" ")[0])).filter(Boolean))];
     const equipeUltimo = ultimoRdo?.equipe || [];
     const restAbertas = restricoes.filter((x) => x.obra_id === o.id && !x.resolvida);
-    return { o, itens, medAcum, contrato, perc: contrato ? medAcum / contrato : 0, climaRef, maiorDias,
+    return { o, itens, medAcum, contrato, aFaturar: Math.max(contrato - medAcum, 0), perc: contrato ? medAcum / contrato : 0, climaRef, maiorDias,
       itensAndamento, projItens, ultimoRdo, equipeUltimo, restAbertas, nRdos: rdosObra.length,
       terminoProj: maiorDias > 0 ? dataProjetada(maiorDias) : null };
   });
@@ -34,9 +34,10 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <Kpi dark label="Medição total — obras ativas" value={fmtR(totalMed)} sub={`${obras.length} obras · ${sum(dados.map((d) => d.nRdos))} RDOs`} />
-        <Kpi label="Valor contratado total" value={fmtR(totalContrato)} />
-        <Kpi label="% executado geral" value={totalContrato ? pct(totalMed / totalContrato) : "—"} accent={C.verde} />
+        <Kpi dark label="Valor total dos contratos (à faturar)" value={fmtR(totalContrato)} sub={`${obras.length} obras · ${sum(dados.map((d) => d.nRdos))} RDOs`} />
+        <Kpi label="Executado — reconhecido em RDO" value={fmtR(totalMed)} accent={C.verde} />
+        <Kpi label="Saldo a faturar" value={fmtR(totalContrato - totalMed)} accent={C.laranja} />
+        <Kpi label="% executado geral" value={totalContrato ? pct(totalMed / totalContrato) : "—"} accent={C.azul} />
         <Kpi label="Restrições de material abertas" value={totalRestr} accent={totalRestr > 0 ? C.vermelho : C.verde} sub="impedindo atividades" />
       </div>
 
@@ -53,10 +54,39 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
         </Card>
       )}
 
+      {obras.length > 0 && (
+        <Card title="À faturar × Executado por contrato">
+          <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr><Th>Obra</Th><Th>Contratante</Th><Th right>Valor do contrato</Th><Th right>Executado (RDO)</Th><Th right>Saldo a faturar</Th><Th right>% exec.</Th></tr></thead>
+            <tbody>
+              {dados.map((d) => (
+                <tr key={d.o.id}>
+                  <Td style={{ fontWeight: 600 }}>{d.o.codigo}</Td>
+                  <Td style={{ fontSize: 12, color: C.dim }}>{d.o.contratante || "—"}</Td>
+                  <Td right>{fmtR(d.contrato)}</Td>
+                  <Td right color={C.verde} style={{ fontWeight: 700 }}>{fmtR(d.medAcum)}</Td>
+                  <Td right color={C.laranja} style={{ fontWeight: 700 }}>{fmtR(d.aFaturar)}</Td>
+                  <Td right color={d.perc >= 1 ? C.verde : C.texto}>{pct(d.perc, 0)}</Td>
+                </tr>
+              ))}
+              <tr style={{ background: C.preto }}>
+                <Td colSpan={2} style={{ color: "#fff", fontWeight: 800 }}>TOTAL</Td>
+                <Td right style={{ color: "#fff", fontWeight: 800 }}>{fmtR(totalContrato)}</Td>
+                <Td right style={{ color: C.verde, fontWeight: 800 }}>{fmtR(totalMed)}</Td>
+                <Td right style={{ color: C.laranja, fontWeight: 800 }}>{fmtR(totalContrato - totalMed)}</Td>
+                <Td right style={{ color: "#fff", fontWeight: 800 }}>{totalContrato ? pct(totalMed / totalContrato, 0) : "—"}</Td>
+              </tr>
+            </tbody>
+          </table></div>
+          <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>Valor do contrato = soma da EAP com BDI, já líquida do desconto da licitação. Executado = medição reconhecida nos RDOs. Saldo a faturar = contrato − executado.</div>
+        </Card>
+      )}
+
       {dados.map((d) => (
         <Card key={d.o.id} title={`${d.o.codigo} · ${d.o.nome}`} right={<span style={{ fontSize: 12, color: C.dim }}>{d.o.contratante}</span>}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
             <Kpi label="Execução" value={pct(d.perc)} sub={`${fmtR(d.medAcum)} de ${fmtR(d.contrato)}`} />
+            <Kpi label="Saldo a faturar" value={fmtR(d.aFaturar)} accent={C.laranja} sub={`contrato ${fmtR(d.contrato)}`} />
             <Kpi label="Última condição climática" value={d.climaRef} sub={d.ultimoRdo ? `RDO de ${dataBR(d.ultimoRdo.data)}` : "sem RDO"} />
             <Kpi label="Equipe presente (último RDO)" value={(d.equipeUltimo.length || d.ultimoRdo?.efetivo || 0) + ""} sub={d.equipeUltimo.slice(0, 3).map((m) => m.ocupacao).join(", ") || "—"} />
             <Kpi label="Projeção de término" value={d.terminoProj ? dataBR(d.terminoProj) : "—"} accent={C.azul} sub={d.maiorDias ? `~${d.maiorDias} dias úteis · ${d.itensAndamento} itens em curso` : "sem produtividade suficiente"} />
