@@ -1,5 +1,31 @@
 # Miriad Construction Control (MCC)
 
+## v6 — Controle de RDOs, condição de pagamento na OC-i, custos por obra e medição PDF
+Novidades desta versão:
+1. **Dashboard de controle dos RDOs** (Painel Geral): tabela com o último RDO respondido de
+   cada obra, status do dia (respondido × pendente), há quantos dias foi o último relatório e
+   alerta destacado para obras **sem RDO respondido hoje**. O RDO-i também ganhou um aviso no
+   topo listando as obras pendentes do dia.
+2. **Condição de pagamento na OC-i**: à vista, **entrada + parcelamento** ou **parcelamento puro**.
+   As parcelas são identificadas por **dias após o faturamento** (ex.: 30/60/90) — digite os
+   vencimentos diretamente ou gere por nº de parcelas + 1º vencimento + intervalo. O sistema
+   mostra a prévia das parcelas com valor e data de vencimento.
+3. **Financeiro → Custos por obra** (nova aba): custos lançados por obra, alocados por mês e
+   divididos em **Serviço (OS-i)** e **Material (OC-i)**, com tabela e gráfico empilhado por obra.
+4. **Financeiro → Custos diretos (auto)** (nova aba): tabela no mesmo formato da projeção manual
+   da aba Premissas (obra × mês), porém **abastecida automaticamente** — soma a medição dos
+   serviços (OS-i) do mês com as parcelas de material (OC-i) a pagar naquele mês.
+5. **Gerar medição (PDF)**: boletim no papel timbrado com a medição **acumulada** (ou por
+   período, com data inicial e final), trazendo o avanço por **unidade de medida** e por **%**
+   de cada atividade, e o valor **com e sem BDI**. (No RDO-i, card "Gerar medição".)
+6. **Favicon** de capacete laranja vibrante.
+
+> **Migração de banco:** antes do deploy, rode **uma vez** `supabase/migration_v6.sql` no SQL
+> Editor do Supabase. Ele adiciona `condicao_pagamento` (jsonb) e `data_faturamento` (date) à
+> tabela `ordens_compra`. É idempotente e preserva os dados existentes. OCs antigas sem condição
+> de pagamento são tratadas como "à vista" na data de faturamento.
+
+
 ## v5.3 — importação por MODELO PADRÃO + BDI informado
 Foi criada uma planilha modelo padrão (Planilha_Modelo_MCC.xlsx) com colunas em posição
 fixa, célula de BDI destacada (amarela), coluna L = SUBTOTAL S/BDI e coluna M = CUSTO

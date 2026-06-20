@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import {
   C, fmt, fmtK, fmtR, pct, sum, z8, Card, Btn, Kpi, Th, Td, Lbl, NumInput, ChartTip,
-  getFin, setFin, listar,
+  getFin, setFin, listar, hojeISO, addDiasISO, ymISO,
 } from "./core.jsx";
 
 /* ================================================================
@@ -100,7 +100,7 @@ function autoAnticipate(p) {
 }
 
 /* ---------- Sub-abas do módulo financeiro ---------- */
-const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"]];
+const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"]];
 
 export function ModuloFinanceiro() {
   const [sub, setSub] = useState("premissas");
@@ -123,6 +123,8 @@ export function ModuloFinanceiro() {
       {sub === "comparativo" && <Comparativo premissas={premissas} cf={cf} />}
       {sub === "sensibilidade" && <Sensibilidade premissas={premissas} />}
       {sub === "resultado" && <Resultado premissas={premissas} />}
+      {sub === "custos" && <CustosPorObra />}
+      {sub === "custosdir" && <CustosDiretosAuto />}
     </div>
   );
 }
@@ -411,6 +413,164 @@ function Resultado({ premissas }) {
             <Bar dataKey="Projetado" fill={C.laranja} radius={[0, 3, 3, 0]} /><Bar dataKey="Realizado" fill={C.verde} radius={[0, 3, 3, 0]} />
           </BarChart>
         </ResponsiveContainer>
+      </Card>
+    </div>
+  );
+}
+
+/* ================================================================
+   CUSTOS POR OBRA — alocação mensal: SERVIÇO (OS-i, por medição) × MATERIAL (OC-i, por parcelas)
+   • Serviço (OS-i indireto): valor do item × fração do avanço físico medido (RDO) no mês.
+   • Serviço (OS-i direto): custo mensal alocado aos meses com RDO, até a duração contratada.
+   • Material (OC-i): parcelas da condição de pagamento, no mês do vencimento (faturamento + dias).
+   ================================================================ */
+const MES_ABBR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set", "out", "nov", "dez"];
+function ymLabel(ym) { const [y, m] = String(ym).split("-"); return `${MES_ABBR[Number(m) - 1] || "?"}/${String(y).slice(2)}`; }
+
+function computeCustosObras({ obras, eapPorObra, rdos, ocs, contratos }) {
+  const porObra = {}; const mesesSet = new Set();
+  for (const o of obras) {
+    const itens = eapPorObra[o.id] || [];
+    const qtdeContr = {}; itens.forEach((e) => { qtdeContr[e.codigo] = Number(e.qtde) || 0; });
+    // OS-i: valor de serviço por código de EAP (indiretos) e contratos diretos
+    const osValEap = {}; const diretos = [];
+    contratos.filter((c) => c.obra_id === o.id).forEach((c) => {
+      if (c.tipo === "direto") { diretos.push({ custoMensal: Number(c.custo_mensal) || 0, meses: Number(c.meses) || 0 }); }
+      else {
+        const arr = (Array.isArray(c.itens_eap) && c.itens_eap.length) ? c.itens_eap : (c.escopo_eap ? [{ eap_codigo: c.escopo_eap, valor: c.valor }] : []);
+        arr.forEach((x) => { const cod = String(x.eap_codigo || "").split(" ")[0].trim(); if (cod) osValEap[cod] = (osValEap[cod] || 0) + (Number(x.valor) || 0); });
+      }
+    });
+    // avanço físico (qtde) por código de EAP e por mês — vindo dos RDOs
+    const avancoMes = {}; const mesesRdo = new Set();
+    rdos.filter((r) => r.obra_id === o.id).forEach((r) => {
+      const m = ymISO(r.data); if (!m) return; mesesRdo.add(m);
+      (r.atividades || []).forEach((a) => { const q = Number(a.qtde_dia ?? a.avanco) || 0; if (!q) return; (avancoMes[a.eap] = avancoMes[a.eap] || {})[m] = ((avancoMes[a.eap] || {})[m] || 0) + q; });
+    });
+    const servico = {}, material = {};
+    // serviços indiretos: reconhecidos pela medição do mês
+    Object.entries(avancoMes).forEach(([cod, mm]) => {
+      const val = osValEap[cod] || 0, qc = qtdeContr[cod] || 0; if (!val || !qc) return;
+      Object.entries(mm).forEach(([m, q]) => { const frac = Math.min(q / qc, 1); servico[m] = (servico[m] || 0) + val * frac; mesesSet.add(m); });
+    });
+    // serviços diretos: custo mensal nos meses ativos (com RDO), limitado à duração
+    const mesesAtivos = [...mesesRdo].sort();
+    diretos.forEach((d) => { const n = d.meses > 0 ? Math.min(d.meses, mesesAtivos.length) : mesesAtivos.length; for (let i = 0; i < n; i++) { const m = mesesAtivos[i]; if (!m) break; servico[m] = (servico[m] || 0) + d.custoMensal; mesesSet.add(m); } });
+    // materiais: parcelas das OC-i no mês do vencimento
+    ocs.filter((oc) => oc.obra_id === o.id).forEach((oc) => {
+      const base = oc.data_faturamento || oc.data || hojeISO();
+      const cond = oc.condicao_pagamento;
+      let parcelas = (cond && Array.isArray(cond.parcelas) && cond.parcelas.length) ? cond.parcelas : [{ dias: 0, valor: Number(oc.valor) || 0 }];
+      parcelas.forEach((p) => { const m = ymISO(addDiasISO(base, p.dias)); if (!m) return; material[m] = (material[m] || 0) + (Number(p.valor) || 0); mesesSet.add(m); });
+    });
+    porObra[o.id] = { servico, material };
+  }
+  return { mesesAxis: [...mesesSet].sort(), porObra };
+}
+
+/* loader compartilhado das duas abas de custos */
+function useDadosCustos() {
+  const [d, setD] = useState(null);
+  useEffect(() => { (async () => {
+    const obras = await listar("obras");
+    const [contratos, ocs] = await Promise.all([listar("contratos_servico"), listar("ordens_compra")]);
+    const eapPorObra = {}, rdos = [];
+    await Promise.all(obras.map(async (o) => { eapPorObra[o.id] = await listar("eap_itens", { obra_id: o.id }); (await listar("rdos", { obra_id: o.id })).forEach((r) => rdos.push(r)); }));
+    setD({ obras, eapPorObra, rdos, ocs, contratos });
+  })(); }, []);
+  return d;
+}
+
+/* ---- REQ 3: visualização analítica — custos por obra, mês a mês, serviço × material ---- */
+function CustosPorObra() {
+  const dados = useDadosCustos();
+  if (!dados) return <div style={{ color: C.dim, padding: 20 }}>Carregando custos das obras…</div>;
+  const { mesesAxis, porObra } = computeCustosObras(dados);
+  const obrasComCusto = dados.obras.filter((o) => { const p = porObra[o.id]; return p && (Object.keys(p.servico).length || Object.keys(p.material).length); });
+  const totServ = sum(obrasComCusto.flatMap((o) => Object.values(porObra[o.id].servico)));
+  const totMat = sum(obrasComCusto.flatMap((o) => Object.values(porObra[o.id].material)));
+
+  if (!mesesAxis.length) return (
+    <Card title="Custos por obra — serviço (OS-i) × material (OC-i)"><div style={{ fontSize: 13, color: C.dim }}>
+      Ainda não há dados para alocar. Os custos de <b>serviço</b> aparecem conforme as medições nos RDOs avançam (vinculadas às OS-i), e os de <b>material</b> conforme as parcelas das OC-i vencem.
+    </div></Card>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Kpi dark label="Custo de serviços (OS-i)" value={fmtR(totServ)} accent={C.laranja} sub="reconhecido pela medição" />
+        <Kpi label="Custo de materiais (OC-i)" value={fmtR(totMat)} accent={C.azul} sub="parcelas no vencimento" />
+        <Kpi label="Custo total alocado" value={fmtR(totServ + totMat)} accent={C.verde} sub={`${obrasComCusto.length} obras · ${mesesAxis.length} meses`} />
+      </div>
+      {obrasComCusto.map((o) => {
+        const p = porObra[o.id];
+        const linhaServ = mesesAxis.map((m) => p.servico[m] || 0);
+        const linhaMat = mesesAxis.map((m) => p.material[m] || 0);
+        const chart = mesesAxis.map((m) => ({ mes: ymLabel(m), Serviço: p.servico[m] || 0, Material: p.material[m] || 0 }));
+        return (
+          <Card key={o.id} title={`${o.codigo} · ${o.nome}`} right={<span style={{ fontSize: 12, color: C.dim }}>{o.contratante || ""}</span>}>
+            <div style={{ overflowX: "auto", marginBottom: 12 }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr><Th>Natureza</Th>{mesesAxis.map((m) => <Th key={m} right>{ymLabel(m)}</Th>)}<Th right>Total</Th></tr></thead>
+              <tbody>
+                <tr><Td color={C.laranja} style={{ fontWeight: 700 }}>Serviço (OS-i)</Td>{linhaServ.map((v, i) => <Td key={i} right color={v ? C.texto : C.dim}>{v ? fmt(v) : "—"}</Td>)}<Td right color={C.laranja} style={{ fontWeight: 700 }}>{fmt(sum(linhaServ))}</Td></tr>
+                <tr><Td color={C.azul} style={{ fontWeight: 700 }}>Material (OC-i)</Td>{linhaMat.map((v, i) => <Td key={i} right color={v ? C.texto : C.dim}>{v ? fmt(v) : "—"}</Td>)}<Td right color={C.azul} style={{ fontWeight: 700 }}>{fmt(sum(linhaMat))}</Td></tr>
+                <tr style={{ background: C.preto }}><Td style={{ color: "#fff", fontWeight: 800 }}>TOTAL</Td>{mesesAxis.map((m, i) => <Td key={i} right style={{ color: "#fff", fontWeight: 800 }}>{fmt(linhaServ[i] + linhaMat[i])}</Td>)}<Td right style={{ color: C.verde, fontWeight: 800 }}>{fmt(sum(linhaServ) + sum(linhaMat))}</Td></tr>
+              </tbody>
+            </table></div>
+            <ResponsiveContainer width="100%" height={Math.max(160, 40 + mesesAxis.length * 8)}>
+              <BarChart data={chart} margin={{ top: 5, right: 8, left: 8, bottom: 0 }}>
+                <CartesianGrid stroke={C.linha} strokeDasharray="2 4" vertical={false} />
+                <XAxis dataKey="mes" tick={{ fill: C.dim, fontSize: 10 }} /><YAxis tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} width={66} />
+                <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey="Serviço" stackId="a" fill={C.laranja} radius={[0, 0, 0, 0]} /><Bar dataKey="Material" stackId="a" fill={C.azul} radius={[3, 3, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </Card>
+        );
+      })}
+      <div style={{ fontSize: 11, color: C.dim }}>Serviço (OS-i indireto) reconhecido por medição: valor do item × fração do avanço físico do mês (RDO). OS-i direto: custo mensal nos meses com RDO. Material (OC-i): parcelas da condição de pagamento no mês do vencimento (faturamento + dias).</div>
+    </div>
+  );
+}
+
+/* ---- REQ 4: tabela de custos diretos de obra (automática) — layout da aba Premissas ---- */
+function CustosDiretosAuto() {
+  const dados = useDadosCustos();
+  if (!dados) return <div style={{ color: C.dim, padding: 20 }}>Carregando despesas das obras…</div>;
+  const { mesesAxis, porObra } = computeCustosObras(dados);
+  const obrasComCusto = dados.obras.filter((o) => { const p = porObra[o.id]; return p && (Object.keys(p.servico).length || Object.keys(p.material).length); });
+
+  if (!mesesAxis.length) return (
+    <Card title="Custos diretos de obra (automático) — abastecido por OS-i + OC-i"><div style={{ fontSize: 13, color: C.dim }}>
+      Esta tabela substitui a projeção manual da aba Premissas: as despesas diretas são alimentadas automaticamente pela <b>medição dos serviços (OS-i)</b> e pelas <b>parcelas de material (OC-i)</b> de cada mês. Lance OS-i, OC-i e RDOs para preenchê-la.
+    </div></Card>
+  );
+
+  const totalObra = (o) => { const p = porObra[o.id]; return sum(mesesAxis.map((m) => (p.servico[m] || 0) + (p.material[m] || 0))); };
+  const totalMes = (m) => sum(obrasComCusto.map((o) => (porObra[o.id].servico[m] || 0) + (porObra[o.id].material[m] || 0)));
+  const totalGeral = sum(obrasComCusto.map((o) => totalObra(o)));
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Kpi dark label="Despesa direta total (auto)" value={fmtR(totalGeral)} accent={C.laranja} sub={`${obrasComCusto.length} obras · ${mesesAxis.length} meses`} />
+        <Kpi label="Serviços (OS-i)" value={fmtR(sum(obrasComCusto.flatMap((o) => Object.values(porObra[o.id].servico))))} accent={C.laranja} />
+        <Kpi label="Materiais (OC-i)" value={fmtR(sum(obrasComCusto.flatMap((o) => Object.values(porObra[o.id].material))))} accent={C.azul} />
+      </div>
+      <Card title="Custos diretos de obra — despesas por obra alocadas por mês (automático)">
+        <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>Mesmo formato da projeção manual da aba Premissas, porém abastecida automaticamente: cada célula soma a <b>medição dos serviços (OS-i)</b> do mês com as <b>parcelas de material (OC-i)</b> a pagar naquele mês.</div>
+        <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead><tr><Th>Obra</Th>{mesesAxis.map((m) => <Th key={m} right>{ymLabel(m)}</Th>)}<Th right>Total</Th></tr></thead>
+          <tbody>
+            {obrasComCusto.map((o) => { const p = porObra[o.id]; return (
+              <tr key={o.id}><Td style={{ fontWeight: 600 }}>{o.codigo}</Td>
+                {mesesAxis.map((m) => { const v = (p.servico[m] || 0) + (p.material[m] || 0); return <Td key={m} right color={v ? C.texto : C.dim}>{v ? fmt(v) : "—"}</Td>; })}
+                <Td right color={C.laranja} style={{ fontWeight: 700 }}>{fmt(totalObra(o))}</Td></tr>
+            ); })}
+            <tr style={{ background: C.preto }}><Td style={{ color: "#fff", fontWeight: 800 }}>TOTAL</Td>{mesesAxis.map((m) => <Td key={m} right style={{ color: "#fff", fontWeight: 800 }}>{fmt(totalMes(m))}</Td>)}<Td right style={{ color: C.verde, fontWeight: 800 }}>{fmt(totalGeral)}</Td></tr>
+          </tbody>
+        </table></div>
       </Card>
     </div>
   );

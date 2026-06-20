@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie } from "recharts";
 import * as XLSX from "xlsx";
 import {
-  C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, CLIMAS, ATRIBUICOES, VINCULOS,
+  C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, addDiasISO, CLIMAS, ATRIBUICOES, VINCULOS,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap,
   aplicarDesconto, definirMeta, uploadFoto,
@@ -188,6 +188,19 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
 
   return (
     <div ref={topoRef} style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      {(() => {
+        const hoje = hojeISO();
+        const pend = obras.filter((o) => !rdos.some((r) => r.obra_id === o.id && String(r.data).slice(0, 10) === hoje));
+        if (obras.length === 0) return null;
+        if (pend.length === 0) return (
+          <div style={{ background: `${C.verde}12`, border: `1px solid ${C.verde}55`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.verde, fontWeight: 700 }}>✓ Todas as {obras.length} obras já têm RDO respondido hoje ({dataBR(hoje)}).</div>
+        );
+        return (
+          <div style={{ background: `${C.amareloAlerta}1a`, border: `1px solid ${C.amareloAlerta}66`, borderRadius: 8, padding: "8px 12px", fontSize: 12, color: C.texto }}>
+            <b style={{ color: C.amareloAlerta }}>⚠ {pend.length} obra(s) sem RDO hoje ({dataBR(hoje)}):</b> {pend.map((o) => o.codigo).join(" · ")}
+          </div>
+        );
+      })()}
       <Card title={`${editandoId ? "✎ Editando RDO" : "RDO-i · Relatório Diário Inteligente"} — ${dataBR(form.data)}`} right={<div style={{ display: "flex", gap: 10, alignItems: "center" }}>
         {editandoId && <Btn small kind="ghost" onClick={cancelarEdicao}>Cancelar edição</Btn>}
         {msg && <span style={{ color: msg.tipo === "ok" ? C.verde : C.vermelho, fontSize: 13, fontWeight: 700 }}>{msg.txt}</span>}
@@ -324,7 +337,7 @@ function MedicaoGerador({ obras, eapPorObra, rdos, usuarioNome }) {
   const [obraId, setObraId] = useState("");
   const [ini, setIni] = useState("");
   const [fim, setFim] = useState(hojeISO());
-  const [modo, setModo] = useState("periodo"); // 'periodo' (incremental) | 'acumulada'
+  const [modo, setModo] = useState("acumulada"); // 'periodo' (incremental) | 'acumulada'
   useEffect(() => { if (!obraId && obras[0]) setObraId(obras[0].id); }, [obras]);
   const obra = obras.find((o) => o.id === obraId);
   const itens = eapPorObra[obraId] || [];
@@ -444,17 +457,52 @@ function OsI({ obras, eapPorObra, contratos, onMudou }) {
 }
 
 /* ============================ OC-i (materiais) — múltiplos itens de EAP ============================ */
+/* Gera as parcelas de uma condição de pagamento, identificadas por DIAS após o faturamento.
+   tipo: 'avista' | 'entrada_parcelas' | 'parcelado'. O texto de dias (ex.: "30/60/90") tem
+   prioridade; na ausência, usa nº de parcelas + 1º vencimento + intervalo. */
+function gerarParcelas(cond, total) {
+  const t = Number(total) || 0;
+  if (!cond || cond.tipo === "avista") return [{ dias: 0, valor: t }];
+  const entrada = cond.tipo === "entrada_parcelas" ? Math.min(Number(cond.entrada) || 0, t) : 0;
+  let dias = [];
+  const txt = String(cond.diasTexto || "").trim();
+  if (txt) dias = txt.split(/[^\d]+/).map((x) => parseInt(x, 10)).filter((x) => x > 0);
+  if (!dias.length) {
+    const n = Math.max(1, parseInt(cond.nParcelas, 10) || 1);
+    const p1 = Number(cond.primeiroDias) || 30, iv = Number(cond.intervaloDias) || 30;
+    dias = Array.from({ length: n }, (_, i) => p1 + i * iv);
+  }
+  const n = dias.length, base = Math.round(((t - entrada) / n) * 100) / 100;
+  const parcelas = []; let acum = 0;
+  if (entrada > 0) parcelas.push({ dias: 0, valor: Math.round(entrada * 100) / 100, entrada: true });
+  dias.forEach((d, i) => { let v = base; if (i === n - 1) v = Math.round((t - entrada - acum) * 100) / 100; acum += v; parcelas.push({ dias: d, valor: v }); });
+  return parcelas;
+}
+/* resumo textual da condição p/ a tabela */
+function resumoCond(oc) {
+  const c = oc.condicao_pagamento;
+  if (!c || c.tipo === "avista") return "À vista";
+  const ps = (c.parcelas || []).filter((p) => !p.entrada);
+  const dias = ps.map((p) => p.dias).join("/");
+  const ent = c.tipo === "entrada_parcelas" && (Number(c.entrada) || 0) > 0 ? `entrada ${fmtR(c.entrada)} + ` : "";
+  return `${ent}${ps.length}x (${dias} dias)`;
+}
+
 function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
-  const vazio = { obra_id: "", numero: "", fornecedor: "", data: hojeISO(), itens_eap: [] };
+  const vazio = { obra_id: "", numero: "", fornecedor: "", data: hojeISO(), itens_eap: [],
+    data_faturamento: hojeISO(), cond: { tipo: "avista", entrada: 0, nParcelas: 3, primeiroDias: 30, intervaloDias: 30, diasTexto: "" } };
   const [oc, setOc] = useState(vazio);
   const [busy, setBusy] = useState(false);
   const eapItens = eapPorObra[oc.obra_id] || [];
   const valorTotal = sum(oc.itens_eap.map((x) => x.valor));
+  const parcelas = useMemo(() => gerarParcelas(oc.cond, valorTotal), [oc.cond, valorTotal]);
+  const upCond = (patch) => setOc((o) => ({ ...o, cond: { ...o.cond, ...patch } }));
   const salvar = async () => {
     setBusy(true);
     try {
-      const primeiro = oc.itens_eap[0] || {};
+      const condicao_pagamento = { ...oc.cond, parcelas };
       await criar("ordens_compra", { obra_id: oc.obra_id || null, numero: oc.numero, fornecedor: oc.fornecedor, data: oc.data,
+        data_faturamento: oc.data_faturamento || oc.data, condicao_pagamento,
         itens_eap: oc.itens_eap, eap_codigo: oc.itens_eap.map((x) => x.eap_codigo).join(", "),
         material: oc.itens_eap.map((x) => x.material || x.descricao).filter(Boolean).join("; "), valor: valorTotal });
       setOc({ ...vazio, obra_id: oc.obra_id }); onMudou();
@@ -475,6 +523,40 @@ function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
           {oc.obra_id ? <MultiEapPicker itens={eapItens} valor={oc.itens_eap} onChange={(v) => setOc({ ...oc, itens_eap: v })} labelValor="Valor do item" />
             : <div style={{ fontSize: 12, color: C.dim }}>Selecione uma obra para listar a EAP.</div>}
         </div>
+
+        {/* CONDIÇÃO DE PAGAMENTO — parcelas identificadas por dias após o faturamento */}
+        <div style={{ border: `1.5px solid ${C.linha}`, borderLeft: `5px solid ${C.laranja}`, borderRadius: 10, padding: 14, marginBottom: 12, background: "#fafafa" }}>
+          <div style={{ fontWeight: 800, fontSize: 12, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>💳 Condição de pagamento</div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div><Lbl>Forma</Lbl><select value={oc.cond.tipo} onChange={(e) => upCond({ tipo: e.target.value })} style={inp()}>
+              <option value="avista">À vista</option>
+              <option value="entrada_parcelas">Entrada + parcelamento</option>
+              <option value="parcelado">Parcelamento puro (sem entrada)</option>
+            </select></div>
+            <div><Lbl>Data do faturamento</Lbl><input type="date" value={oc.data_faturamento} onChange={(e) => setOc({ ...oc, data_faturamento: e.target.value })} style={inp({ boxSizing: "border-box" })} /></div>
+            {oc.cond.tipo === "entrada_parcelas" && <div><Lbl>Entrada (R$)</Lbl><NumInput value={oc.cond.entrada} onChange={(v) => upCond({ entrada: v })} /></div>}
+            {oc.cond.tipo !== "avista" && <>
+              <div><Lbl>Vencimentos (dias após fat.)</Lbl><input value={oc.cond.diasTexto} onChange={(e) => upCond({ diasTexto: e.target.value })} placeholder="ex.: 30/60/90" style={inp({ width: 130 })} /></div>
+              <div style={{ fontSize: 11, color: C.dim, paddingBottom: 6 }}>ou gere automaticamente:</div>
+              <div><Lbl>Nº parcelas</Lbl><input type="number" min="1" value={oc.cond.nParcelas} onChange={(e) => upCond({ nParcelas: e.target.value })} disabled={!!oc.cond.diasTexto.trim()} style={inp({ width: 70, textAlign: "right", opacity: oc.cond.diasTexto.trim() ? 0.5 : 1 })} /></div>
+              <div><Lbl>1º venc. (dias)</Lbl><input type="number" min="1" value={oc.cond.primeiroDias} onChange={(e) => upCond({ primeiroDias: e.target.value })} disabled={!!oc.cond.diasTexto.trim()} style={inp({ width: 70, textAlign: "right", opacity: oc.cond.diasTexto.trim() ? 0.5 : 1 })} /></div>
+              <div><Lbl>Intervalo (dias)</Lbl><input type="number" min="1" value={oc.cond.intervaloDias} onChange={(e) => upCond({ intervaloDias: e.target.value })} disabled={!!oc.cond.diasTexto.trim()} style={inp({ width: 70, textAlign: "right", opacity: oc.cond.diasTexto.trim() ? 0.5 : 1 })} /></div>
+            </>}
+          </div>
+          {valorTotal > 0 && (
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {parcelas.map((p, i) => (
+                <div key={i} style={{ border: `1px solid ${p.entrada ? C.laranja : C.linha}`, background: p.entrada ? C.laranjaClaro : "#fff", borderRadius: 8, padding: "6px 12px", minWidth: 110 }}>
+                  <div style={{ fontSize: 10, color: C.dim, textTransform: "uppercase", fontWeight: 700 }}>{p.entrada ? "Entrada" : `${p.dias} dias`}</div>
+                  <div style={{ fontSize: 14, fontWeight: 800, color: C.preto }}>{fmtR(p.valor)}</div>
+                  <div style={{ fontSize: 10, color: C.dim }}>{dataBR(addDiasISO(oc.data_faturamento || oc.data, p.dias))}</div>
+                </div>
+              ))}
+              <div style={{ display: "flex", alignItems: "center", fontSize: 12, color: C.dim, paddingLeft: 6 }}>Σ {fmtR(sum(parcelas.map((p) => p.valor)))}</div>
+            </div>
+          )}
+        </div>
+
         <div style={{ display: "flex", alignItems: "center" }}>
           <div style={{ fontSize: 13, color: C.dim }}>Total da OC: <b style={{ color: C.laranja, fontSize: 16 }}>{fmtR(valorTotal)}</b></div>
           <div style={{ flex: 1 }} />
@@ -491,8 +573,8 @@ function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
       )}
 
       <Card title={`Ordens de compra (${ocs.length})`}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Data</Th><Th>Fornecedor</Th><Th>Itens EAP</Th><Th>Material</Th><Th right>Valor</Th><Th /></tr></thead>
-          <tbody>{ocs.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap.map((i) => i.eap_codigo).join(", ") : (x.eap_codigo || "—"); return <tr key={x.id}><Td>{x.numero || "—"}</Td><Td>{o?.codigo || "—"}</Td><Td>{dataBR(x.data)}</Td><Td>{x.fornecedor || "—"}</Td><Td style={{ fontSize: 12 }}>{itens}</Td><Td style={{ fontSize: 12 }}>{x.material}</Td><Td right color={C.laranja}>{fmtR(x.valor)}</Td><Td><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>; })}
+        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Faturamento</Th><Th>Fornecedor</Th><Th>Itens EAP</Th><Th>Pagamento</Th><Th right>Valor</Th><Th /></tr></thead>
+          <tbody>{ocs.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap.map((i) => i.eap_codigo).join(", ") : (x.eap_codigo || "—"); return <tr key={x.id}><Td>{x.numero || "—"}</Td><Td>{o?.codigo || "—"}</Td><Td>{dataBR(x.data_faturamento || x.data)}</Td><Td>{x.fornecedor || "—"}</Td><Td style={{ fontSize: 12 }}>{itens}</Td><Td style={{ fontSize: 12 }}>{resumoCond(x)}</Td><Td right color={C.laranja}>{fmtR(x.valor)}</Td><Td><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>; })}
             {ocs.length === 0 && <tr><Td colSpan={8} color={C.dim} style={{ padding: 14 }}>Nenhuma OC lançada.</Td></tr>}</tbody></table>
       </Card>
     </div>

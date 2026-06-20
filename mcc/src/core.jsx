@@ -29,6 +29,8 @@ export const fmtK = (v) => {
 };
 export const pct = (v, dec = 1) => (v === null || isNaN(v)) ? "—" : `${(v * 100).toLocaleString("pt-BR", { maximumFractionDigits: dec })}%`;
 export const hojeISO = () => new Date().toISOString().slice(0, 10);
+export const addDiasISO = (iso, dias) => { if (!iso) return iso; const d = new Date(String(iso).slice(0, 10) + "T00:00:00"); d.setDate(d.getDate() + (Number(dias) || 0)); return d.toISOString().slice(0, 10); };
+export const ymISO = (iso) => String(iso || "").slice(0, 7);
 export const dataBR = (iso) => (iso ? String(iso).slice(0, 10).split("-").reverse().join("/") : "—");
 export const norm = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 export const sum = (a) => a.reduce((s, v) => s + (Number(v) || 0), 0);

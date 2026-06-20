@@ -1,6 +1,6 @@
 import React, { useMemo } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie } from "recharts";
-import { C, fmt, fmtR, fmtK, pct, sum, dataBR, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip } from "./core.jsx";
+import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip } from "./core.jsx";
 import { observacoesPorItem, projecaoItem, dataProjetada } from "./produtividade.js";
 
 /* PAINEL GERAL — consolidação de todas as obras (restrito a gestores) */
@@ -23,13 +23,18 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
     const disciplinasAtivas = [...new Set(rdosObra.flatMap((r) => (r.atividades || []).map((a) => (a.descricao || "").split(" ")[0])).filter(Boolean))];
     const equipeUltimo = ultimoRdo?.equipe || [];
     const restAbertas = restricoes.filter((x) => x.obra_id === o.id && !x.resolvida);
+    const hoje = hojeISO();
+    const respondidoHoje = rdosObra.some((r) => String(r.data).slice(0, 10) === hoje);
+    const diasSemRdo = ultimoRdo ? Math.round((new Date(hoje + "T00:00:00") - new Date(String(ultimoRdo.data).slice(0, 10) + "T00:00:00")) / 86400000) : null;
     return { o, itens, medAcum, contrato, aFaturar: Math.max(contrato - medAcum, 0), perc: contrato ? medAcum / contrato : 0, climaRef, maiorDias,
-      itensAndamento, projItens, ultimoRdo, equipeUltimo, restAbertas, nRdos: rdosObra.length,
+      itensAndamento, projItens, ultimoRdo, equipeUltimo, restAbertas, nRdos: rdosObra.length, respondidoHoje, diasSemRdo,
       terminoProj: maiorDias > 0 ? dataProjetada(maiorDias) : null };
   });
   const totalMed = sum(dados.map((d) => d.medAcum)), totalContrato = sum(dados.map((d) => d.contrato));
   const totalRestr = sum(dados.map((d) => d.restAbertas.length));
   const cores = [C.laranja, C.preto, C.vermelho, "#fb923c", "#525252", C.azul];
+  const semRdoHoje = dados.filter((d) => !d.respondidoHoje);
+  const corRdo = (d) => d.respondidoHoje ? C.verde : (d.diasSemRdo == null ? C.dim : d.diasSemRdo >= 3 ? C.vermelho : C.amareloAlerta);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -40,6 +45,31 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
         <Kpi label="% executado geral" value={totalContrato ? pct(totalMed / totalContrato) : "—"} accent={C.azul} />
         <Kpi label="Restrições de material abertas" value={totalRestr} accent={totalRestr > 0 ? C.vermelho : C.verde} sub="impedindo atividades" />
       </div>
+
+      {obras.length > 0 && (
+        <Card title="Controle de RDOs — último relatório e pendências do dia"
+          right={<span style={{ fontSize: 12, fontWeight: 700, color: semRdoHoje.length ? C.vermelho : C.verde }}>{semRdoHoje.length ? `${semRdoHoje.length} sem RDO hoje` : "todas em dia"}</span>}>
+          {semRdoHoje.length > 0 && (
+            <div style={{ background: `${C.amareloAlerta}1a`, border: `1px solid ${C.amareloAlerta}66`, borderRadius: 8, padding: "8px 12px", marginBottom: 12, fontSize: 12 }}>
+              <b style={{ color: C.amareloAlerta }}>⚠ RDO não respondido hoje ({dataBR(hojeISO())}):</b> <span style={{ color: C.texto }}>{semRdoHoje.map((d) => d.o.codigo).join(" · ")}</span>
+            </div>
+          )}
+          <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr><Th>Obra</Th><Th>Contratante</Th><Th>Status hoje</Th><Th>Último RDO</Th><Th right>Nº</Th><Th right>Há quantos dias</Th><Th right>Total RDOs</Th></tr></thead>
+            <tbody>{dados.slice().sort((a, b) => (a.respondidoHoje === b.respondidoHoje ? ((b.diasSemRdo ?? 999) - (a.diasSemRdo ?? 999)) : a.respondidoHoje ? 1 : -1)).map((d) => (
+              <tr key={d.o.id}>
+                <Td style={{ fontWeight: 600 }}>{d.o.codigo}</Td>
+                <Td style={{ fontSize: 12, color: C.dim }}>{d.o.contratante || "—"}</Td>
+                <Td><span style={{ background: d.respondidoHoje ? `${C.verde}1c` : `${C.vermelho}14`, color: d.respondidoHoje ? C.verde : C.vermelho, borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{d.respondidoHoje ? "✓ respondido" : "● pendente"}</span></Td>
+                <Td>{d.ultimoRdo ? dataBR(d.ultimoRdo.data) : "—"}</Td>
+                <Td right>{d.ultimoRdo?.numero || "—"}</Td>
+                <Td right color={corRdo(d)} style={{ fontWeight: 700 }}>{d.diasSemRdo == null ? "sem RDO" : d.diasSemRdo === 0 ? "hoje" : `${d.diasSemRdo}d`}</Td>
+                <Td right>{d.nRdos}</Td>
+              </tr>
+            ))}</tbody>
+          </table></div>
+        </Card>
+      )}
 
       {obras.length > 0 && (
         <Card title="Avanço físico-financeiro por obra">
