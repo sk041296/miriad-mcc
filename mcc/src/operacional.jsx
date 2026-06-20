@@ -798,6 +798,75 @@ function Obras({ obras, eapPorObra, onMudou }) {
       const ehCod = (c0) => /^\d+(\.\d+)+\.?$/.test(String(c0).replace(",", ".").trim());
       const numBR = (v) => { if (v === null || v === undefined || v === "" || v === "-") return 0; const n = typeof v === "number" ? v : parseFloat(String(v).replace(/\./g, "").replace(",", ".")); return isNaN(n) ? 0 : n; };
 
+      // ===== MODO 1: MODELO PADRÃO MCC (posição fixa de colunas + BDI na célula J2) =====
+      // Reconhecido por "SUBTOTAL S/BDI" (col L) e "CUSTO TOTAL C/BDI" (col M) no cabeçalho.
+      const tentarModelo = () => {
+        for (const sn of wb.SheetNames) {
+          const g = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
+          // achar a linha de cabeçalho que tem SUBTOTAL S/BDI e CUSTO TOTAL C/BDI
+          let hdr = -1;
+          for (let i = 0; i < Math.min(g.length, 15); i++) {
+            const linha = g[i].map(norm).join("|");
+            if (linha.includes("SUBTOTAL S/BDI") && linha.includes("CUSTO TOTAL C/BDI")) { hdr = i; break; }
+          }
+          if (hdr < 0) continue;
+          // BDI: procurar célula contendo "BDI" e pegar o número à direita (modelo usa J2)
+          let bdi = 0;
+          for (let i = 0; i < Math.min(g.length, hdr); i++) {
+            for (let j = 0; j < g[i].length; j++) {
+              if (norm(g[i][j]).includes("BDI")) {
+                for (let k = j + 1; k < g[i].length; k++) { const v = numBR(g[i][k]); if (v > 0) { bdi = v > 1 ? v / 100 : v; break; } }
+              }
+            }
+            if (bdi) break;
+          }
+          // colunas FIXAS do modelo: A0=item B1=código C2=descr D3=unid E4=qtde ... K10=custo total s/BDI L11=subtotal s/BDI M12=custo total c/BDI
+          const COL = { item: 0, cod: 1, desc: 2, unid: 3, qtde: 4, custoTotSemBdi: 10, subSemBdi: 11, totComBdi: 12 };
+          const itens = []; const topoLinhas = [];
+          g.slice(0, hdr + 2).forEach((r) => { const l = r.map((c) => String(c ?? "").trim()).join(" | ").trim(); if (l.replace(/\|/g, "").trim()) topoLinhas.push(l); });
+          for (let i = hdr + 2; i < g.length; i++) {
+            const r = g[i]; const c0 = String(r[COL.item] ?? "").trim();
+            if (!ehCod(c0)) continue;
+            const qt = numBR(r[COL.qtde]); const unid = String(r[COL.unid] ?? "").trim();
+            const desc = String(r[COL.desc] ?? "").trim();
+            const custoSemBdiTot = numBR(r[COL.subSemBdi]) || numBR(r[COL.custoTotSemBdi]);
+            let valorComBdi = numBR(r[COL.totComBdi]);
+            if (!valorComBdi && custoSemBdiTot) valorComBdi = custoSemBdiTot * (1 + bdi); // se a coluna M vier vazia, deriva do BDI
+            // item analítico = código + unidade + qtde>0 + custo>0
+            if (!desc || !unid || qt <= 0 || custoSemBdiTot <= 0) continue;
+            itens.push({ codigo: c0, descricao: desc, unidade: unid, qtde: qt,
+              valorTotalVenda: valorComBdi,                 // à faturar = coluna M (c/BDI)
+              valorUnitVenda: valorComBdi / qt,
+              custoSemBdi: custoSemBdiTot / qt,             // meta usa custo s/BDI (coluna L)
+              bdi });
+          }
+          if (itens.length > 0) return { itens, topo: topoLinhas, bdi };
+        }
+        return null;
+      };
+
+      const modelo = tentarModelo();
+      if (modelo) {
+        const nomeBase = file.name.replace(/\.(xlsx|xls|csv)$/i, "").replace(/[_-]+/g, " ");
+        let nomeObra = nomeBase, codigoSugerido = nomeBase.slice(0, 12).toUpperCase();
+        try { const meta = await parseEapApi(modelo.topo.join("\n"), nomeBase); if (meta?.nomeObra) nomeObra = meta.nomeObra; if (meta?.codigoSugerido) codigoSugerido = meta.codigoSugerido; } catch {}
+        // classificar ambiente em lotes
+        const TAM = 40;
+        for (let i = 0; i < modelo.itens.length; i += TAM) {
+          setProgresso({ atual: Math.floor(i / TAM) + 1, total: Math.ceil(modelo.itens.length / TAM), itens: i });
+          const bloco = modelo.itens.slice(i, i + TAM);
+          try { const cl = await parseEapLote(bloco.map((it) => `${it.codigo} | ${it.descricao}`).join("\n")); bloco.forEach((it) => { const m = (cl || []).find((c) => String(c.codigo) === it.codigo); it.ambiente = m?.ambiente === "externo" ? "externo" : "interno"; }); }
+          catch { bloco.forEach((it) => { it.ambiente = "interno"; }); }
+        }
+        setProgresso(null);
+        setPreview({ nome: nomeObra, codigo: codigoSugerido, desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0, bdiInformado: modelo.bdi,
+          totalPlanilha: sum(modelo.itens.map((i) => i.valorTotalVenda)),
+          itens: modelo.itens.map((it, i) => ({ ...it, ordem: i + 1 })) });
+        setLendo(false);
+        return;
+      }
+      // ===== MODO 2: DETECÇÃO AUTOMÁTICA (reserva, para planilhas fora do modelo) =====
+
       let itensBrutos = []; const topo = [];
       let achouCabecalho = false;
       for (const sn of wb.SheetNames) {
@@ -958,7 +1027,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
                   <Td><button onClick={() => toggleAmb(i)} style={{ background: it.ambiente === "externo" ? C.amareloAlerta : C.cinza2, color: it.ambiente === "externo" ? "#fff" : C.dim, border: "none", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{it.ambiente === "externo" ? "🌦️ externo" : "interno"}</button></Td></tr>)}</tbody></table>
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: C.dim }}>{preview.itens.length} itens · valor à faturar {fmtR(sum(preview.itens.map((i) => Number(i.valorTotalVenda) || 0)))}</span>
+              <span style={{ fontSize: 13, color: C.dim }}>{preview.itens.length} itens · valor à faturar {fmtR(sum(preview.itens.map((i) => Number(i.valorTotalVenda) || 0)))}{preview.bdiInformado ? ` · BDI ${pct(preview.bdiInformado, 2)}` : ""}</span>
               <div style={{ flex: 1 }} /><Btn kind="ghost" small onClick={() => setPreview(null)}>Descartar</Btn><Btn small onClick={confirmar} disabled={lendo}>Salvar obra e EAP</Btn>
             </div>
           </div>

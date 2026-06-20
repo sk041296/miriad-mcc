@@ -1,5 +1,17 @@
 # Miriad Construction Control (MCC)
 
+## v5.3 — importação por MODELO PADRÃO + BDI informado
+Foi criada uma planilha modelo padrão (Planilha_Modelo_MCC.xlsx) com colunas em posição
+fixa, célula de BDI destacada (amarela), coluna L = SUBTOTAL S/BDI e coluna M = CUSTO
+TOTAL C/BDI. O importador agora:
+1) reconhece o modelo (pelos títulos SUBTOTAL S/BDI + CUSTO TOTAL C/BDI), lê o BDI da
+   célula destacada e extrai por posição fixa — sem ambiguidade de colunas;
+2) à faturar = coluna M (c/BDI); custo de meta = coluna L (s/BDI);
+3) se a planilha NÃO for o modelo, cai automaticamente no modo de detecção (reserva).
+O preview mostra itens, valor à faturar e o BDI lido, para conferência antes de salvar.
+> Distribua a planilha modelo para preenchimento; é o formato recomendado de importação.
+
+
 ## Correção v5.2 — valor à faturar (venda × custo) e integração Operacional↔Financeiro
 O Painel mostrava ~234 mil (a soma de CUSTO) em vez dos 465 mil do contrato. Causa: a
 extração tratava o VALOR TOTAL (já com BDI) como se fosse custo e reaplicava BDI/desconto.
