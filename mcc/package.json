@@ -3,5 +3,12 @@
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "dependencies": { "@supabase/supabase-js": "^2.45.0" }
+  "dependencies": {
+    "@supabase/supabase-js": "^2.45.0",
+    "esbuild": "^0.28.1",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "recharts": "^3.8.1",
+    "xlsx": "^0.18.5"
+  }
 }

@@ -1,5 +1,17 @@
 # Miriad Construction Control (MCC)
 
+## Correção v5.1 — extração da EAP por nível analítico (valores em dobro/triplo)
+Planilhas com vários níveis (título 1.0 · subgrupo 1.01 · item 01.01.03) faziam o MCC
+somar todos os níveis, multiplicando o total. Agora a regra é única e robusta:
+**um item da EAP é a linha que tem código numérico + unidade + quantidade > 0 + valor > 0**.
+Isso importa só o nível analítico (as folhas), ignorando grupos/títulos. A detecção do
+cabeçalho passou a reconhecer "ÍTEM" (com acento), "QUANT." e a coluna de valor por
+"VALOR/CUSTO/PREÇO TOTAL", inclusive em cabeçalhos de 2 linhas.
+Validado: PMSP = R$ 465.000,00 e CENSE Londrina = R$ 315.104,13 (batem com os contratos).
+O total extraído aparece no preview para conferência antes de salvar.
+> Reimporte as obras afetadas (excluir + subir a planilha de novo) para corrigir os valores.
+
+
 ## Novidades da v3.4
 - **Linha de totais** na tabela de EAP & Custos: soma de Custo total, Meta total e
   Realizado ao pé da tabela (colunas de valor unitário não são somadas, por não fazer sentido).

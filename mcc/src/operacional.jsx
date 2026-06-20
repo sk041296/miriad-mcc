@@ -795,56 +795,61 @@ function Obras({ obras, eapPorObra, onMudou }) {
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
       const norm = (s) => String(s ?? "").trim().toUpperCase();
-      const ehItem = (c0) => /^\d+(\.\d+)+\.?$/.test(String(c0).replace(",", ".").trim());
+      const ehCod = (c0) => /^\d+(\.\d+)+\.?$/.test(String(c0).replace(",", ".").trim());
       const numBR = (v) => { if (v === null || v === undefined || v === "" || v === "-") return 0; const n = typeof v === "number" ? v : parseFloat(String(v).replace(/\./g, "").replace(",", ".")); return isNaN(n) ? 0 : n; };
 
       let itensBrutos = []; const topo = [];
       let achouCabecalho = false;
       for (const sn of wb.SheetNames) {
         const grade = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
-        // localizar cabeçalho padrão (ITEM + DESCRIÇÃO + QUANTIDADE + CUSTO)
+        // localizar cabeçalho (ITEM/ÍTEM + DESCRIÇÃO/ESPECIFICAÇÃO). Pode ocupar 2 linhas.
         let hdr = -1, col = {};
-        for (let i = 0; i < Math.min(grade.length, 20); i++) {
+        for (let i = 0; i < Math.min(grade.length, 30); i++) {
           const cs = grade[i].map(norm);
-          if (cs.includes("ITEM") && cs.some((c) => c.includes("DESCRI"))) {
+          const temItem = cs.some((c) => c === "ITEM" || c === "ÍTEM");
+          const temDesc = cs.some((c) => c.includes("DESCRI") || c.includes("ESPECIFICA"));
+          if (temItem && temDesc) {
             hdr = i;
             cs.forEach((c, j) => {
-              if (c === "ITEM" && col.item == null) col.item = j;
-              else if (c.includes("DESCRI") && col.desc == null) col.desc = j;
-              else if ((c.includes("UNIDADE") || c === "UND" || c === "UN") && col.unid == null) col.unid = j;
-              else if (c.includes("QUANTI") && c.includes("DADE") && col.qtde == null) col.qtde = j;
+              if ((c === "ITEM" || c === "ÍTEM") && col.item == null) col.item = j;
+              else if ((c.includes("DESCRI") || c.includes("ESPECIFICA")) && col.desc == null) col.desc = j;
+              else if (c.includes("UNID") && col.unid == null) col.unid = j;
+              else if ((c.includes("QUANT") || c === "QTD") && col.qtde == null) col.qtde = j;
               else if (c.includes("CUSTO UNIT") && col.cu == null) col.cu = j;
-              else if (c.includes("CUSTO TOTAL") && col.ct == null) col.ct = j;
+            });
+            // coluna de VALOR TOTAL: procurar nas 2 linhas do cabeçalho (VALOR/CUSTO/PREÇO + TOTAL); fica com a última (a sem "COM BDI" desmembrado costuma ser a consolidada)
+            [grade[i], grade[i + 1] || []].forEach((linha) => {
+              linha.map(norm).forEach((c, j) => { if (/(VALOR|CUSTO|PRE[ÇC]O)\s*TOTAL/.test(c)) col.vt = j; });
             });
             break;
           }
         }
-        // topo p/ identificar a obra
         grade.slice(0, hdr >= 0 ? hdr + 1 : 10).forEach((r) => { const l = r.map((c) => String(c ?? "").trim()).join(" | ").trim(); if (l.replace(/\|/g, "").trim()) topo.push(l); });
 
-        if (hdr >= 0 && col.item != null && col.qtde != null && col.cu != null) {
+        if (hdr >= 0 && col.item != null && col.qtde != null && col.unid != null && col.vt != null) {
           achouCabecalho = true;
           for (let i = hdr + 1; i < grade.length; i++) {
             const r = grade[i]; const c0 = String(r[col.item] ?? "").trim();
-            if (!ehItem(c0)) continue;
-            const qt = numBR(r[col.qtde]); const cu = numBR(r[col.cu]);
-            const ct = col.ct != null ? numBR(r[col.ct]) : cu * qt;
+            if (!ehCod(c0)) continue;
+            const qt = numBR(r[col.qtde]);
+            const unid = String(r[col.unid] ?? "").trim();
+            const vt = numBR(r[col.vt]);
+            const cu = col.cu != null ? numBR(r[col.cu]) : (qt ? vt / qt : 0);
             const desc = String(r[col.desc] ?? "").trim();
-            const unid = String(r[col.unid] ?? "").trim() || "un";
-            if (!desc || qt <= 0) continue;
-            itensBrutos.push({ codigo: c0, descricao: desc, unidade: unid, qtde: qt, custoSemBdi: cu, custoTotal: ct, bdi: 0 });
+            // REGRA validada: item analítico = código numérico + unidade + qtde>0 + valor>0
+            // (exclui grupos/títulos, que têm unidade/qtde vazias → elimina dupla contagem)
+            if (!desc || !unid || qt <= 0 || vt <= 0) continue;
+            itensBrutos.push({ codigo: c0, descricao: desc, unidade: unid, qtde: qt, custoSemBdi: cu || vt / qt, custoTotal: vt, bdi: 0 });
           }
         }
       }
 
       const nomeBase = file.name.replace(/\.(xlsx|xls|csv)$/i, "").replace(/[_-]+/g, " ");
-
-      // identificar nome/código da obra (chamada curta à IA; se falhar, usa nome do arquivo)
       let nomeObra = nomeBase, codigoSugerido = nomeBase.slice(0, 12).toUpperCase();
       try { const meta = await parseEapApi(topo.join("\n"), nomeBase); if (meta?.nomeObra) nomeObra = meta.nomeObra; if (meta?.codigoSugerido) codigoSugerido = meta.codigoSugerido; } catch {}
 
       if (achouCabecalho && itensBrutos.length > 0) {
-        // classificar ambiente (interno/externo) em lotes — só classificação, valores já estão certos
+        const totalPlan = sum(itensBrutos.map((i) => i.custoTotal));
         const TAM = 40;
         for (let i = 0; i < itensBrutos.length; i += TAM) {
           setProgresso({ atual: Math.floor(i / TAM) + 1, total: Math.ceil(itensBrutos.length / TAM), itens: i });
@@ -855,15 +860,15 @@ function Obras({ obras, eapPorObra, onMudou }) {
           } catch { bloco.forEach((it) => { it.ambiente = "interno"; }); }
         }
         setProgresso(null);
-        setPreview({ nome: nomeObra, codigo: codigoSugerido, desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0,
+        setPreview({ nome: nomeObra, codigo: codigoSugerido, desconto: 0, contratante: "", contrato: "", local: "", prazo_dias: 0, totalPlanilha: totalPlan,
           itens: itensBrutos.map((it, i) => ({ ...it, valorTotal: it.custoTotal, ordem: i + 1 })) });
         return;
       }
 
-      // fallback: planilha sem cabeçalho padrão → IA por lote (como antes)
+      // fallback: planilha sem cabeçalho padrão → IA por lote
       const linhasItem = [];
-      wb.SheetNames.forEach((sn) => { XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" }).forEach((r) => { const cels = r.map((c) => String(c ?? "").trim()); if (ehItem(cels[0])) linhasItem.push(cels.join(" | ")); }); });
-      if (linhasItem.length === 0) { setErro("Não encontrei itens com numeração (1.1, 2.3…) nem o cabeçalho padrão (ITEM/DESCRIÇÃO/QUANTIDADE/CUSTO). Confirme que é a planilha analítica/sintética."); setLendo(false); return; }
+      wb.SheetNames.forEach((sn) => { XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" }).forEach((r) => { const cels = r.map((c) => String(c ?? "").trim()); if (ehCod(cels[0])) linhasItem.push(cels.join(" | ")); }); });
+      if (linhasItem.length === 0) { setErro("Não encontrei itens com numeração (1.1, 2.3…) nem o cabeçalho padrão (ITEM/DESCRIÇÃO/QUANTIDADE/VALOR). Confirme que é a planilha analítica/sintética."); setLendo(false); return; }
       const TAM = 20; const todos = [];
       for (let i = 0; i < linhasItem.length; i += TAM) { setProgresso({ atual: Math.floor(i / TAM) + 1, total: Math.ceil(linhasItem.length / TAM), itens: todos.length }); todos.push(...await parseEapLote(linhasItem.slice(i, i + TAM).join("\n"))); }
       setProgresso(null);
