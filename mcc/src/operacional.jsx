@@ -815,12 +815,18 @@ function Obras({ obras, eapPorObra, onMudou }) {
               else if ((c.includes("DESCRI") || c.includes("ESPECIFICA")) && col.desc == null) col.desc = j;
               else if (c.includes("UNID") && col.unid == null) col.unid = j;
               else if ((c.includes("QUANT") || c === "QTD") && col.qtde == null) col.qtde = j;
-              else if (c.includes("CUSTO UNIT") && col.cu == null) col.cu = j;
             });
-            // coluna de VALOR TOTAL: procurar nas 2 linhas do cabeçalho (VALOR/CUSTO/PREÇO + TOTAL); fica com a última (a sem "COM BDI" desmembrado costuma ser a consolidada)
+            // mapear colunas de valor TOTAL nas 2 linhas do cabeçalho, distinguindo COM BDI × custo
             [grade[i], grade[i + 1] || []].forEach((linha) => {
-              linha.map(norm).forEach((c, j) => { if (/(VALOR|CUSTO|PRE[ÇC]O)\s*TOTAL/.test(c)) col.vt = j; });
+              linha.map(norm).forEach((c, j) => {
+                if (/(VALOR|PRE[ÇC]O)\s*TOTAL/.test(c) && c.includes("BDI")) col.vtVenda = j;        // valor de venda c/ BDI
+                else if (/(VALOR|CUSTO|PRE[ÇC]O)\s*TOTAL/.test(c)) col.vtGeral = j;                   // "VALOR TOTAL" / "CUSTO TOTAL" (consolidado)
+                if (/CUSTO\s*UNIT/.test(c) && c.includes("BDI")) col.cuVenda = j;                     // custo unit c/ BDI
+                else if (/CUSTO\s*UNIT/.test(c)) col.cuCusto = j;                                      // custo unit referência (s/BDI)
+              });
             });
+            // valor à faturar: prioriza a coluna "VALOR TOTAL" consolidada; se só houver "COM BDI" desmembrada, usa-a
+            col.vt = col.vtGeral != null ? col.vtGeral : col.vtVenda;
             break;
           }
         }
@@ -833,13 +839,17 @@ function Obras({ obras, eapPorObra, onMudou }) {
             if (!ehCod(c0)) continue;
             const qt = numBR(r[col.qtde]);
             const unid = String(r[col.unid] ?? "").trim();
-            const vt = numBR(r[col.vt]);
-            const cu = col.cu != null ? numBR(r[col.cu]) : (qt ? vt / qt : 0);
+            const vtVenda = numBR(r[col.vt]);              // valor total à faturar (como está na planilha)
             const desc = String(r[col.desc] ?? "").trim();
             // REGRA validada: item analítico = código numérico + unidade + qtde>0 + valor>0
-            // (exclui grupos/títulos, que têm unidade/qtde vazias → elimina dupla contagem)
-            if (!desc || !unid || qt <= 0 || vt <= 0) continue;
-            itensBrutos.push({ codigo: c0, descricao: desc, unidade: unid, qtde: qt, custoSemBdi: cu || vt / qt, custoTotal: vt, bdi: 0 });
+            if (!desc || !unid || qt <= 0 || vtVenda <= 0) continue;
+            // custo de referência (sem BDI) p/ metas: usa coluna de custo se existir; senão estima a venda como base
+            const cuCusto = col.cuCusto != null ? numBR(r[col.cuCusto]) : 0;
+            const custoUnit = cuCusto > 0 ? cuCusto : vtVenda / qt;
+            itensBrutos.push({ codigo: c0, descricao: desc, unidade: unid, qtde: qt,
+              valorTotalVenda: vtVenda,                    // à faturar (com BDI/desconto já na planilha)
+              valorUnitVenda: vtVenda / qt,
+              custoSemBdi: custoUnit, bdi: 0 });
           }
         }
       }
@@ -849,7 +859,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
       try { const meta = await parseEapApi(topo.join("\n"), nomeBase); if (meta?.nomeObra) nomeObra = meta.nomeObra; if (meta?.codigoSugerido) codigoSugerido = meta.codigoSugerido; } catch {}
 
       if (achouCabecalho && itensBrutos.length > 0) {
-        const totalPlan = sum(itensBrutos.map((i) => i.custoTotal));
+        const totalPlan = sum(itensBrutos.map((i) => i.valorTotalVenda));
         const TAM = 40;
         for (let i = 0; i < itensBrutos.length; i += TAM) {
           setProgresso({ atual: Math.floor(i / TAM) + 1, total: Math.ceil(itensBrutos.length / TAM), itens: i });
@@ -884,14 +894,13 @@ function Obras({ obras, eapPorObra, onMudou }) {
         { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, prazo_dias: Number(preview.prazo_dias) || null, desconto: desc, data_inicio: hojeISO() },
         preview.itens.map((it) => {
           const qtde = Number(it.qtde) || 1;
-          const csb = Number(it.custoSemBdi) || (Number(it.custoUnit) || 0);
-          const bdi = Number(it.bdi) || 0;
-          // se a IA já trouxe valor com BDI, deriva csb; senão usa o custo informado
-          const csbFinal = csb || (Number(it.valorUnit) ? Number(it.valorUnit) / (1 + (bdi || 0)) : (Number(it.valorTotal) || 0) / qtde / (1 + (bdi || 0)));
-          const vuComBdi = csbFinal * (1 - desc) * (1 + bdi);
+          // valor de venda (à faturar) = como veio na planilha; se o usuário aplicar desconto extra, multiplica
+          const valorUnitVenda = Number(it.valorUnitVenda) != null && it.valorUnitVenda ? Number(it.valorUnitVenda) : (Number(it.valorTotalVenda) || Number(it.valorTotal) || 0) / qtde;
+          const vendaUnit = valorUnitVenda * (1 - desc);
+          const custoSemBdi = Number(it.custoSemBdi) || valorUnitVenda; // base p/ metas
           return { codigo: String(it.codigo || ""), descricao: String(it.descricao || ""), unidade: String(it.unidade || "un"),
-            qtde, custo_sem_bdi: csbFinal, bdi, desconto: desc,
-            valor_unit: vuComBdi, valor_total: vuComBdi * qtde,
+            qtde, custo_sem_bdi: custoSemBdi, bdi: Number(it.bdi) || 0, desconto: desc,
+            valor_unit: vendaUnit, valor_total: vendaUnit * qtde,   // valor à faturar (contrato)
             disciplina: it.disciplina || "", ambiente: it.ambiente === "externo" ? "externo" : "interno", ordem: it.ordem };
         })
       );
@@ -949,7 +958,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
                   <Td><button onClick={() => toggleAmb(i)} style={{ background: it.ambiente === "externo" ? C.amareloAlerta : C.cinza2, color: it.ambiente === "externo" ? "#fff" : C.dim, border: "none", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>{it.ambiente === "externo" ? "🌦️ externo" : "interno"}</button></Td></tr>)}</tbody></table>
             </div>
             <div style={{ display: "flex", gap: 10, marginTop: 12, alignItems: "center" }}>
-              <span style={{ fontSize: 13, color: C.dim }}>{preview.itens.length} itens · referência {fmtR(sum(preview.itens.map((i) => i.valorTotal)))}</span>
+              <span style={{ fontSize: 13, color: C.dim }}>{preview.itens.length} itens · valor à faturar {fmtR(sum(preview.itens.map((i) => Number(i.valorTotalVenda) || 0)))}</span>
               <div style={{ flex: 1 }} /><Btn kind="ghost" small onClick={() => setPreview(null)}>Descartar</Btn><Btn small onClick={confirmar} disabled={lendo}>Salvar obra e EAP</Btn>
             </div>
           </div>

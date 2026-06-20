@@ -1,5 +1,15 @@
 # Miriad Construction Control (MCC)
 
+## Correção v5.2 — valor à faturar (venda × custo) e integração Operacional↔Financeiro
+O Painel mostrava ~234 mil (a soma de CUSTO) em vez dos 465 mil do contrato. Causa: a
+extração tratava o VALOR TOTAL (já com BDI) como se fosse custo e reaplicava BDI/desconto.
+Agora a extração separa **valor de venda (à faturar)** de **custo de referência (p/ metas)**,
+e grava o valor de venda direto em valor_total, sem transformações. Como Painel, EAP & Custos
+e Financeiro/Resultado leem o mesmo valor_total, os três passam a bater entre si.
+Validado: PMSP = R$ 465.000,00 à faturar; CENSE Londrina = R$ 315.104,13.
+> Reimporte as obras afetadas (excluir + subir a planilha) para atualizar os valores.
+
+
 ## Correção v5.1 — extração da EAP por nível analítico (valores em dobro/triplo)
 Planilhas com vários níveis (título 1.0 · subgrupo 1.01 · item 01.01.03) faziam o MCC
 somar todos os níveis, multiplicando o total. Agora a regra é única e robusta:
