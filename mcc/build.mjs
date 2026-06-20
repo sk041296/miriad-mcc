@@ -32,11 +32,11 @@ const head = `<!doctype html>
   <body>
     <div id="root"></div>
     <!--
-      Miriad Construction Control (MCC) — v6
+      Miriad Construction Control (MCC) — v6.1
       Novidades: Dashboard de RDOs (último respondido + alerta de pendência no dia),
       condição de pagamento na OC-i (à vista / entrada+parcelas / parcelado puro, por dias),
       Financeiro: Custos por obra (serviço × material) e Custos diretos por obra (tabela editável tipo Premissas),
-      Gerar medição em PDF (acumulada/por período, c/ e s/ BDI), favicon capacete.
+      Gerar medição em PDF (acumulada/por período, c/ e s/ BDI), favicon capacete; OC-i gera PDF para o fornecedor (material x EAP, CNO, solicitante, comprador).
     -->
     <script>
 `;

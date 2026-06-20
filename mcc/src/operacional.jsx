@@ -7,7 +7,7 @@ import {
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap,
   aplicarDesconto, definirMeta, uploadFoto,
 } from "./core.jsx";
-import { gerarPdfRdo, gerarPdfMedicao } from "./pdf.js";
+import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
 
 const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
@@ -488,21 +488,65 @@ function resumoCond(oc) {
   return `${ent}${ps.length}x (${dias} dias)`;
 }
 
+/* Editor de linhas da OC-i: cada material vinculado a uma atividade da EAP, com qtde, unidade e valor unitário. */
+function OcLinhas({ itens, valor = [], onChange }) {
+  const addEap = (it) => onChange([...valor, { eap_codigo: it.codigo, descricao: it.descricao, material: "", quantidade: 1, unidade: it.unidade || "un", valorUnit: 0, valor: 0 }]);
+  const upd = (i, patch) => onChange(valor.map((x, j) => { if (j !== i) return x; const n = { ...x, ...patch }; n.valor = (Number(n.quantidade) || 0) * (Number(n.valorUnit) || 0); return n; }));
+  const del = (i) => onChange(valor.filter((_, j) => j !== i));
+  return (
+    <div>
+      <ComboEap itens={itens} valor="" onSelect={addEap} placeholder="+ Adicionar item da EAP a esta compra…" />
+      {valor.length > 0 && (
+        <div style={{ marginTop: 8, border: `1px solid ${C.linha}`, borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ display: "grid", gridTemplateColumns: "minmax(120px,1.4fr) minmax(120px,1.6fr) 70px 64px 110px 110px 30px", gap: 6, padding: "6px 8px", background: C.preto, color: "#fff", fontSize: 10, fontWeight: 700, textTransform: "uppercase" }}>
+            <div>Item da EAP</div><div>Material</div><div style={{ textAlign: "right" }}>Qtde</div><div>Unid.</div><div style={{ textAlign: "right" }}>Vlr unit.</div><div style={{ textAlign: "right" }}>Total</div><div />
+          </div>
+          {valor.map((x, i) => (
+            <div key={i} style={{ display: "grid", gridTemplateColumns: "minmax(120px,1.4fr) minmax(120px,1.6fr) 70px 64px 110px 110px 30px", gap: 6, padding: "6px 8px", alignItems: "center", borderTop: `1px solid ${C.linha}`, background: i % 2 ? "#fafafa" : "#fff" }}>
+              <div><span style={{ background: C.preto, color: C.laranja, fontWeight: 800, fontSize: 11, borderRadius: 5, padding: "2px 7px" }}>{x.eap_codigo}</span><div style={{ fontSize: 10, color: C.dim, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.descricao}</div></div>
+              <input value={x.material} onChange={(e) => upd(i, { material: e.target.value })} placeholder="descrição do material" style={inp({ fontSize: 12, padding: "5px 8px", width: "100%", boxSizing: "border-box" })} />
+              <input type="number" min="0" step="0.01" value={x.quantidade} onChange={(e) => upd(i, { quantidade: parseFloat(e.target.value) || 0 })} style={inp({ fontSize: 12, padding: "5px 6px", textAlign: "right", width: "100%", boxSizing: "border-box" })} />
+              <input value={x.unidade} onChange={(e) => upd(i, { unidade: e.target.value })} style={inp({ fontSize: 12, padding: "5px 6px", width: "100%", boxSizing: "border-box" })} />
+              <NumInput w={104} value={x.valorUnit} onChange={(v) => upd(i, { valorUnit: v })} />
+              <div style={{ textAlign: "right", fontSize: 13, fontWeight: 700, color: C.laranja, fontVariantNumeric: "tabular-nums" }}>{fmt(x.valor)}</div>
+              <button onClick={() => del(i)} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer", fontSize: 15 }}>✕</button>
+            </div>
+          ))}
+          <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 10px", background: C.preto, color: "#fff", fontSize: 12, fontWeight: 700 }}>
+            <span>{valor.length} {valor.length === 1 ? "material" : "materiais"}</span><span style={{ fontVariantNumeric: "tabular-nums" }}>{fmtR(sum(valor.map((x) => x.valor)))}</span>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
   const vazio = { obra_id: "", numero: "", fornecedor: "", data: hojeISO(), itens_eap: [],
-    data_faturamento: hojeISO(), cond: { tipo: "avista", entrada: 0, nParcelas: 3, primeiroDias: 30, intervaloDias: 30, diasTexto: "" } };
+    data_faturamento: hojeISO(), cond: { tipo: "avista", entrada: 0, nParcelas: 3, primeiroDias: 30, intervaloDias: 30, diasTexto: "" },
+    solicitante: "", comprador: "", cliente: "", solicitacaoNum: "", cnoOverride: "", observacao: "",
+    forn: { razao: "", cnpj: "", vendedor: "", contatoVendedor: "", endereco: "", contatoLoja: "" },
+    entrega: { data: "", endereco: "", responsavel: "", contato: "" } };
   const [oc, setOc] = useState(vazio);
   const [busy, setBusy] = useState(false);
+  const [abrirForn, setAbrirForn] = useState(false);
+  const obra = obras.find((o) => o.id === oc.obra_id);
   const eapItens = eapPorObra[oc.obra_id] || [];
   const valorTotal = sum(oc.itens_eap.map((x) => x.valor));
   const parcelas = useMemo(() => gerarParcelas(oc.cond, valorTotal), [oc.cond, valorTotal]);
   const upCond = (patch) => setOc((o) => ({ ...o, cond: { ...o.cond, ...patch } }));
+  const upForn = (patch) => setOc((o) => ({ ...o, forn: { ...o.forn, ...patch } }));
+  const upEntrega = (patch) => setOc((o) => ({ ...o, entrega: { ...o.entrega, ...patch } }));
+  const cnoEfetivo = oc.cnoOverride || obra?.cno || "";
+  const cnpjMask = (v) => v.replace(/\D/g, "").slice(0, 14).replace(/(\d{2})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1/$2").replace(/(\d{4})(\d)/, "$1-$2");
   const salvar = async () => {
     setBusy(true);
     try {
       const condicao_pagamento = { ...oc.cond, parcelas };
+      const dados_oc = { solicitante: oc.solicitante, comprador: oc.comprador, cliente: oc.cliente, solicitacaoNum: oc.solicitacaoNum,
+        cno: cnoEfetivo, observacao: oc.observacao, fornecedor: oc.forn, entrega: oc.entrega };
       await criar("ordens_compra", { obra_id: oc.obra_id || null, numero: oc.numero, fornecedor: oc.fornecedor, data: oc.data,
-        data_faturamento: oc.data_faturamento || oc.data, condicao_pagamento,
+        data_faturamento: oc.data_faturamento || oc.data, condicao_pagamento, dados_oc,
         itens_eap: oc.itens_eap, eap_codigo: oc.itens_eap.map((x) => x.eap_codigo).join(", "),
         material: oc.itens_eap.map((x) => x.material || x.descricao).filter(Boolean).join("; "), valor: valorTotal });
       setOc({ ...vazio, obra_id: oc.obra_id }); onMudou();
@@ -511,16 +555,42 @@ function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
   const restAbertas = restricoes.filter((r) => !r.resolvida);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card title="OC-i · Ordens de compra de materiais — um ou mais itens da EAP">
+      <Card title="OC-i · Ordem de compra de materiais — gera PDF para o fornecedor">
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
           <div style={{ minWidth: 140 }}><Lbl>Obra</Lbl><select value={oc.obra_id} onChange={(e) => setOc({ ...oc, obra_id: e.target.value, itens_eap: [] })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
           <div><Lbl>OC nº</Lbl><input value={oc.numero} onChange={(e) => setOc({ ...oc, numero: e.target.value })} style={inp({ width: 100 })} /></div>
-          <div style={{ flex: 1, minWidth: 160 }}><Lbl>Fornecedor</Lbl><input value={oc.fornecedor} onChange={(e) => setOc({ ...oc, fornecedor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-          <div><Lbl>Data</Lbl><input type="date" value={oc.data} onChange={(e) => setOc({ ...oc, data: e.target.value })} style={inp({ boxSizing: "border-box" })} /></div>
+          <div><Lbl>Solicitação nº</Lbl><input value={oc.solicitacaoNum} onChange={(e) => setOc({ ...oc, solicitacaoNum: e.target.value })} style={inp({ width: 110 })} /></div>
+          <div><Lbl>Emissão</Lbl><input type="date" value={oc.data} onChange={(e) => setOc({ ...oc, data: e.target.value })} style={inp({ boxSizing: "border-box" })} /></div>
+          <div style={{ minWidth: 130 }}><Lbl>Cliente</Lbl><input value={oc.cliente} onChange={(e) => setOc({ ...oc, cliente: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
         </div>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+          <div style={{ flex: 1, minWidth: 170 }}><Lbl>Solicitante (quem pediu)</Lbl><input value={oc.solicitante} onChange={(e) => setOc({ ...oc, solicitante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div style={{ flex: 1, minWidth: 170 }}><Lbl>Comprador (responsável pela emissão da OC-i)</Lbl><input value={oc.comprador} onChange={(e) => setOc({ ...oc, comprador: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div style={{ minWidth: 150 }}><Lbl>CNO da obra {obra?.cno ? "" : "(defina na aba Obras)"}</Lbl><input value={cnoEfetivo} onChange={(e) => setOc({ ...oc, cnoOverride: e.target.value })} placeholder="00.000.00000/00" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+        </div>
+
+        {/* FORNECEDOR */}
+        <div style={{ border: `1.5px solid ${C.linha}`, borderRadius: 10, padding: 14, marginBottom: 12, background: "#fafafa" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: abrirForn ? 10 : 0 }}>
+            <div style={{ fontWeight: 800, fontSize: 12, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em" }}>🏷️ Dados do fornecedor (saem no PDF)</div>
+            <Btn small kind="ghost" onClick={() => setAbrirForn((v) => !v)}>{abrirForn ? "ocultar" : "preencher"}</Btn>
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div style={{ flex: 1, minWidth: 180 }}><Lbl>Nome fantasia</Lbl><input value={oc.fornecedor} onChange={(e) => setOc({ ...oc, fornecedor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+            {abrirForn && <>
+              <div style={{ flex: 1, minWidth: 180 }}><Lbl>Razão social</Lbl><input value={oc.forn.razao} onChange={(e) => upForn({ razao: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+              <div><Lbl>CNPJ</Lbl><input value={oc.forn.cnpj} onChange={(e) => upForn({ cnpj: cnpjMask(e.target.value) })} placeholder="00.000.000/0000-00" style={inp({ width: 165 })} /></div>
+              <div style={{ minWidth: 150 }}><Lbl>Vendedor</Lbl><input value={oc.forn.vendedor} onChange={(e) => upForn({ vendedor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+              <div style={{ minWidth: 150 }}><Lbl>Contato do vendedor</Lbl><input value={oc.forn.contatoVendedor} onChange={(e) => upForn({ contatoVendedor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+              <div style={{ flex: 1, minWidth: 200 }}><Lbl>Endereço</Lbl><input value={oc.forn.endereco} onChange={(e) => upForn({ endereco: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+              <div style={{ minWidth: 140 }}><Lbl>Contato da loja</Lbl><input value={oc.forn.contatoLoja} onChange={(e) => upForn({ contatoLoja: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+            </>}
+          </div>
+        </div>
+
         <div style={{ marginBottom: 12 }}>
-          <Lbl>Itens da EAP nesta compra (alguns fornecimentos cobrem mais de um item)</Lbl>
-          {oc.obra_id ? <MultiEapPicker itens={eapItens} valor={oc.itens_eap} onChange={(v) => setOc({ ...oc, itens_eap: v })} labelValor="Valor do item" />
+          <Lbl>Pedido — relacione cada material a uma atividade da EAP</Lbl>
+          {oc.obra_id ? <OcLinhas itens={eapItens} valor={oc.itens_eap} onChange={(v) => setOc({ ...oc, itens_eap: v })} />
             : <div style={{ fontSize: 12, color: C.dim }}>Selecione uma obra para listar a EAP.</div>}
         </div>
 
@@ -557,6 +627,18 @@ function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
           )}
         </div>
 
+        {/* ENTREGA */}
+        <div style={{ border: `1.5px solid ${C.linha}`, borderRadius: 10, padding: 14, marginBottom: 12 }}>
+          <div style={{ fontWeight: 800, fontSize: 12, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 10 }}>🚚 Dados de entrega</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div><Lbl>Data de entrega</Lbl><input type="date" value={oc.entrega.data} onChange={(e) => upEntrega({ data: e.target.value })} style={inp({ boxSizing: "border-box" })} /></div>
+            <div style={{ flex: 1, minWidth: 220 }}><Lbl>Endereço de entrega</Lbl><input value={oc.entrega.endereco} onChange={(e) => upEntrega({ endereco: e.target.value })} placeholder={obra?.local || ""} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+            <div style={{ minWidth: 150 }}><Lbl>Responsável</Lbl><input value={oc.entrega.responsavel} onChange={(e) => upEntrega({ responsavel: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+            <div style={{ minWidth: 130 }}><Lbl>Contato</Lbl><input value={oc.entrega.contato} onChange={(e) => upEntrega({ contato: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          </div>
+          <div style={{ marginTop: 10 }}><Lbl>Observação para a NF</Lbl><input value={oc.observacao} onChange={(e) => setOc({ ...oc, observacao: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+        </div>
+
         <div style={{ display: "flex", alignItems: "center" }}>
           <div style={{ fontSize: 13, color: C.dim }}>Total da OC: <b style={{ color: C.laranja, fontSize: 16 }}>{fmtR(valorTotal)}</b></div>
           <div style={{ flex: 1 }} />
@@ -573,9 +655,11 @@ function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
       )}
 
       <Card title={`Ordens de compra (${ocs.length})`}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Faturamento</Th><Th>Fornecedor</Th><Th>Itens EAP</Th><Th>Pagamento</Th><Th right>Valor</Th><Th /></tr></thead>
-          <tbody>{ocs.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap.map((i) => i.eap_codigo).join(", ") : (x.eap_codigo || "—"); return <tr key={x.id}><Td>{x.numero || "—"}</Td><Td>{o?.codigo || "—"}</Td><Td>{dataBR(x.data_faturamento || x.data)}</Td><Td>{x.fornecedor || "—"}</Td><Td style={{ fontSize: 12 }}>{itens}</Td><Td style={{ fontSize: 12 }}>{resumoCond(x)}</Td><Td right color={C.laranja}>{fmtR(x.valor)}</Td><Td><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>; })}
-            {ocs.length === 0 && <tr><Td colSpan={8} color={C.dim} style={{ padding: 14 }}>Nenhuma OC lançada.</Td></tr>}</tbody></table>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Faturamento</Th><Th>Fornecedor</Th><Th>Itens EAP</Th><Th>Pagamento</Th><Th right>Valor</Th><Th>PDF</Th><Th /></tr></thead>
+          <tbody>{ocs.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap.map((i) => i.eap_codigo).join(", ") : (x.eap_codigo || "—"); return <tr key={x.id}><Td>{x.numero || "—"}</Td><Td>{o?.codigo || "—"}</Td><Td>{dataBR(x.data_faturamento || x.data)}</Td><Td>{x.fornecedor || "—"}</Td><Td style={{ fontSize: 12 }}>{itens}</Td><Td style={{ fontSize: 12 }}>{resumoCond(x)}</Td><Td right color={C.laranja}>{fmtR(x.valor)}</Td>
+            <Td><button onClick={() => gerarPdfOC(x, o || {})} style={{ background: "none", border: `1px solid ${C.laranja}`, color: C.laranja, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>PDF</button></Td>
+            <Td><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>; })}
+            {ocs.length === 0 && <tr><Td colSpan={9} color={C.dim} style={{ padding: 14 }}>Nenhuma OC lançada.</Td></tr>}</tbody></table>
       </Card>
     </div>
   );
@@ -1042,7 +1126,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
     try {
       const desc = Number(preview.desconto) || 0;
       await criarObraComEap(
-        { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, prazo_dias: Number(preview.prazo_dias) || null, desconto: desc, data_inicio: hojeISO() },
+        { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, cno: preview.cno || null, prazo_dias: Number(preview.prazo_dias) || null, desconto: desc, data_inicio: hojeISO() },
         preview.itens.map((it) => {
           const qtde = Number(it.qtde) || 1;
           // valor de venda (à faturar) = como veio na planilha; se o usuário aplicar desconto extra, multiplica
@@ -1062,7 +1146,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
   const [editObra, setEditObra] = useState(null); // {id, codigo, nome, contratante, contrato, local, prazo_dias}
   const salvarEditObra = async () => {
     try {
-      await editar("obras", editObra.id, { codigo: editObra.codigo, nome: editObra.nome, contratante: editObra.contratante, contrato: editObra.contrato, local: editObra.local, prazo_dias: Number(editObra.prazo_dias) || null });
+      await editar("obras", editObra.id, { codigo: editObra.codigo, nome: editObra.nome, contratante: editObra.contratante, contrato: editObra.contrato, local: editObra.local, cno: editObra.cno || null, prazo_dias: Number(editObra.prazo_dias) || null });
       setEditObra(null); onMudou();
     } catch (e) { alert(e.message); }
   };
@@ -1102,6 +1186,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
               <div style={{ flex: 1, minWidth: 200 }}><Lbl>Contratante</Lbl><input value={preview.contratante} onChange={(e) => setPreview({ ...preview, contratante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
               <div style={{ flex: 1, minWidth: 200 }}><Lbl>Local</Lbl><input value={preview.local} onChange={(e) => setPreview({ ...preview, local: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
               <div style={{ flex: 1, minWidth: 200 }}><Lbl>Contrato</Lbl><input value={preview.contrato} onChange={(e) => setPreview({ ...preview, contrato: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+              <div style={{ minWidth: 160 }}><Lbl>CNO (Cadastro Nacional de Obra)</Lbl><input value={preview.cno || ""} onChange={(e) => setPreview({ ...preview, cno: e.target.value })} placeholder="00.000.00000/00" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
             </div>
             <div style={{ maxHeight: 320, overflowY: "auto", border: `1px solid ${C.linha}`, borderRadius: 8 }}>
               <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Unid.</Th><Th right>Qtde</Th><Th right>Valor c/BDI</Th><Th>Ambiente</Th></tr></thead>
@@ -1117,7 +1202,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
       </Card>
       {obras.map((o) => (
         <Card key={o.id} title={`${o.codigo} · ${o.nome}`} right={<div style={{ display: "flex", gap: 8 }}>
-          <Btn kind="ghost" small onClick={() => setEditObra({ id: o.id, codigo: o.codigo, nome: o.nome, contratante: o.contratante || "", contrato: o.contrato || "", local: o.local || "", prazo_dias: o.prazo_dias || "" })}>✎ Editar</Btn>
+          <Btn kind="ghost" small onClick={() => setEditObra({ id: o.id, codigo: o.codigo, nome: o.nome, contratante: o.contratante || "", contrato: o.contrato || "", local: o.local || "", cno: o.cno || "", prazo_dias: o.prazo_dias || "" })}>✎ Editar</Btn>
           <Btn kind="danger" small onClick={async () => { if (confirm(`Excluir ${o.codigo} e todos os dados?`)) { await remover("obras", o.id); onMudou(); } }}>Excluir</Btn>
         </div>}>
           {editObra?.id === o.id && (
@@ -1131,6 +1216,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
                 <div style={{ flex: 1, minWidth: 180 }}><Lbl>Contratante</Lbl><input value={editObra.contratante} onChange={(e) => setEditObra({ ...editObra, contratante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
                 <div style={{ flex: 1, minWidth: 180 }}><Lbl>Local</Lbl><input value={editObra.local} onChange={(e) => setEditObra({ ...editObra, local: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
                 <div style={{ flex: 1, minWidth: 180 }}><Lbl>Contrato</Lbl><input value={editObra.contrato} onChange={(e) => setEditObra({ ...editObra, contrato: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+                <div style={{ minWidth: 170 }}><Lbl>CNO (Cadastro Nacional de Obra)</Lbl><input value={editObra.cno} onChange={(e) => setEditObra({ ...editObra, cno: e.target.value })} placeholder="00.000.00000/00" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
               </div>
               <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
                 <Btn small onClick={salvarEditObra} disabled={!editObra.codigo || !editObra.nome}>Salvar</Btn>
@@ -1138,7 +1224,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
               </div>
             </div>
           )}
-          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{(eapPorObra[o.id] || []).length} itens de EAP · {o.contratante || "sem contratante"} · prazo {o.prazo_dias || "—"} dias</div>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{(eapPorObra[o.id] || []).length} itens de EAP · {o.contratante || "sem contratante"} · prazo {o.prazo_dias || "—"} dias{o.cno ? ` · CNO ${o.cno}` : ""}</div>
           <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Unid.</Th><Th right>Qtde</Th><Th right>Valor c/BDI</Th><Th>Ambiente</Th></tr></thead>
             <tbody>{(eapPorObra[o.id] || []).slice(0, 200).map((it) => <tr key={it.id}><Td>{it.codigo}</Td><Td style={{ fontSize: 12 }}>{it.descricao}</Td><Td><b style={{ color: C.laranja }}>{it.unidade}</b></Td><Td right>{fmt(it.qtde)}</Td><Td right>{fmt(it.valor_total)}</Td><Td>{it.ambiente === "externo" ? "🌦️ externo" : "interno"}</Td></tr>)}</tbody></table>
         </Card>

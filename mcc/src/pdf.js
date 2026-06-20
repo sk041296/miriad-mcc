@@ -1,5 +1,5 @@
 import { TIMBRADO_HEADER } from "./timbrado.js";
-import { dataBR } from "./core.jsx";
+import { dataBR, addDiasISO } from "./core.jsx";
 
 /* Geração do PDF do RDO no papel timbrado da Miriad (via janela de impressão do navegador).
    IMPORTANTE: as restrições de material NÃO entram aqui — são internas, não vão ao cliente. */
@@ -137,5 +137,163 @@ export function gerarPdfMedicao(obra, linhas, periodo, usuarioNome) {
 
   const w = window.open("", "_blank");
   if (!w) { alert("Permita pop-ups para gerar o PDF da medição."); return; }
+  w.document.write(html); w.document.close();
+}
+
+/* ================================================================
+   PDF da ORDEM DE COMPRA (OC-i) — para envio ao fornecedor.
+   Replica o padrão da Miriad: cabeçalho da empresa, dados do fornecedor,
+   pedido (cada material vinculado a uma atividade da EAP), condição de
+   pagamento com parcelas por dias após o faturamento, dados de entrega e
+   o bloco de NF com o CNO (Cadastro Nacional de Obra).
+   AJUSTE os dados da empresa abaixo se necessário.
+   ================================================================ */
+const EMPRESA_OC = {
+  nome: "MIRIAD ENGENHARIA, CONSTRUÇÕES E SERVIÇOS LTDA",
+  endereco: "Av. Visconde de Guarapuava, 2764, Sala 1508 — Centro — Curitiba/PR — CEP 80.010-100",
+  cnpj: "33.863.254/0001-02",
+  telefone: "(41) 98845-8401",
+  email: "casa@miriadsolutions.com",
+};
+
+export function gerarPdfOC(oc, obra) {
+  const d = oc.dados_oc || {};
+  const forn = d.fornecedor || {};
+  const ent = d.entrega || {};
+  const fmtBR = (v) => (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const baseFat = oc.data_faturamento || oc.data || "";
+  const cno = d.cno || obra.cno || "";
+
+  // linhas do pedido (cada material × atividade da EAP)
+  const linhas = (oc.itens_eap && oc.itens_eap.length ? oc.itens_eap : []).map((l) => {
+    const qt = Number(l.quantidade) || 0, vu = Number(l.valorUnit) || 0, vt = Number(l.valor) || (qt * vu);
+    const ehFrete = /frete|carreto/i.test(String(l.material || l.descricao || ""));
+    return `<tr>
+      <td style="text-align:right">${qt ? fmtBR(qt) : ""}</td>
+      <td style="text-align:center">${l.unidade || ""}</td>
+      <td>${(l.material || l.descricao || "").replace(/</g, "&lt;")}</td>
+      <td style="text-align:right">${vu ? "R$ " + fmtBR(vu) : ""}</td>
+      <td style="text-align:right">R$ ${fmtBR(vt)}</td>
+      <td><b>${l.eap_codigo || ""}</b>${l.descricao ? ` — ${String(l.descricao).replace(/</g, "&lt;").slice(0, 40)}` : ""}</td>
+      <td style="text-align:center">${ehFrete ? "FRETES E CARRETOS" : "MATERIAL"}</td>
+    </tr>`;
+  }).join("");
+  const total = (oc.itens_eap || []).reduce((s, l) => s + (Number(l.valor) || 0), 0);
+
+  // parcelas (condição de pagamento)
+  const cond = oc.condicao_pagamento || { tipo: "avista", parcelas: [{ dias: 0, valor: total }] };
+  const parcelas = (cond.parcelas && cond.parcelas.length ? cond.parcelas : [{ dias: 0, valor: total }]);
+  const formaLabel = cond.tipo === "avista" ? "À vista" : cond.tipo === "entrada_parcelas" ? "Entrada + parcelamento" : "Parcelado";
+  const dinamica = `${parcelas.length}x`;
+  const parcelasRows = parcelas.map((p, i) => `<tr>
+    <td style="text-align:center">${p.entrada ? "Entrada" : `${i + (parcelas[0]?.entrada ? 0 : 1)}/${parcelas.filter((q) => !q.entrada).length}`}</td>
+    <td style="text-align:center">${dataBR(addDiasISO(baseFat, p.dias))}</td>
+    <td style="text-align:right">R$ ${fmtBR(p.valor)}</td>
+    <td style="text-align:center">${p.entrada ? "Entrada" : `${p.dias} dias`}</td>
+  </tr>`).join("");
+
+  const linhaInfo = (rotulo, valor) => `<tr><td class="k">${rotulo}</td><td>${valor || "—"}</td></tr>`;
+
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+  <title>OC ${oc.numero || ""} — ${obra.codigo || ""}</title>
+  <style>
+    @page { size: A4; margin: 10mm 9mm; }
+    * { font-family: Arial, Helvetica, sans-serif; color: #1c1c1c; }
+    body { margin: 0; font-size: 10px; }
+    .barra { background: #f37335; color: #fff; font-weight: 800; font-size: 15px; letter-spacing: .06em; text-align: center; padding: 6px; border-radius: 3px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    th, td { border: 1px solid #c9c9c9; padding: 3px 6px; font-size: 9.5px; vertical-align: top; }
+    th { background: #141414; color: #fff; text-transform: uppercase; font-size: 8.5px; letter-spacing: .03em; }
+    .sec { background: #f37335; color: #fff; font-weight: 800; padding: 4px 8px; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em; margin: 6px 0 2px; border-radius: 2px; }
+    .empresa { display: flex; gap: 14px; align-items: center; border: 1px solid #c9c9c9; padding: 8px 12px; margin-bottom: 8px; }
+    .empresa .nome { font-size: 13px; font-weight: 800; color: #c21000; }
+    .empresa .l { font-size: 9.5px; line-height: 1.5; }
+    .logo { width: 64px; height: 64px; flex-shrink: 0; }
+    .k { background: #f3f3f1; font-weight: 700; width: 22%; }
+    .tot td { background: #f37335; color: #fff; font-weight: 800; }
+    .legal { font-size: 7.5px; color: #555; line-height: 1.4; margin-top: 8px; text-align: justify; }
+    .assin { margin-top: 26px; display: flex; justify-content: space-between; font-size: 10px; }
+    .assin div { width: 45%; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
+  </style></head><body>
+    <div class="barra">ORDEM DE COMPRA</div>
+    <table><thead><tr><th>Emissão</th><th>Entrega</th><th>OC nº</th><th>Comprador</th><th>Solicitante</th><th>Solicitação nº</th></tr></thead>
+      <tbody><tr>
+        <td style="text-align:center">${dataBR(oc.data)}</td>
+        <td style="text-align:center">${ent.data ? dataBR(ent.data) : "—"}</td>
+        <td style="text-align:center">${oc.numero || "—"}</td>
+        <td>${d.comprador || "—"}</td>
+        <td>${d.solicitante || "—"}</td>
+        <td style="text-align:center">${d.solicitacaoNum || "—"}</td>
+      </tr></tbody></table>
+
+    <div class="empresa">
+      <svg class="logo" viewBox="0 0 100 100"><g transform="translate(50,50)">
+        ${[0, 90, 180, 270].map((r) => `<g transform="rotate(${r})"><path d="M0,0 L0,-42 L30,-30 Z" fill="#c21000"/><path d="M0,0 L0,-42 L-30,-30 Z" fill="#f37335" transform="rotate(-22)"/></g>`).join("")}
+      </g></svg>
+      <div class="l">
+        <div class="nome">${EMPRESA_OC.nome}</div>
+        <div>${EMPRESA_OC.endereco}</div>
+        <div>CNPJ: ${EMPRESA_OC.cnpj} · ${EMPRESA_OC.telefone} · ${EMPRESA_OC.email}</div>
+        <div><b>Cliente:</b> ${d.cliente || "—"} &nbsp;·&nbsp; <b>Obra:</b> ${obra.codigo || ""} ${obra.nome ? "— " + obra.nome : ""}</div>
+      </div>
+    </div>
+
+    <div class="sec">Dados do fornecedor</div>
+    <table>
+      ${linhaInfo("Nome fantasia", oc.fornecedor)}
+      ${linhaInfo("Razão social", forn.razao)}
+      ${linhaInfo("CNPJ", forn.cnpj)}
+      ${linhaInfo("Vendedor", forn.vendedor)}
+      ${linhaInfo("Contato do vendedor", forn.contatoVendedor)}
+      ${linhaInfo("Endereço", forn.endereco)}
+      ${linhaInfo("Contato da loja", forn.contatoLoja)}
+    </table>
+
+    <div class="sec">Pedido</div>
+    <table><thead><tr>
+        <th style="text-align:right">Quant.</th><th style="text-align:center">Unid.</th><th>Item (material)</th>
+        <th style="text-align:right">Valor unitário</th><th style="text-align:right">Valor total</th>
+        <th>Item da EAP (atividade)</th><th style="text-align:center">Descrição financeira</th>
+      </tr></thead>
+      <tbody>
+        ${linhas || '<tr><td colspan="7">Sem itens.</td></tr>'}
+        <tr class="tot"><td colspan="4" style="text-align:right">TOTAL DO PEDIDO</td><td style="text-align:right">R$ ${fmtBR(total)}</td><td colspan="2"></td></tr>
+      </tbody></table>
+
+    <div class="sec">Pagamento</div>
+    <table><thead><tr><th>Forma de pagamento</th><th>Dinâmica</th><th style="text-align:right">Desconto</th><th style="text-align:right">Total</th></tr></thead>
+      <tbody><tr><td>${formaLabel}</td><td style="text-align:center">${dinamica}</td><td style="text-align:right">R$ ${fmtBR(0)}</td><td style="text-align:right"><b>R$ ${fmtBR(total)}</b></td></tr></tbody></table>
+    <table><thead><tr><th style="text-align:center">Parcela</th><th style="text-align:center">Vencimento</th><th style="text-align:right">Valor</th><th style="text-align:center">Prazo</th></tr></thead>
+      <tbody>${parcelasRows}</tbody></table>
+
+    <div class="sec">Dados de entrega</div>
+    <table>
+      ${linhaInfo("Endereço de entrega", ent.endereco || obra.local)}
+      ${linhaInfo("Responsável", ent.responsavel)}
+      ${linhaInfo("Contato", ent.contato)}
+      ${linhaInfo("Data de entrega", ent.data ? dataBR(ent.data) : "")}
+    </table>
+
+    <div class="sec">Dados adicionais para a NF</div>
+    <table>
+      ${linhaInfo("Nº CNO (Cadastro Nacional de Obra) — destacar na NF", cno)}
+      ${linhaInfo("Ordem de compra nº", oc.numero)}
+      ${linhaInfo("Observação", d.observacao)}
+    </table>
+
+    <div class="legal">
+      Informamos que os pedidos não atendidos dentro do prazo estipulado nesta Ordem de Compra estarão sujeitos às penalidades previstas
+      no Código de Defesa do Consumidor (Lei nº 8.078/1990). Em caso de atraso na entrega dos bens especificados nesta ordem sem justa
+      causa, será aplicada ao Fornecedor multa de 0,33% (trinta e três centésimos por cento) ao dia sobre o valor total do pedido,
+      limitada a 20% (vinte por cento) do valor total da compra. O pagamento da multa não exime o Fornecedor da obrigação de entregar os
+      materiais, salvo manifestação expressa do Comprador em sentido contrário.
+    </div>
+
+    <div class="assin"><div>MIRIAD — Comprador<br>${d.comprador || ""}</div><div>Fornecedor — de acordo<br>&nbsp;</div></div>
+    <script>window.onload=()=>{setTimeout(()=>window.print(),350)}</script>
+  </body></html>`;
+
+  const w = window.open("", "_blank");
+  if (!w) { alert("Permita pop-ups para gerar o PDF da OC."); return; }
   w.document.write(html); w.document.close();
 }

@@ -1,5 +1,21 @@
 # Miriad Construction Control (MCC)
 
+## v6.1 — OC-i gera PDF para o fornecedor
+A OC-i agora produz um **PDF de Ordem de Compra** pronto para enviar ao fornecedor, no padrão
+da Miriad. Novidades:
+- **Pedido por material × atividade da EAP**: cada material da compra tem quantidade, unidade,
+  valor unitário e total, e é **vinculado a um item da EAP** (coluna "Item da EAP" no PDF).
+- **CNO (Cadastro Nacional de Obra)**: cadastrado por obra (aba Obras → Editar/criar) e
+  destacado no bloco de NF do PDF (pode ser sobrescrito na própria OC).
+- **Solicitante** (quem pediu) e **Comprador** (responsável pela emissão da OC-i) identificados.
+- **Dados do fornecedor** (nome fantasia, razão social, CNPJ, vendedor, contatos, endereço),
+  **condição de pagamento** com parcelas e vencimentos (faturamento + dias) e **dados de entrega**.
+- Botão **PDF** na lista de ordens de compra.
+
+> **Migração:** rode **uma vez** `supabase/migration_v6_1.sql` (adiciona `obras.cno` e
+> `ordens_compra.dados_oc`). Os dados da empresa que saem no cabeçalho do PDF estão em
+> `src/pdf.js` (constante `EMPRESA_OC`) — ajuste ali se algum dado mudar.
+
 ## v6 — Controle de RDOs, condição de pagamento na OC-i, custos por obra e medição PDF
 Novidades desta versão:
 1. **Dashboard de controle dos RDOs** (Painel Geral): tabela com o último RDO respondido de
