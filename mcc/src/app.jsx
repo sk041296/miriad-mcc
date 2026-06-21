@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  C, Btn, Card, inp, Lbl, listar, criar, criarUsuario, remover, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError,
+  C, Btn, Card, inp, Lbl, listar, criar, criarUsuario, editar, remover, acaoData, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError,
   PAPEIS, PERMS, pode, ehDirecao, papeisQuePodeCriar, PRECISA_DESIGNACAO, SETOR_DE_PAPEL,
 } from "./core.jsx";
 import { ModuloFinanceiro } from "./financeiro.jsx";
@@ -11,6 +11,7 @@ import { LOGO_FULL, LOGO_MARK } from "./logo.js";
 function LogoMiriad({ size = 26 }) {
   return <img src={LOGO_MARK} alt="Miriad" width={size} height={size} style={{ flexShrink: 0, objectFit: "contain" }} />;
 }
+const btnMini = (cor) => ({ background: "none", border: `1px solid ${cor}`, color: cor, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer" });
 
 /* ---------------- Definir senha pelo convite ---------------- */
 function DefinirSenha({ token, onEntrar }) {
@@ -81,6 +82,10 @@ function Usuarios({ usuario }) {
   const [u, setU] = useState(vazio);
   const [busy, setBusy] = useState(false); const [erro, setErro] = useState(null);
   const [convite, setConvite] = useState(null); const [expandido, setExpandido] = useState(null);
+  const ehAdmin = usuario.papel === "ceo" || usuario.papel === "diretor";
+  const ehCeo = usuario.papel === "ceo";
+  const [edit, setEdit] = useState(null);
+  const [testeBusy, setTesteBusy] = useState(false); const [testeMsg, setTesteMsg] = useState(null); const [testeSenha, setTesteSenha] = useState("Teste@123");
   const carregar = () => {
     listar("usuarios").then(setLista).catch(() => {});
     listar("obras").then(setObras).catch(() => {});
@@ -110,6 +115,35 @@ function Usuarios({ usuario }) {
     } catch (e) { alert(e.message); }
   };
   const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
+  const resetar = async (x) => {
+    if (!confirm(`Resetar a senha de ${x.nome}? Será gerado um novo link de convite e a senha atual deixará de funcionar.`)) return;
+    try { const r = await acaoData({ t: "resetar_senha", id: x.id }); if (r.error) return alert(r.error);
+      setConvite({ nome: x.nome, link: `${window.location.origin}${window.location.pathname}?convite=${r.convite}` }); carregar();
+    } catch (e) { alert(e.message); }
+  };
+  const excluir = async (x) => {
+    if (!confirm(`Excluir definitivamente o usuário ${x.nome}? Esta ação não pode ser desfeita.`)) return;
+    try { await remover("usuarios", x.id); carregar(); } catch (e) { alert(e.message); }
+  };
+  const salvarEdicao = async () => {
+    try { await editar("usuarios", edit.id, { nome: edit.nome, email: edit.email, papel: edit.papel, ativo: edit.ativo }); setEdit(null); carregar(); }
+    catch (e) { alert(e.message); }
+  };
+  const criarAmbienteTeste = async () => {
+    if (!confirm("Criar um usuário de teste para cada papel da empresa, com a senha informada? Você poderá entrar como cada um para testar.")) return;
+    setTesteBusy(true); setTesteMsg(null);
+    const papeis = ["diretor", "coord_suprimentos", "coord_planejamento", "coord_obras", "coord_orcamentos", "op_suprimentos", "op_planejamento", "op_orcamento", "financeiro", "sup_obras"];
+    const todasObras = obras.map((o) => o.id);
+    let criados = 0, pulados = 0;
+    for (const pp of papeis) {
+      const email = `teste.${pp}@miriad.test`;
+      try {
+        await criarUsuario({ nome: `TESTE — ${PAPEIS[pp]}`, email, papel: pp, senha: testeSenha, obras: PRECISA_DESIGNACAO.has(pp) ? todasObras : [] });
+        criados++;
+      } catch (e) { pulados++; }
+    }
+    setTesteBusy(false); setTesteMsg(`${criados} usuário(s) de teste criado(s)${pulados ? `, ${pulados} já existia(m)` : ""}. Entre com o e-mail teste.<papel>@miriad.test e a senha definida.`); carregar();
+  };
   const corPapel = (p) => p === "ceo" ? C.preto : ehDirecao(p) ? "#7c2d12" : p.startsWith("coord") ? C.laranja : p === "financeiro" ? C.azul : C.cinza2;
 
   return (
@@ -143,10 +177,24 @@ function Usuarios({ usuario }) {
         {erro && <div style={{ color: C.vermelho, fontSize: 12, marginBottom: 8 }}>{erro}</div>}
       </>}
 
-      <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Nome", "E-mail", "Papel", "Status", "Obras"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+      {ehCeo && (
+        <div style={{ border: `1px dashed ${C.laranja}`, borderRadius: 10, padding: 14, marginBottom: 14, background: C.laranjaClaro }}>
+          <div style={{ fontWeight: 800, fontSize: 12, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", marginBottom: 6 }}>🧪 Ambiente de teste</div>
+          <div style={{ fontSize: 12.5, color: C.texto, marginBottom: 10 }}>Cria um usuário de teste para cada papel da empresa (e-mail <code>teste.&lt;papel&gt;@miriad.test</code>), com a senha abaixo. Saia e entre com cada um para testar as telas fora do seu acesso de CEO. Depois é só excluí-los pela lista.</div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+            <div><Lbl>Senha de teste (para todos)</Lbl><input value={testeSenha} onChange={(e) => setTesteSenha(e.target.value)} style={inp({ width: 180 })} /></div>
+            <Btn small disabled={testeBusy || testeSenha.length < 6} onClick={criarAmbienteTeste}>{testeBusy ? "Criando…" : "Criar ambiente de teste"}</Btn>
+          </div>
+          {testeMsg && <div style={{ fontSize: 12.5, color: C.verde, fontWeight: 700, marginTop: 8 }}>{testeMsg}</div>}
+        </div>
+      )}
+
+      <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Nome", "E-mail", "Papel", "Status", "Obras", ...(ehAdmin ? ["Ações"] : [])].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
         <tbody>{lista.map((x) => {
           const scoped = PRECISA_DESIGNACAO.has(x.papel);
           const dos = obrasDoUsuario(x.id);
+          const podeMexer = ehAdmin && x.id !== usuario.id && !(x.papel === "ceo" && !ehCeo) && !(x.papel === "diretor" && !ehCeo);
+          const editavel = edit && edit.id === x.id;
           return <React.Fragment key={x.id}>
             <tr>
               <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{x.nome}</td>
@@ -156,9 +204,28 @@ function Usuarios({ usuario }) {
               <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>
                 {scoped ? <button onClick={() => setExpandido(expandido === x.id ? null : x.id)} style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer", color: C.dim }}>{dos.length ? dos.map((d) => nomeObra(d.obra_id)).join(", ") : "designar"} ▾</button> : "—"}
               </td>
+              {ehAdmin && <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, whiteSpace: "nowrap" }}>
+                {podeMexer ? <span style={{ display: "flex", gap: 6 }}>
+                  <button onClick={() => setEdit({ id: x.id, nome: x.nome, email: x.email, papel: x.papel, ativo: x.ativo !== false })} style={btnMini(C.azul)}>editar</button>
+                  <button onClick={() => resetar(x)} style={btnMini(C.amareloAlerta)}>resetar</button>
+                  <button onClick={() => excluir(x)} style={btnMini(C.vermelho)}>excluir</button>
+                </span> : <span style={{ color: C.dim }}>—</span>}
+              </td>}
             </tr>
+            {editavel && (
+              <tr><td colSpan={6} style={{ padding: "10px", borderBottom: `1px solid ${C.linha}`, background: "#f5f8ff" }}>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+                  <div style={{ minWidth: 150 }}><Lbl>Nome</Lbl><input value={edit.nome} onChange={(e) => setEdit({ ...edit, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+                  <div style={{ minWidth: 170 }}><Lbl>E-mail</Lbl><input value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+                  <div style={{ minWidth: 180 }}><Lbl>Papel</Lbl><select value={edit.papel} onChange={(e) => setEdit({ ...edit, papel: e.target.value })} style={inp({ width: "100%" })}>{criaveis.map((pp) => <option key={pp} value={pp}>{PAPEIS[pp]}</option>)}{!criaveis.includes(edit.papel) && <option value={edit.papel}>{PAPEIS[edit.papel]}</option>}</select></div>
+                  <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, paddingBottom: 6 }}><input type="checkbox" checked={edit.ativo} onChange={(e) => setEdit({ ...edit, ativo: e.target.checked })} />Ativo</label>
+                  <Btn small onClick={salvarEdicao}>Salvar</Btn>
+                  <Btn small kind="ghost" onClick={() => setEdit(null)}>Cancelar</Btn>
+                </div>
+              </td></tr>
+            )}
             {expandido === x.id && scoped && criaveis.length > 0 && (
-              <tr><td colSpan={5} style={{ padding: "8px 10px", borderBottom: `1px solid ${C.linha}`, background: "#fafafa" }}>
+              <tr><td colSpan={ehAdmin ? 6 : 5} style={{ padding: "8px 10px", borderBottom: `1px solid ${C.linha}`, background: "#fafafa" }}>
                 <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Obras designadas a {x.nome.split(" ")[0]}:</div>
                 <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
                   {obras.map((o) => { const on = dos.some((d) => d.obra_id === o.id); return <button key={o.id} onClick={() => toggleDesignacao(x.id, o.id, x.papel)} style={{ border: `1.5px solid ${on ? C.laranja : C.linha}`, background: on ? C.laranjaClaro : "#fff", color: C.preto, borderRadius: 7, padding: "4px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{on ? "✓ " : ""}{o.codigo}</button>; })}

@@ -106,8 +106,19 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, semana });
     }
-    if (t === "sm_compliance") {
-      const semana = mondayISO();
+    // ---- reset de senha (CEO/Diretor): invalida a senha e gera novo convite ----
+    if (t === "resetar_senha") {
+      if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas CEO/Diretor podem resetar senhas." });
+      const { id } = req.body;
+      const { data: alvo } = await supabase.from("usuarios").select("id,nome,email,papel").eq("id", id).maybeSingle();
+      if (!alvo) return res.status(404).json({ error: "Usuário não encontrado." });
+      if (alvo.papel === "ceo" && s.papel !== "ceo") return res.status(403).json({ error: "Apenas o CEO pode resetar um CEO." });
+      const { error } = await supabase.from("usuarios").update({ senha_hash: null, senha_definida: false, travado: false, travado_em: null }).eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true, convite: emitirConvite(alvo) });
+    }
+
+    if (t === "sm_compliance") {      const semana = mondayISO();
       const seg = new Date(semana + "T00:00:00");
       const prazo = new Date(seg); prazo.setHours(23, 59, 59, 0);            // segunda 23:59
       const trava = new Date(prazo.getTime() + 24 * 3600 * 1000);            // +24h
@@ -230,7 +241,19 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     const { t, id, patch } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
-    if (t === "usuarios" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+    if (t === "usuarios") {
+      if (!GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+      // coordenadores só podem (des)travar ou (in)ativar; editar cadastro é CEO/Diretor
+      if (!ADMIN_TOTAL.has(s.papel)) {
+        const permitido = ["travado", "travado_em", "ativo"];
+        if (Object.keys(patch || {}).some((k) => !permitido.includes(k))) return res.status(403).json({ error: "Apenas CEO/Diretor podem editar o cadastro do usuário." });
+      } else if (patch && patch.papel && !podeCriarPapel(s.papel, patch.papel)) {
+        return res.status(403).json({ error: "Você não pode atribuir este papel." });
+      }
+      const { data: alvo } = await supabase.from("usuarios").select("papel").eq("id", id).maybeSingle();
+      if (alvo && alvo.papel === "ceo" && s.papel !== "ceo") return res.status(403).json({ error: "Apenas o CEO pode alterar um CEO." });
+      if (patch && patch.email) patch.email = String(patch.email).toLowerCase();
+    }
     if (t === "financeiro_estado" && !VE_FINANCEIRO.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     if (t === "designacoes" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     const { error } = await supabase.from(t).update(patch).eq("id", id);
@@ -241,7 +264,17 @@ export default async function handler(req, res) {
   if (req.method === "DELETE") {
     const { t, id } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
-    if (t === "usuarios" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+    if (t === "usuarios") {
+      if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas CEO/Diretor podem excluir usuários." });
+      if (id === s.id) return res.status(400).json({ error: "Não é possível excluir o próprio usuário." });
+      const { data: alvo } = await supabase.from("usuarios").select("papel").eq("id", id).maybeSingle();
+      if (alvo?.papel === "ceo") {
+        if (s.papel !== "ceo") return res.status(403).json({ error: "Apenas o CEO pode excluir um CEO." });
+        const { count } = await supabase.from("usuarios").select("*", { count: "exact", head: true }).eq("papel", "ceo");
+        if ((count || 0) <= 1) return res.status(400).json({ error: "Não é possível excluir o único CEO." });
+      }
+      if (alvo?.papel === "diretor" && s.papel !== "ceo") return res.status(403).json({ error: "Apenas o CEO pode excluir um Diretor." });
+    }
     if (t === "designacoes" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     const { error } = await supabase.from(t).delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });

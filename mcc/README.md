@@ -1,5 +1,19 @@
 # Miriad Construction Control (MCC)
 
+## v7.3 — Gestão de usuários (CEO/Diretor) e ambiente de teste
+- **Editar / resetar senha / excluir usuários** (apenas CEO e Diretor): na tela de Usuários, cada
+  linha ganhou os botões **editar** (nome, e-mail, papel, ativo), **resetar** (invalida a senha e
+  gera um novo link de convite) e **excluir**. Travas de segurança: ninguém exclui a própria conta,
+  só o CEO mexe em CEO/Diretor e não é possível excluir o único CEO. A (des)trava de supervisores
+  pelo Coordenador de Obras continua funcionando.
+- **Ambiente de teste (somente CEO):** botão que cria um usuário de teste para cada papel da empresa
+  (e-mail `teste.<papel>@miriad.test`) com uma senha única que você define. Saia e entre como cada
+  um para experimentar as telas fora do seu acesso de CEO; depois exclua-os pela própria lista. Os
+  papéis escopados por obra já são designados a todas as obras existentes.
+
+> **Sem migração nesta etapa.** (A SS-i — solicitação de serviço — fica para uma próxima versão.)
+
+
 ## v7.2 — Prazo de envio, travamento e SM-i emergencial
 Terceira etapa da V7, sobre o fluxo da SM-i:
 - **Prazo semanal de envio:** o Supervisor de Obras vê um alerta vermelho lembrando de enviar,
