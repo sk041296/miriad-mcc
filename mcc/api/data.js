@@ -12,6 +12,7 @@ const TABELAS = {
   sm_itens: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   ss_itens: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   designacoes: { ordem: "criado_em", asc: false },
+  envio_semanal: { ordem: "semana", asc: false },
   usuarios: { ordem: "nome", asc: true },
 };
 
@@ -19,8 +20,16 @@ const TABELAS = {
 const VE_FINANCEIRO   = new Set(["ceo", "diretor", "financeiro"]);
 const GERENCIA_USUARIOS = new Set(["ceo", "diretor", "coord_suprimentos", "coord_planejamento", "coord_obras", "coord_orcamentos"]);
 const ADMIN_TOTAL     = new Set(["ceo", "diretor"]);
+const SUPRIMENTOS     = new Set(["op_suprimentos", "coord_suprimentos"]);
 // papéis cujo acesso é restrito às obras em que foram designados
 const OBRA_SCOPED     = new Set(["sup_obras", "op_suprimentos", "op_planejamento", "op_orcamento"]);
+
+// segunda-feira (ISO) da semana de uma data, em yyyy-mm-dd
+function mondayISO(d = new Date()) {
+  const x = new Date(d); const dia = (x.getDay() + 6) % 7;
+  x.setDate(x.getDate() - dia); x.setHours(0, 0, 0, 0);
+  return x.toISOString().slice(0, 10);
+}
 
 // quem pode criar qual papel
 function podeCriarPapel(criador, alvo) {
@@ -80,6 +89,8 @@ export default async function handler(req, res) {
     let q = supabase.from(t).select(t === "usuarios" ? "id,nome,email,papel,ativo,criado_em,obra_id,senha_definida,travado" : "*").order(cfg.ordem, { ascending: cfg.asc });
     if (cfg.filtro && req.query[cfg.filtro]) q = q.eq(cfg.filtro, req.query[cfg.filtro]);
     if (obrasPermitidas && TEM_OBRA_ID.has(t)) q = q.in(t === "obras" ? "id" : "obra_id", obrasPermitidas);
+    // emergenciais só aparecem para Suprimentos depois de autorizadas pelo Coord. de Obras
+    if (t === "sm_itens" && SUPRIMENTOS.has(s.papel)) q = q.or("emergencial.eq.false,autorizada_emergencial.eq.true");
     const { data, error } = await q.limit(5000);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ rows: data });
@@ -87,6 +98,30 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     const { t, row, obra, itens } = req.body || {};
+
+    // ---- conformidade semanal de envio das SM-is (Supervisor de Obras) ----
+    if (t === "confirmar_envio") {
+      const semana = mondayISO();
+      const { error } = await supabase.from("envio_semanal").upsert({ usuario_id: s.id, semana, confirmado_em: new Date().toISOString() }, { onConflict: "usuario_id,semana" });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true, semana });
+    }
+    if (t === "sm_compliance") {
+      const semana = mondayISO();
+      const seg = new Date(semana + "T00:00:00");
+      const prazo = new Date(seg); prazo.setHours(23, 59, 59, 0);            // segunda 23:59
+      const trava = new Date(prazo.getTime() + 24 * 3600 * 1000);            // +24h
+      const agora = new Date();
+      const { data: conf } = await supabase.from("envio_semanal").select("id").eq("usuario_id", s.id).eq("semana", semana).maybeSingle();
+      const confirmado = !!conf;
+      let travado = false;
+      if (s.papel === "sup_obras" && !confirmado && agora > trava) {
+        await supabase.from("usuarios").update({ travado: true, travado_em: agora.toISOString() }).eq("id", s.id);
+        travado = true;
+      }
+      return res.status(200).json({ semana, confirmado, atrasado: !confirmado && agora > prazo, travado, prazo: prazo.toISOString() });
+    }
+
     // criação de obra + EAP em transação lógica
     if (t === "obra_com_eap") {
       const { data: ob, error: e1 } = await supabase.from("obras").insert(obra).select().single();
@@ -175,6 +210,16 @@ export default async function handler(req, res) {
       }
       const convite = temSenha ? null : emitirConvite(data);
       return res.status(200).json({ row: data, convite });
+    }
+
+    // SM-i: criar a solicitação também conta como envio da semana (conformidade)
+    if (t === "sm_itens") {
+      const { data, error } = await supabase.from("sm_itens").insert(row).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      if (s.papel === "sup_obras") {
+        await supabase.from("envio_semanal").upsert({ usuario_id: s.id, semana: mondayISO(), confirmado_em: new Date().toISOString() }, { onConflict: "usuario_id,semana" });
+      }
+      return res.status(200).json({ row: data });
     }
 
     const { data, error } = await supabase.from(t).insert(row).select().single();

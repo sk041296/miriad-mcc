@@ -1,5 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
-import { C, fmt, sum, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar, remover } from "./core.jsx";
+import { C, fmt, sum, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar, remover, acaoData } from "./core.jsx";
+
+const mondayOf = (d) => { const x = new Date(d); const dia = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dia); x.setHours(0, 0, 0, 0); return x; };
+const fimDaSemana = () => { const m = mondayOf(new Date()); const f = new Date(m); f.setDate(f.getDate() + 6); f.setHours(23, 59, 59, 0); return f; };
+const ehEmergencial = (dataNec) => !!dataNec && new Date(String(dataNec).slice(0, 10) + "T00:00:00") <= fimDaSemana();
 
 /* ---- prazo da SM-i com base na data de necessidade ---- */
 export function prazoSm(dataNec) {
@@ -21,6 +25,7 @@ function FormSmI({ obras, eapPorObra, usuario, onCriou }) {
   const [sm, setSm] = useState(vazio);
   const [busy, setBusy] = useState(false); const [erro, setErro] = useState(null);
   const eapItens = eapPorObra[sm.obra_id] || [];
+  const emerg = ehEmergencial(sm.data_necessidade);
   const addItem = () => setSm((s) => ({ ...s, itens: [...s.itens, { eap_codigo: "", descricao: "", qtde_contratada: 0, unidade_eap: "", material: "", quantidade: 0, unidade: "un" }] }));
   const upItem = (i, patch) => setSm((s) => ({ ...s, itens: s.itens.map((x, j) => j === i ? { ...x, ...patch } : x) }));
   const delItem = (i) => setSm((s) => ({ ...s, itens: s.itens.filter((_, j) => j !== i) }));
@@ -31,7 +36,7 @@ function FormSmI({ obras, eapPorObra, usuario, onCriou }) {
   const salvar = async () => {
     setBusy(true); setErro(null);
     try {
-      await criar("sm_itens", { obra_id: sm.obra_id, solicitante_id: usuario.id, itens: sm.itens, data_necessidade: sm.data_necessidade || null, descricao: sm.descricao, status: "aberta", emergencial: false });
+      await criar("sm_itens", { obra_id: sm.obra_id, solicitante_id: usuario.id, itens: sm.itens, data_necessidade: sm.data_necessidade || null, descricao: sm.descricao, status: "aberta", emergencial: emerg, autorizada_emergencial: false });
       setSm({ ...vazio, obra_id: sm.obra_id }); onCriou();
     } catch (e) { setErro(e.message); } finally { setBusy(false); }
   };
@@ -75,8 +80,13 @@ function FormSmI({ obras, eapPorObra, usuario, onCriou }) {
       </div>
 
       <div style={{ marginTop: 10, marginBottom: 12 }}><Lbl>Observações (opcional)</Lbl><textarea value={sm.descricao} onChange={(e) => setSm({ ...sm, descricao: e.target.value })} rows={2} style={inp({ width: "100%", boxSizing: "border-box", resize: "vertical" })} /></div>
+      {emerg && sm.data_necessidade && (
+        <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}66`, borderRadius: 8, padding: "10px 12px", marginBottom: 12, fontSize: 12.5, color: C.texto }}>
+          <b style={{ color: C.vermelho }}>⚠ SM-i EMERGENCIAL</b> — a entrega é nesta mesma semana. Esta solicitação <b>só irá para o Suprimentos após autorização do Coordenador de Obras</b>. Use o emergencial apenas quando indispensável.
+        </div>
+      )}
       {erro && <div style={{ color: C.vermelho, fontSize: 12, marginBottom: 8 }}>{erro}</div>}
-      <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn small disabled={busy || !podeEnviar} onClick={salvar}>Enviar SM-i para Suprimentos</Btn></div>
+      <div style={{ display: "flex", justifyContent: "flex-end" }}><Btn small disabled={busy || !podeEnviar} onClick={salvar}>{emerg ? "Enviar SM-i emergencial (p/ autorização)" : "Enviar SM-i para Suprimentos"}</Btn></div>
     </Card>
   );
 }
@@ -91,7 +101,7 @@ function CardSm({ sm, obras, colaboradores, podeAtender, podeAutorizar, gestor, 
   return (
     <div style={{ background: "#fff", border: `1px solid ${C.linha}`, borderLeft: `4px solid ${pz.cor}`, borderRadius: 8, padding: 10, marginBottom: 8, boxShadow: pz.urgente ? `0 0 0 1.5px ${pz.cor}33` : "none" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
-        <span style={{ fontWeight: 800, fontSize: 13, color: C.preto }}>{obra?.codigo || "—"}</span>
+        <span style={{ fontWeight: 800, fontSize: 13, color: C.preto }}>{obra?.codigo || "—"}{sm.emergencial ? <span style={{ marginLeft: 6, background: C.vermelho, color: "#fff", fontSize: 9.5, fontWeight: 800, borderRadius: 4, padding: "1px 6px", verticalAlign: "middle" }}>EMERG</span> : null}</span>
         <span style={{ background: `${pz.cor}1a`, color: pz.cor, fontSize: 10.5, fontWeight: 800, borderRadius: 5, padding: "2px 8px" }}>{pz.label}</span>
       </div>
       <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Solicitante: {solicitante} · necessário {sm.data_necessidade ? dataBR(sm.data_necessidade) : "—"}{mostrarHistorico ? ` · aberta há ${diasDesde(sm.criado_em)}d` : ""}</div>
@@ -123,9 +133,91 @@ function Coluna({ titulo, cor, lista, ...props }) {
   );
 }
 
-/* ============================ Módulo SM-i ============================ */
+/* ---- Painel do Coordenador de Obras: conformidade + autorização de emergenciais ---- */
+function PainelCoordObras({ usuario, sms, obras, onMudou }) {
+  const [usuarios, setUsuarios] = useState([]);
+  const [envios, setEnvios] = useState([]);
+  const recarregar = () => { listar("usuarios").then(setUsuarios).catch(() => {}); listar("envio_semanal").then(setEnvios).catch(() => {}); };
+  useEffect(() => { recarregar(); }, []);
+  const semana = mondayOf(new Date()).toISOString().slice(0, 10);
+  const sups = usuarios.filter((u) => u.papel === "sup_obras");
+  const confirmou = (uid) => envios.some((e) => e.usuario_id === uid && String(e.semana).slice(0, 10) === semana);
+  const destravar = async (u) => { try { await editar("usuarios", u.id, { travado: false, travado_em: null }); recarregar(); } catch (e) { alert(e.message); } };
+  const pendentes = sups.filter((u) => !confirmou(u.id) && !u.travado);
+  const emergPend = sms.filter((s) => s.emergencial && !s.autorizada_emergencial && s.status !== "cancelada");
+  const autorizar = async (sm) => { try { await editar("sm_itens", sm.id, { autorizada_emergencial: true, autorizada_por: usuario.id }); onMudou(); } catch (e) { alert(e.message); } };
+  const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
+
+  return (
+    <>
+      {emergPend.length > 0 && (
+        <Card title={`SM-is emergenciais aguardando sua autorização (${emergPend.length})`}>
+          {emergPend.map((sm) => {
+            const sol = usuarios.find((u) => u.id === sm.solicitante_id)?.nome || "—";
+            return <div key={sm.id} style={{ border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: 10, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+              <div style={{ fontSize: 13 }}><b>{nomeObra(sm.obra_id)}</b> · {sol} · necessário {sm.data_necessidade ? dataBR(sm.data_necessidade) : "—"}<div style={{ fontSize: 12, color: C.dim }}>{(sm.itens || []).map((i) => `${i.eap_codigo} ${i.material} (${fmt(i.quantidade)} ${i.unidade})`).join(" · ")}</div></div>
+              <Btn small onClick={() => autorizar(sm)}>Autorizar p/ Suprimentos</Btn>
+            </div>;
+          })}
+        </Card>
+      )}
+      <Card title="Conformidade de envio dos Supervisores (semana atual)" right={<span style={{ fontSize: 12, color: pendentes.length ? C.vermelho : C.verde, fontWeight: 700 }}>{pendentes.length ? `${pendentes.length} pendente(s)` : "todos em dia"}</span>}>
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>O envio das SM-is da próxima semana deve ser confirmado até a segunda-feira. Supervisores travados perderam o prazo por mais de 24h — use “Destravar” após alinhar.</div>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Supervisor", "Status da semana", "Ação"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+          <tbody>{sups.map((u) => {
+            const st = u.travado ? { t: "bloqueado", c: C.vermelho } : confirmou(u.id) ? { t: "confirmado", c: C.verde } : { t: "pendente", c: C.amareloAlerta };
+            return <tr key={u.id}><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{u.nome}</td>
+              <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, color: st.c, fontWeight: 700 }}>{st.t}</td>
+              <td style={{ padding: "7px 10px", borderBottom: `1px solid ${C.linha}` }}>{u.travado ? <Btn small kind="ghost" onClick={() => destravar(u)}>Destravar</Btn> : "—"}</td></tr>;
+          })}
+          {sups.length === 0 && <tr><td colSpan={3} style={{ padding: 12, color: C.dim, fontSize: 13 }}>Nenhum supervisor cadastrado.</td></tr>}</tbody></table>
+      </Card>
+    </>
+  );
+}
+
+/* ---- Painel da Diretoria: emergenciais por obra (últimos 15 dias) ---- */
+function PainelDiretoria({ sms, obras }) {
+  const corte = Date.now() - 15 * 86400 * 1000;
+  const recentes = sms.filter((s) => s.emergencial && new Date(s.criado_em).getTime() >= corte);
+  const porObra = {};
+  recentes.forEach((s) => { porObra[s.obra_id] = (porObra[s.obra_id] || 0) + 1; });
+  const linhas = Object.entries(porObra).map(([oid, n]) => ({ obra: obras.find((o) => o.id === oid)?.codigo || "—", n })).sort((a, b) => b.n - a.n);
+  const excesso = linhas.filter((l) => l.n > 3);
+  return (
+    <Card title="Diretoria · Solicitações emergenciais por obra (últimos 15 dias)">
+      {excesso.length > 0 && <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: "8px 12px", marginBottom: 10, fontSize: 13 }}><b style={{ color: C.vermelho }}>⚠ Acima do limite (3 em 15 dias):</b> {excesso.map((l) => `${l.obra} (${l.n})`).join(" · ")}</div>}
+      {linhas.length === 0 ? <div style={{ fontSize: 13, color: C.dim }}>Nenhuma SM-i emergencial nos últimos 15 dias.</div> : (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{linhas.map((l) => <div key={l.obra} style={{ border: `1.5px solid ${l.n > 3 ? C.vermelho : C.linha}`, borderRadius: 8, padding: "8px 14px", minWidth: 90 }}><div style={{ fontSize: 12, color: C.dim, fontWeight: 700 }}>{l.obra}</div><div style={{ fontSize: 22, fontWeight: 800, color: l.n > 3 ? C.vermelho : C.preto }}>{l.n}</div></div>)}</div>
+      )}
+    </Card>
+  );
+}
+
+/* ---- Aviso semanal + travamento na tela do Supervisor de Obras ---- */
+function AvisoEnvioSupervisor({ onState }) {
+  const [c, setC] = useState(null); const [busy, setBusy] = useState(false);
+  const checar = () => acaoData({ t: "sm_compliance" }).then((d) => { setC(d); onState && onState(d); }).catch(() => {});
+  useEffect(() => { checar(); }, []);
+  const confirmar = async () => { setBusy(true); try { await acaoData({ t: "confirmar_envio" }); await checar(); } finally { setBusy(false); } };
+  if (!c) return null;
+  if (c.travado) return (
+    <div style={{ background: C.vermelho, color: "#fff", borderRadius: 10, padding: 18 }}>
+      <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>🔒 Seu acesso de envio está bloqueado</div>
+      <div style={{ fontSize: 13, opacity: 0.95 }}>As SM-is desta semana não foram enviadas nem confirmadas dentro do prazo (segunda-feira + 24h). Procure seu Coordenador de Obras para alinhar e liberar o acesso.</div>
+    </div>
+  );
+  if (c.confirmado) return <div style={{ background: `${C.verde}12`, border: `1px solid ${C.verde}55`, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: C.verde, fontWeight: 700 }}>✓ Envio da semana confirmado.</div>;
+  return (
+    <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}66`, borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+      <div style={{ fontSize: 13, color: C.texto }}><b style={{ color: C.vermelho }}>⚠ {c.atrasado ? "Envio em atraso!" : "Atenção ao prazo de envio"}</b> — envie até <b>segunda-feira</b> as SM-is dos materiais que precisam chegar na próxima semana. Se nada for necessário, confirme abaixo. O atraso por mais de 24h bloqueia seu envio e aciona o Coordenador de Obras.</div>
+      <Btn small disabled={busy} onClick={confirmar}>Confirmar envio da semana</Btn>
+    </div>
+  );
+}
 export function SmI({ usuario, obras, eapPorObra, colaboradores = [], onMudou }) {
   const [sms, setSms] = useState([]); const [pronto, setPronto] = useState(false);
+  const [compSup, setCompSup] = useState(null);
   const p = usuario.papel;
   const ehSup = p === "sup_obras";
   const ehOperador = p === "op_suprimentos";
@@ -152,10 +244,15 @@ export function SmI({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
   const urgentes = [...abertas, ...emAtend].filter((s) => prazoSm(s.data_necessidade).urgente);
 
   const propsCard = { obras, colaboradores, podeAtender: ehOperador || ehCoord || gestor, podeAutorizar: ehCoord || gestor, gestor, onMover: mover, mostrarHistorico: ehCoord || gestor };
+  const ehCoordObras = p === "coord_obras";
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {ehSup && <FormSmI obras={obras} eapPorObra={eapPorObra} usuario={usuario} onCriou={carregar} />}
+      {ehSup && <AvisoEnvioSupervisor onState={setCompSup} />}
+      {ehSup && !compSup?.travado && <FormSmI obras={obras} eapPorObra={eapPorObra} usuario={usuario} onCriou={carregar} />}
+
+      {gestor && <PainelDiretoria sms={sms} obras={obras} />}
+      {(ehCoordObras || gestor) && <PainelCoordObras usuario={usuario} sms={sms} obras={obras} onMudou={carregar} />}
 
       {(ehOperador || ehCoord || gestor) && urgentes.length > 0 && (
         <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: "10px 14px" }}>
@@ -163,15 +260,17 @@ export function SmI({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
         </div>
       )}
 
-      <Card title={ehSup ? "Minhas solicitações" : ehCoord ? "Gestão de SM-is (todas as obras)" : ehOperador ? "Atendimento de SM-is (suas obras)" : "SM-is"}>
-        <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
-          <Coluna titulo="Aberta" cor={C.preto} lista={abertas} {...propsCard} />
-          <Coluna titulo="Em atendimento" cor={C.laranja} lista={emAtend} {...propsCard} />
-          <Coluna titulo="Atendida" cor={C.verde} lista={atendidas} {...propsCard} />
-        </div>
-        {ativas.length === 0 && <div style={{ fontSize: 13, color: C.dim, marginTop: 8 }}>Nenhuma SM-i no momento.</div>}
-        <div style={{ fontSize: 11, color: C.dim, marginTop: 12 }}>Prazos: verde &gt;5 dias · amarelo 5/3/2 dias · laranja 1 dia (destaque) · vermelho no dia ou vencida. SM-i vencida só pode ser baixada com autorização do Coordenador de Suprimentos.</div>
-      </Card>
+      {(ehSup || ehOperador || ehCoord || gestor) && (
+        <Card title={ehSup ? "Minhas solicitações" : ehCoord ? "Gestão de SM-is (todas as obras)" : ehOperador ? "Atendimento de SM-is (suas obras)" : "Todas as SM-is"}>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
+            <Coluna titulo="Aberta" cor={C.preto} lista={abertas} {...propsCard} />
+            <Coluna titulo="Em atendimento" cor={C.laranja} lista={emAtend} {...propsCard} />
+            <Coluna titulo="Atendida" cor={C.verde} lista={atendidas} {...propsCard} />
+          </div>
+          {ativas.length === 0 && <div style={{ fontSize: 13, color: C.dim, marginTop: 8 }}>Nenhuma SM-i no momento.</div>}
+          <div style={{ fontSize: 11, color: C.dim, marginTop: 12 }}>Prazos: verde &gt;5 dias · amarelo 5/3/2 dias · laranja 1 dia (destaque) · vermelho no dia ou vencida. SM-i vencida só pode ser baixada com autorização do Coordenador de Suprimentos.</div>
+        </Card>
+      )}
     </div>
   );
 }

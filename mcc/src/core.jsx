@@ -73,6 +73,7 @@ export const apiAuth = (body) => fetch("/api/auth", { method: "POST", headers: {
 export const listar = (t, params = {}) => req(`/api/data?t=${t}&` + new URLSearchParams(params)).then((d) => d.rows || []);
 export const criar = (t, row) => req("/api/data", { method: "POST", body: JSON.stringify({ t, row }) }).then((d) => d.row);
 export const criarUsuario = (row) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "usuarios", row }) }).then((d) => d);
+export const acaoData = (body) => req("/api/data", { method: "POST", body: JSON.stringify(body) }).then((d) => d);
 export const criarObraComEap = (obra, itens) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "obra_com_eap", obra, itens }) });
 export const criarRdoCompleto = (rdo, restricoes, rdo_id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rdo_completo", rdo, restricoes, rdo_id }) }).then((d) => d.row);
 export const editar = (t, id, patch) => req("/api/data", { method: "PATCH", body: JSON.stringify({ t, id, patch }) });

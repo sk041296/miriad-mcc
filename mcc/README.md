@@ -1,5 +1,23 @@
 # Miriad Construction Control (MCC)
 
+## v7.2 — Prazo de envio, travamento e SM-i emergencial
+Terceira etapa da V7, sobre o fluxo da SM-i:
+- **Prazo semanal de envio:** o Supervisor de Obras vê um alerta vermelho lembrando de enviar,
+  **até segunda-feira**, as SM-is dos materiais que precisam chegar na semana seguinte. Pode
+  confirmar o envio da semana (criar uma SM-i já confirma automaticamente).
+- **Travamento:** passadas 24h do prazo sem envio/confirmação, o acesso de envio do supervisor é
+  **bloqueado**, com orientação para procurar o Coordenador de Obras. O coordenador (e a diretoria)
+  vê a conformidade de cada supervisor e pode **destravar**.
+- **SM-i emergencial:** quando a entrega é para a mesma semana, a SM-i é marcada como
+  **emergencial** e só vai para o Suprimentos após **autorização do Coordenador de Obras** (até lá
+  fica invisível para Suprimentos). O formulário avisa o supervisor.
+- **Painel da Diretoria:** contagem de SM-is emergenciais por obra nos últimos 15 dias, com
+  **alerta quando passa de 3** em uma mesma obra.
+
+> **Migração:** rode `supabase/migration_v7_2.sql` (cria a tabela `envio_semanal`). As demais
+> colunas (emergencial/autorização/travamento) já existem desde a v7.0.
+
+
 ## v7.1 — SM-i (Solicitação de Material Inteligente)
 Segunda etapa da V7. Habilita o fluxo de pedido de material do Supervisor de Obras para o
 Suprimentos:
