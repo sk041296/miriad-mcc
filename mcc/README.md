@@ -1,5 +1,23 @@
 # Miriad Construction Control (MCC)
 
+## v7.4 — SS-i (Solicitação de Serviço)
+Mesma lógica da SM-i, agora para serviços de **empreitada**, **locação de equipamentos** e outros:
+- **Formulário (Supervisor de Obras):** obra, tipo (empreitada/locação/outros), serviços/locações
+  vinculados a atividades da EAP (com quantidade e unidade), data de necessidade e observações
+  (prazo de locação, condições). Detecta emergencial igual à SM-i.
+- **Kanban:** Aberta → Em atendimento → Ativa → Baixada. O Suprimentos atende e marca como
+  contratado/ativo; a **baixa é feita pelo Supervisor de Obras** ao concluir o serviço ou encerrar
+  a locação.
+- **Emergencial:** quando a necessidade é na mesma semana, vai para autorização do Coordenador de
+  Obras antes de chegar ao Suprimentos.
+- **Lembrete semanal ao supervisor:** alerta com as SS-is dele em aberto, para baixar serviços
+  concluídos e locações fora de uso.
+- **Alerta de SS-i parada:** Coordenador de Suprimentos e Diretoria veem destaque em vermelho para
+  SS-is abertas há **mais de 2 meses** — para evitar locação de equipamento que não está mais em uso.
+
+> **Sem migração nesta etapa** — usa a tabela `ss_itens` criada na v7.0.
+
+
 ## v7.3 — Gestão de usuários (CEO/Diretor) e ambiente de teste
 - **Editar / resetar senha / excluir usuários** (apenas CEO e Diretor): na tela de Usuários, cada
   linha ganhou os botões **editar** (nome, e-mail, papel, ativo), **resetar** (invalida a senha e

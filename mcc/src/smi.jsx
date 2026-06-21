@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { C, fmt, sum, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar, remover, acaoData } from "./core.jsx";
 
-const mondayOf = (d) => { const x = new Date(d); const dia = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dia); x.setHours(0, 0, 0, 0); return x; };
-const fimDaSemana = () => { const m = mondayOf(new Date()); const f = new Date(m); f.setDate(f.getDate() + 6); f.setHours(23, 59, 59, 0); return f; };
-const ehEmergencial = (dataNec) => !!dataNec && new Date(String(dataNec).slice(0, 10) + "T00:00:00") <= fimDaSemana();
+export const mondayOf = (d) => { const x = new Date(d); const dia = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dia); x.setHours(0, 0, 0, 0); return x; };
+export const fimDaSemana = () => { const m = mondayOf(new Date()); const f = new Date(m); f.setDate(f.getDate() + 6); f.setHours(23, 59, 59, 0); return f; };
+export const ehEmergencial = (dataNec) => !!dataNec && new Date(String(dataNec).slice(0, 10) + "T00:00:00") <= fimDaSemana();
 
 /* ---- prazo da SM-i com base na data de necessidade ---- */
 export function prazoSm(dataNec) {

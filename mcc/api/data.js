@@ -91,6 +91,7 @@ export default async function handler(req, res) {
     if (obrasPermitidas && TEM_OBRA_ID.has(t)) q = q.in(t === "obras" ? "id" : "obra_id", obrasPermitidas);
     // emergenciais só aparecem para Suprimentos depois de autorizadas pelo Coord. de Obras
     if (t === "sm_itens" && SUPRIMENTOS.has(s.papel)) q = q.or("emergencial.eq.false,autorizada_emergencial.eq.true");
+    if (t === "ss_itens" && SUPRIMENTOS.has(s.papel)) q = q.or("emergencial.eq.false,autorizada_emergencial.eq.true");
     const { data, error } = await q.limit(5000);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ rows: data });
