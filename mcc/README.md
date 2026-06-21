@@ -1,5 +1,19 @@
 # Miriad Construction Control (MCC)
 
+## v8.3 — Ranking de Supervisores
+Botão **Ranking** no menu lateral (Diretoria e CEO). Nota composta por:
+- **RDO em dia (30%)** — RDO entregue no prazo, por obra, nos últimos 14 dias úteis.
+- **POS no prazo (20%)** — POS criado até a sexta da semana anterior, nas últimas 4 semanas.
+- **PMM no prazo (20%)** — PMM criado até o dia 25 do mês anterior, nos últimos 3 meses.
+- **Obra no prazo (15%)** — avanço físico-financeiro x tempo decorrido (início + prazo).
+- **Assertividade do POS (15%)** — produção planejada no POS x realizada nos RDOs da semana.
+
+Cada parâmetro aparece em % por supervisor, com a nota final de 0 a 100 e medalhas para o top 3.
+Métricas sem dados no período contam como zero.
+
+> **Sem migração** — usa dados já existentes (RDO, POS, PMM, EAP, designações). Conclui a V8.
+
+
 ## v8.2 — Medição projetada no Financeiro
 Nova aba **Medição projetada** no módulo Financeiro, alimentada pelos **PMM**:
 - Consolida a medição prevista de cada obra **alocada por mês**, em matriz obra × mês (com totais),

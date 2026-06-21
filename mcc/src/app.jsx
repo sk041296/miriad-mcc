@@ -6,6 +6,7 @@ import {
 import { ModuloFinanceiro } from "./financeiro.jsx";
 import { ModuloOperacional } from "./operacional.jsx";
 import { PainelGeral } from "./painel.jsx";
+import { Ranking } from "./ranking.jsx";
 import { LOGO_FULL, LOGO_MARK } from "./logo.js";
 
 function LogoMiriad({ size = 26 }) {
@@ -290,10 +291,12 @@ function Shell({ usuario, onSair }) {
   const [opTab, setOpTab] = useState("rdo");
   const [finTab, setFinTab] = useState(finItens[0]?.id || "premissas");
   const [usuariosAberto, setUsuariosAberto] = useState(false);
+  const [rankingAberto, setRankingAberto] = useState(false);
+  const ehDir = p === "ceo" || p === "diretor";
 
-  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); };
+  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); setRankingAberto(false); };
   const tabDe = (sec) => sec === "operacional" ? opTab : sec === "financeiro" ? finTab : null;
-  const ativo = (sec, tab) => !usuariosAberto && secao === sec && (!tab || tabDe(sec) === tab);
+  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && secao === sec && (!tab || tabDe(sec) === tab);
 
   const botao = (sec, tab, label, icone, nota) => (
     <button key={(tab || sec)} onClick={() => abrir(sec, tab)}
@@ -305,7 +308,7 @@ function Shell({ usuario, onSair }) {
 
   const tituloOp = OP_ITENS.find((i) => i.id === opTab);
   const tituloFin = FIN_ITENS.find((i) => i.id === finTab);
-  const titulo = usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
+  const titulo = rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: C.cinza, fontFamily: "'Inter', system-ui, sans-serif" }}>
@@ -327,7 +330,8 @@ function Shell({ usuario, onSair }) {
         </>}
 
         <div style={{ flex: 1, minHeight: 12 }} />
-        {pode(p, "usuarios") && <button onClick={() => setUsuariosAberto(true)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
+        {ehDir && <button onClick={() => { setRankingAberto(true); setUsuariosAberto(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
+        {pode(p, "usuarios") && <button onClick={() => { setUsuariosAberto(true); setRankingAberto(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
         <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
           <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
           <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{PAPEIS[p] || p}</div>
@@ -336,7 +340,8 @@ function Shell({ usuario, onSair }) {
       </aside>
       <main style={{ flex: 1, padding: 24, maxWidth: 1320, minWidth: 0 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: C.preto, margin: "0 0 18px" }}>{titulo}</h1>
-        {usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
+        {rankingAberto && ehDir ? <Ranking />
+          : usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
           : secao === "painel" && pode(p, "painel") ? <PainelGeralWrap />
           : secao === "financeiro" && temFin ? <ModuloFinanceiro sub={finTab} setSub={setFinTab} />
           : pode(p, "operacional") ? <ModuloOperacional usuario={usuario} sub={opTab} setSub={setOpTab} />
