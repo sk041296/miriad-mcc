@@ -1,5 +1,20 @@
 # Miriad Construction Control (MCC)
 
+## v8.1 — PMM (Plano de Medição Mensal)
+Mesma lógica do POS, porém mensal e voltado à medição prevista da obra:
+- **Preenchimento (Supervisor de Obras):** por obra e mês, os itens da EAP com a medição prevista
+  e a unidade. O sistema mostra o avanço físico previsto e a **medição prevista com BDI** (valor
+  contratado c/ BDI × % de avanço de cada item).
+- **Prazo e trava:** o PMM do próximo mês deve ser preenchido **até o dia 25**; passadas 24h sem
+  preenchimento, o acesso é bloqueado — o Coordenador de Obras destrava.
+- **Gestão (Coord. de Obras, Diretoria e CEO):** tabela com todos os PMM (obra, mês, supervisor,
+  avanço físico e medição prevista), com filtro por mês e detalhamento por item.
+
+Esses dados são a base da **Medição projetada** do Financeiro, que entra na v8.2.
+
+> **Migração:** rode `supabase/migration_v8_1.sql` (cria a tabela `pmm`).
+
+
 ## v8.0 — POS (Plano Operacional Semanal) e Financeiro no menu lateral
 - **POS (Plano Operacional Semanal):** lookahead da semana seguinte, **exclusivo do Supervisor de
   Obras**. Ele indica as frentes (itens da EAP) que vai desenvolver, com a equipe e a produção

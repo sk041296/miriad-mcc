@@ -12,6 +12,7 @@ import { observacoesPorItem, projecaoItem } from "./produtividade.js";
 import { SmI } from "./smi.jsx";
 import { SsI } from "./ssi.jsx";
 import { Pos } from "./pos.jsx";
+import { Pmm } from "./pmm.jsx";
 
 const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
 
@@ -64,6 +65,7 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp })
       {sub === "smi" && <SmI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
       {sub === "ssi" && <SsI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
       {sub === "pos" && <Pos usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
+      {sub === "pmm" && <Pmm usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
       {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} colaboradores={colaboradores} usuario={usuario} onMudou={carregar} />}
       {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} onMudou={carregar} />}
       {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}

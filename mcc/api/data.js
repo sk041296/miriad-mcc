@@ -14,6 +14,7 @@ const TABELAS = {
   designacoes: { ordem: "criado_em", asc: false },
   envio_semanal: { ordem: "semana", asc: false },
   pos: { ordem: "semana", asc: false, filtro: "obra_id" },
+  pmm: { ordem: "mes", asc: false, filtro: "obra_id" },
   usuarios: { ordem: "nome", asc: true },
 };
 
@@ -35,6 +36,10 @@ function mondayISO(d = new Date()) {
 function proximaSegundaISO(d = new Date()) {
   const m = new Date(mondayISO(d) + "T00:00:00"); m.setDate(m.getDate() + 7);
   return m.toISOString().slice(0, 10);
+}
+// primeiro dia do próximo mês (yyyy-mm-01)
+function proximoMesISO(d = new Date()) {
+  const x = new Date(d.getFullYear(), d.getMonth() + 1, 1); return x.toISOString().slice(0, 10);
 }
 
 // quem pode criar qual papel
@@ -76,7 +81,7 @@ export default async function handler(req, res) {
   }
 
   // tabelas que possuem coluna obra_id (para escopo por designação)
-  const TEM_OBRA_ID = new Set(["obras", "eap_itens", "contratos_servico", "ordens_compra", "funcionarios", "rdos", "restricoes_material", "sm_itens", "ss_itens", "pos"]);
+  const TEM_OBRA_ID = new Set(["obras", "eap_itens", "contratos_servico", "ordens_compra", "funcionarios", "rdos", "restricoes_material", "sm_itens", "ss_itens", "pos", "pmm"]);
 
   if (req.method === "GET") {
     const t = String(req.query.t || "");
@@ -123,6 +128,22 @@ export default async function handler(req, res) {
       const { error } = await supabase.from("usuarios").update({ senha_hash: null, senha_definida: false, travado: false, travado_em: null }).eq("id", id);
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, convite: emitirConvite(alvo) });
+    }
+
+    // ---- conformidade do PMM: planejar o próximo mês até o dia 25 + 24h ----
+    if (t === "pmm_compliance") {
+      const alvoMes = proximoMesISO();
+      const agora = new Date();
+      const prazo = new Date(agora.getFullYear(), agora.getMonth(), 25, 23, 59, 59);   // dia 25 do mês atual
+      const trava = new Date(prazo.getTime() + 24 * 3600 * 1000);
+      const { data: existe } = await supabase.from("pmm").select("id").eq("supervisor_id", s.id).eq("mes", alvoMes).limit(1);
+      const preenchido = !!(existe && existe.length);
+      let travado = false;
+      if (s.papel === "sup_obras" && !preenchido && agora > trava) {
+        await supabase.from("usuarios").update({ travado: true, travado_em: agora.toISOString() }).eq("id", s.id);
+        travado = true;
+      }
+      return res.status(200).json({ mes: alvoMes, preenchido, atrasado: !preenchido && agora > prazo, travado, prazo: prazo.toISOString() });
     }
 
     // ---- conformidade do POS (Plano Operacional Semanal): prazo sexta-feira + 24h ----

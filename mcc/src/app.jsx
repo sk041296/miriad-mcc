@@ -254,6 +254,7 @@ function PainelGeralWrap() {
 const OP_ITENS = [
   { id: "rdo", label: "RDO-i", nota: "Relatório diário de obra" },
   { id: "pos", label: "POS", nota: "Plano operacional semanal" },
+  { id: "pmm", label: "PMM", nota: "Plano de medição mensal" },
   { id: "smi", label: "SM-i", nota: "Solicitação de material" },
   { id: "ssi", label: "SS-i", nota: "Solicitação de serviço e locação" },
   { id: "oc", label: "OC-i", nota: "Ordem de compra de materiais" },
