@@ -186,7 +186,7 @@ function PainelGeralWrap() {
 /* ---------------- Itens do menu Operacional (com notas) ---------------- */
 const OP_ITENS = [
   { id: "rdo", label: "RDO-i", nota: "Relatório diário de obra" },
-  { id: "smi", label: "SM-i", nota: "Solicitação de material", embreve: "v7.1" },
+  { id: "smi", label: "SM-i", nota: "Solicitação de material" },
   { id: "ssi", label: "SS-i", nota: "Solicitação de serviço", embreve: "v7.3" },
   { id: "oc", label: "OC-i", nota: "Ordem de compra de materiais" },
   { id: "os", label: "OS-i", nota: "Ordem de serviço (mão de obra)" },

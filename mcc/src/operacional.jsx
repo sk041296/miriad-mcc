@@ -9,6 +9,7 @@ import {
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
+import { SmI } from "./smi.jsx";
 
 const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
 
@@ -58,7 +59,7 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp })
         </div>
       )}
       {sub === "rdo" && <RdoI usuario={usuario} colaboradores={colaboradores} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} restricoes={restricoes} onMudou={carregar} />}
-      {sub === "smi" && emBreve("SM-i · Solicitação de Material Inteligente", "v7.1")}
+      {sub === "smi" && <SmI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
       {sub === "ssi" && emBreve("SS-i · Solicitação de Serviço", "v7.3")}
       {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} colaboradores={colaboradores} usuario={usuario} onMudou={carregar} />}
       {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} onMudou={carregar} />}

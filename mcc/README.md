@@ -1,5 +1,25 @@
 # Miriad Construction Control (MCC)
 
+## v7.1 — SM-i (Solicitação de Material Inteligente)
+Segunda etapa da V7. Habilita o fluxo de pedido de material do Supervisor de Obras para o
+Suprimentos:
+- **Formulário (Supervisor de Obras):** escolhe a obra, adiciona itens vinculados a atividades da
+  EAP — mostrando a **quantidade contratada** de cada item e **alertando** quando a quantidade
+  pedida supera a contratada — define **para quando** o material precisa chegar e descreve cada
+  material com sua quantidade.
+- **Kanban de atendimento (Operador de Suprimentos):** vê apenas as SM-is das obras em que foi
+  designado, nas colunas Aberta → Em atendimento → Atendida.
+- **Kanban de gestão (Coordenador de Suprimentos / Diretoria):** vê todas as SM-is, com o
+  histórico de dias desde a abertura.
+- **Gestão de prazo:** cada cartão muda de cor conforme a data de necessidade — verde (>5 dias),
+  amarelo (5/3/2 dias), laranja em destaque (1 dia) e vermelho (no dia ou vencida). As urgentes
+  aparecem num alerta no topo. **SM-i vencida só pode ser baixada com autorização do Coordenador
+  de Suprimentos** (o operador vê a trava).
+
+> Usa as tabelas já criadas na migração v7.0 — **não há migração nova nesta etapa**. As próximas
+> etapas: v7.2 (envio até segunda, travamento e SM-i emergencial) e v7.3 (SS-i).
+
+
 ## v7.0 — Fundação de acesso (11 papéis, designação por obra e convite por link)
 Primeira etapa da V7. Reestrutura o controle de acesso e o menu:
 - **11 papéis**: CEO, Diretor, Coord. de Suprimentos/Planejamento/Obras/Orçamentos,
