@@ -1,5 +1,5 @@
-// /api/data — CRUD genérico do MCC com controle de papel
-import { supabase, sessao } from "./_lib.js";
+// /api/data — CRUD genérico do MCC com controle de acesso por papel
+import { supabase, sessao, emitirConvite } from "./_lib.js";
 
 const TABELAS = {
   obras: { ordem: "criado_em", asc: false },
@@ -9,18 +9,45 @@ const TABELAS = {
   funcionarios: { ordem: "nome", asc: true },
   rdos: { ordem: "data", asc: false, filtro: "obra_id" },
   restricoes_material: { ordem: "criado_em", asc: false, filtro: "obra_id" },
-  usuarios: { ordem: "nome", asc: true, somenteGestor: true },
+  sm_itens: { ordem: "criado_em", asc: false, filtro: "obra_id" },
+  ss_itens: { ordem: "criado_em", asc: false, filtro: "obra_id" },
+  designacoes: { ordem: "criado_em", asc: false },
+  usuarios: { ordem: "nome", asc: true },
 };
-// recursos financeiros e de gestão de usuários: só gestor
-const SO_GESTOR = new Set(["usuarios", "financeiro_estado"]);
+
+// Grupos de papéis
+const VE_FINANCEIRO   = new Set(["ceo", "diretor", "financeiro"]);
+const GERENCIA_USUARIOS = new Set(["ceo", "diretor", "coord_suprimentos", "coord_planejamento", "coord_obras", "coord_orcamentos"]);
+const ADMIN_TOTAL     = new Set(["ceo", "diretor"]);
+// papéis cujo acesso é restrito às obras em que foram designados
+const OBRA_SCOPED     = new Set(["sup_obras", "op_suprimentos", "op_planejamento", "op_orcamento"]);
+
+// quem pode criar qual papel
+function podeCriarPapel(criador, alvo) {
+  if (criador === "ceo") return true;
+  if (criador === "diretor") return alvo !== "diretor" && alvo !== "ceo";
+  if (criador === "coord_suprimentos") return alvo === "op_suprimentos";
+  if (criador === "coord_planejamento") return alvo === "op_planejamento";
+  if (criador === "coord_obras") return alvo === "sup_obras";
+  if (criador === "coord_orcamentos") return alvo === "op_orcamento";
+  return false;
+}
 
 export default async function handler(req, res) {
   const s = sessao(req);
   if (!s) return res.status(401).json({ error: "Sessão inválida ou expirada" });
 
-  // ---- estado financeiro (key-value), restrito a gestor ----
+  // obras às quais o usuário tem acesso (papéis escopados por designação)
+  let obrasPermitidas = null;
+  if (OBRA_SCOPED.has(s.papel)) {
+    const { data: des } = await supabase.from("designacoes").select("obra_id").eq("usuario_id", s.id);
+    obrasPermitidas = [...new Set((des || []).map((d) => d.obra_id).filter(Boolean))];
+    if (obrasPermitidas.length === 0) obrasPermitidas = ["00000000-0000-0000-0000-000000000000"]; // nenhuma → vazio
+  }
+
+  // ---- estado financeiro (key-value) ----
   if ((req.query.t || req.body?.t) === "financeiro_estado") {
-    if (s.papel !== "gestor") return res.status(403).json({ error: "Acesso restrito a gestores" });
+    if (!VE_FINANCEIRO.has(s.papel)) return res.status(403).json({ error: "Acesso restrito ao Financeiro" });
     if (req.method === "GET") {
       const { data } = await supabase.from("financeiro_estado").select("valor").eq("chave", req.query.chave).maybeSingle();
       return res.status(200).json({ valor: data ? data.valor : null });
@@ -33,20 +60,26 @@ export default async function handler(req, res) {
     }
   }
 
-  // tabelas que possuem coluna obra_id (para o filtro do Supervisor Residente)
-  const TEM_OBRA_ID = new Set(["obras", "eap_itens", "contratos_servico", "ordens_compra", "funcionarios", "rdos", "restricoes_material"]);
-  const ehResidente = s.papel === "residente" && s.obra_id;
+  // tabelas que possuem coluna obra_id (para escopo por designação)
+  const TEM_OBRA_ID = new Set(["obras", "eap_itens", "contratos_servico", "ordens_compra", "funcionarios", "rdos", "restricoes_material", "sm_itens", "ss_itens"]);
 
   if (req.method === "GET") {
     const t = String(req.query.t || "");
     if (t === "ping") return res.status(200).json({ ok: true, papel: s.papel });
+
+    // lista enxuta de colaboradores para os dropdowns de responsável (qualquer autenticado)
+    if (t === "colaboradores") {
+      const { data, error } = await supabase.from("usuarios").select("id,nome,papel,ativo").eq("ativo", true).order("nome");
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ rows: data });
+    }
+
     const cfg = TABELAS[t];
     if (!cfg) return res.status(400).json({ error: "Recurso não permitido" });
-    if (SO_GESTOR.has(t) && s.papel !== "gestor") return res.status(403).json({ error: "Acesso restrito a gestores" });
-    let q = supabase.from(t).select(t === "usuarios" ? "id,nome,email,papel,ativo,criado_em,obra_id" : "*").order(cfg.ordem, { ascending: cfg.asc });
+    if (t === "usuarios" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+    let q = supabase.from(t).select(t === "usuarios" ? "id,nome,email,papel,ativo,criado_em,obra_id,senha_definida,travado" : "*").order(cfg.ordem, { ascending: cfg.asc });
     if (cfg.filtro && req.query[cfg.filtro]) q = q.eq(cfg.filtro, req.query[cfg.filtro]);
-    // Supervisor Residente: restringe tudo à sua obra
-    if (ehResidente && TEM_OBRA_ID.has(t)) q = q.eq(t === "obras" ? "id" : "obra_id", s.obra_id);
+    if (obrasPermitidas && TEM_OBRA_ID.has(t)) q = q.in(t === "obras" ? "id" : "obra_id", obrasPermitidas);
     const { data, error } = await q.limit(5000);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ rows: data });
@@ -102,7 +135,8 @@ export default async function handler(req, res) {
     }
 
     if (!TABELAS[t] && t !== "rdo_completo") return res.status(400).json({ error: "Recurso não permitido" });
-    if (SO_GESTOR.has(t) && s.papel !== "gestor") return res.status(403).json({ error: "Acesso restrito a gestores" });
+    if (t === "financeiro_estado" && !VE_FINANCEIRO.has(s.papel)) return res.status(403).json({ error: "Acesso restrito ao Financeiro" });
+    if ((t === "designacoes") && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
 
     // RDO + restrições de material (restrições nunca vão ao PDF do cliente)
     if (t === "rdo_completo") {
@@ -125,14 +159,22 @@ export default async function handler(req, res) {
       return res.status(200).json({ row: r });
     }
 
-    // hash de senha ao criar usuário
+    // criação de usuário: respeita quem-pode-criar-quem e gera convite (link p/ definir senha)
     if (t === "usuarios") {
+      if (!GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+      if (!podeCriarPapel(s.papel, row.papel)) return res.status(403).json({ error: "Você não tem permissão para criar este papel de usuário." });
       const { hashSenha } = await import("./_lib.js");
-      const payload = { ...row, email: String(row.email).toLowerCase(), senha_hash: hashSenha(row.senha) };
-      delete payload.senha;
-      const { data, error } = await supabase.from("usuarios").insert(payload).select("id,nome,email,papel,ativo").single();
+      const temSenha = !!row.senha;
+      const payload = { nome: row.nome, email: String(row.email).toLowerCase(), papel: row.papel,
+        senha_hash: temSenha ? hashSenha(row.senha) : null, senha_definida: temSenha };
+      const { data, error } = await supabase.from("usuarios").insert(payload).select("id,nome,email,papel,ativo,senha_definida").single();
       if (error) return res.status(500).json({ error: error.message.includes("duplicate") ? "E-mail já cadastrado" : error.message });
-      return res.status(200).json({ row: data });
+      // designações (obras) enviadas junto, se houver
+      if (Array.isArray(row.obras) && row.obras.length) {
+        await supabase.from("designacoes").insert(row.obras.map((oid) => ({ usuario_id: data.id, obra_id: oid, funcao: row.papel })));
+      }
+      const convite = temSenha ? null : emitirConvite(data);
+      return res.status(200).json({ row: data, convite });
     }
 
     const { data, error } = await supabase.from(t).insert(row).select().single();
@@ -143,7 +185,9 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     const { t, id, patch } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
-    if (SO_GESTOR.has(t) && s.papel !== "gestor") return res.status(403).json({ error: "Acesso restrito" });
+    if (t === "usuarios" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+    if (t === "financeiro_estado" && !VE_FINANCEIRO.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+    if (t === "designacoes" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     const { error } = await supabase.from(t).update(patch).eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ok: true });
@@ -152,7 +196,8 @@ export default async function handler(req, res) {
   if (req.method === "DELETE") {
     const { t, id } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
-    if (SO_GESTOR.has(t) && s.papel !== "gestor") return res.status(403).json({ error: "Acesso restrito" });
+    if (t === "usuarios" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+    if (t === "designacoes" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     const { error } = await supabase.from(t).delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ok: true });

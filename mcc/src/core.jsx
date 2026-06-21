@@ -72,6 +72,7 @@ async function req(path, opts = {}) {
 export const apiAuth = (body) => fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 export const listar = (t, params = {}) => req(`/api/data?t=${t}&` + new URLSearchParams(params)).then((d) => d.rows || []);
 export const criar = (t, row) => req("/api/data", { method: "POST", body: JSON.stringify({ t, row }) }).then((d) => d.row);
+export const criarUsuario = (row) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "usuarios", row }) }).then((d) => d);
 export const criarObraComEap = (obra, itens) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "obra_com_eap", obra, itens }) });
 export const criarRdoCompleto = (rdo, restricoes, rdo_id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rdo_completo", rdo, restricoes, rdo_id }) }).then((d) => d.row);
 export const editar = (t, id, patch) => req("/api/data", { method: "PATCH", body: JSON.stringify({ t, id, patch }) });
@@ -135,3 +136,48 @@ export const NumInput = ({ value, onChange, w = 124, dec = 0, ...rest }) => {
     onChange={(e) => { setTxt(e.target.value); onChange(parseBR(e.target.value)); }} onBlur={() => setEd(false)}
     style={inp(base)} {...rest} />;
 };
+
+/* ===================== Papéis e permissões (v7) ===================== */
+export const PAPEIS = {
+  ceo: "CEO", diretor: "Diretor",
+  coord_suprimentos: "Coord. de Suprimentos", coord_planejamento: "Coord. de Planejamento",
+  coord_obras: "Coord. de Obras", coord_orcamentos: "Coord. de Orçamentos",
+  op_suprimentos: "Operador de Suprimentos", op_planejamento: "Operador de Planejamento", op_orcamento: "Operador de Orçamento",
+  financeiro: "Financeiro", sup_obras: "Supervisor de Obras",
+};
+export const SETOR_DE_PAPEL = {
+  ceo: "direcao", diretor: "direcao",
+  coord_suprimentos: "suprimentos", op_suprimentos: "suprimentos",
+  coord_planejamento: "planejamento", op_planejamento: "planejamento",
+  coord_obras: "obras", sup_obras: "obras",
+  coord_orcamentos: "orcamentos", op_orcamento: "orcamentos",
+  financeiro: "financeiro",
+};
+/* permissões de acesso a módulos por papel */
+export const PERMS = {
+  ceo:                { painel: 1, operacional: 1, financeiro: 1, usuarios: 1 },
+  diretor:            { painel: 1, operacional: 1, financeiro: 1, usuarios: 1 },
+  coord_suprimentos:  { painel: 1, operacional: 1, usuarios: 1 },
+  coord_planejamento: { painel: 1, operacional: 1, usuarios: 1 },
+  coord_obras:        { painel: 1, operacional: 1, usuarios: 1 },
+  coord_orcamentos:   { painel: 1, operacional: 1, usuarios: 1 },
+  op_planejamento:    { painel: 1, operacional: 1 },
+  op_orcamento:       { painel: 1, operacional: 1 },
+  op_suprimentos:     { operacional: 1 },
+  financeiro:         { painel: 1, financeiro: 1 },
+  sup_obras:          { operacional: 1 },
+};
+export const pode = (papel, area) => !!(PERMS[papel] && PERMS[papel][area]);
+export const ehDirecao = (papel) => papel === "ceo" || papel === "diretor";
+/* quem pode criar qual papel (espelha o backend) */
+export function papeisQuePodeCriar(criador) {
+  if (criador === "ceo") return Object.keys(PAPEIS);
+  if (criador === "diretor") return Object.keys(PAPEIS).filter((p) => p !== "diretor" && p !== "ceo");
+  if (criador === "coord_suprimentos") return ["op_suprimentos"];
+  if (criador === "coord_planejamento") return ["op_planejamento"];
+  if (criador === "coord_obras") return ["sup_obras"];
+  if (criador === "coord_orcamentos") return ["op_orcamento"];
+  return [];
+}
+/* papéis cujo acesso é restrito às obras designadas */
+export const PRECISA_DESIGNACAO = new Set(["sup_obras", "op_suprimentos", "op_planejamento", "op_orcamento"]);

@@ -1,5 +1,30 @@
 # Miriad Construction Control (MCC)
 
+## v7.0 — Fundação de acesso (11 papéis, designação por obra e convite por link)
+Primeira etapa da V7. Reestrutura o controle de acesso e o menu:
+- **11 papéis**: CEO, Diretor, Coord. de Suprimentos/Planejamento/Obras/Orçamentos,
+  Operador de Suprimentos/Planejamento/Orçamento, Financeiro e Supervisor de Obras. Cada papel
+  enxerga só os módulos a que tem direito (matriz em `src/core.jsx` → `PERMS`), com a regra
+  aplicada também no backend (`api/data.js`).
+- **Quem cria quem**: só o CEO cria Diretor; Diretor cria os demais; cada coordenador cria o
+  operador/supervisor do seu setor.
+- **Designação por obra**: coordenadores alocam operadores/supervisores a obras; quem é escopado
+  por obra (Sup. de Obras e operadores) só enxerga as obras designadas (pode ser mais de uma).
+- **Convite por link**: ao criar um usuário, o sistema gera um link (válido 7 dias) para ele
+  **definir a própria senha** — copie e envie. (Envio automático por e-mail fica para uma etapa
+  futura.)
+- **Menu lateral reorganizado**: RDO-i, SM-i, SS-i, OC-i, OS-i, Prestadores, EAP & Custos e Obras
+  viraram itens do módulo Operacional na lateral, cada um com uma nota explicativa. SM-i e SS-i
+  aparecem como "em breve" (entram nas v7.1 e v7.3).
+- **Dropdown por setor**: nos campos de solicitante/comprador da OC-i, o seletor lista os
+  colaboradores do setor correspondente (CEO/Diretor veem todos).
+
+> **Migração obrigatória:** rode `supabase/migration_v7.sql` no SQL Editor **antes** de usar.
+> Ele cria as tabelas de designação e de SM-i/SS-i, os campos de convite e **migra os papéis
+> antigos** (o antigo "gestor" vira **CEO** — esse é o acesso do Sérgio; "residente"/"supervisor"
+> viram **Supervisor de Obras**). Sem ela, o login e a tela de usuários não funcionam.
+
+
 ## v6.2 — Logo oficial da Miriad
 Substituído o logo genérico (cata-vento em SVG) pela **marca oficial da Miriad** em todo o
 sistema: ícone do menu lateral, tela de login e cabeçalho do PDF da Ordem de Compra. Os logos

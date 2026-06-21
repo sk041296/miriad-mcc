@@ -26,6 +26,15 @@ export function validarToken(token) {
     return dados;
   } catch { return null; }
 }
+// Convite (link para o usuário definir a própria senha) — válido por 7 dias
+export function emitirConvite(usuario) {
+  const payload = b64({ id: usuario.id, conv: true, exp: Date.now() + 1000 * 60 * 60 * 24 * 7 });
+  return `${payload}.${sign(payload)}`;
+}
+export function validarConvite(token) {
+  const d = validarToken(token);
+  return d && d.conv ? d : null;
+}
 // Lê a sessão do header; retorna {id,nome,papel,...} ou null
 export function sessao(req) {
   const h = req.headers["authorization"] || "";

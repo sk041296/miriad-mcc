@@ -1,24 +1,54 @@
 import React, { useState, useEffect, useCallback } from "react";
 import {
-  C, Btn, Card, inp, Lbl, listar, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError,
+  C, Btn, Card, inp, Lbl, listar, criar, criarUsuario, remover, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError,
+  PAPEIS, PERMS, pode, ehDirecao, papeisQuePodeCriar, PRECISA_DESIGNACAO, SETOR_DE_PAPEL,
 } from "./core.jsx";
 import { ModuloFinanceiro } from "./financeiro.jsx";
 import { ModuloOperacional } from "./operacional.jsx";
 import { PainelGeral } from "./painel.jsx";
 import { LOGO_FULL, LOGO_MARK } from "./logo.js";
 
-/* Marca Miriad (cata-vento real) — usada como ícone no menu */
 function LogoMiriad({ size = 26 }) {
   return <img src={LOGO_MARK} alt="Miriad" width={size} height={size} style={{ flexShrink: 0, objectFit: "contain" }} />;
+}
+
+/* ---------------- Definir senha pelo convite ---------------- */
+function DefinirSenha({ token, onEntrar }) {
+  const [info, setInfo] = useState(null); const [erro, setErro] = useState(null);
+  const [s1, setS1] = useState(""); const [s2, setS2] = useState(""); const [busy, setBusy] = useState(false);
+  useEffect(() => { apiAuth({ acao: "validar_convite", token }).then((d) => { if (d.error) setErro(d.error); else setInfo(d); }).catch(() => setErro("Não foi possível validar o convite.")); }, [token]);
+  const enviar = async () => {
+    if (s1.length < 6) return setErro("A senha deve ter ao menos 6 caracteres.");
+    if (s1 !== s2) return setErro("As senhas não conferem.");
+    setBusy(true); setErro(null);
+    const d = await apiAuth({ acao: "definir_senha", token, senha: s1 });
+    setBusy(false);
+    if (d.token) { setSessao(d.token, d.usuario); window.history.replaceState({}, "", window.location.pathname); onEntrar(d.usuario); }
+    else setErro(d.error || "Falha ao definir a senha.");
+  };
+  return (
+    <div style={{ minHeight: "100vh", background: C.preto, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Inter', system-ui, sans-serif" }}>
+      <div style={{ background: C.branco, borderRadius: 16, padding: 36, width: 410, borderTop: `6px solid ${C.laranja}` }}>
+        <img src={LOGO_FULL} alt="Miriad" style={{ width: 220, maxWidth: "100%", display: "block", marginBottom: 8 }} />
+        {erro && !info ? <div style={{ color: C.vermelho, fontSize: 13 }}>{erro}</div> : !info ? <div style={{ color: C.dim, fontSize: 13 }}>Validando convite…</div> : <>
+          <div style={{ fontSize: 14, color: C.preto, fontWeight: 700, marginBottom: 2 }}>Olá, {info.nome.split(" ")[0]}!</div>
+          <div style={{ fontSize: 13, color: C.dim, marginBottom: 18 }}>Crie sua senha para acessar o sistema ({info.email}).</div>
+          <div style={{ marginBottom: 10 }}><Lbl>Nova senha</Lbl><input type="password" value={s1} onChange={(e) => setS1(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div style={{ marginBottom: 14 }}><Lbl>Confirme a senha</Lbl><input type="password" value={s2} onChange={(e) => setS2(e.target.value)} onKeyDown={(e) => e.key === "Enter" && enviar()} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          {erro && <div style={{ color: C.vermelho, fontSize: 12, marginBottom: 10 }}>{erro}</div>}
+          <Btn onClick={enviar} disabled={busy || !s1 || !s2}>{busy ? "…" : "Criar senha e entrar"}</Btn>
+        </>}
+      </div>
+    </div>
+  );
 }
 
 /* ---------------- Login / bootstrap ---------------- */
 function Login({ onEntrar }) {
   const [modo, setModo] = useState("login");
-  const [bootstrap, setBootstrap] = useState(false);
   const [email, setEmail] = useState(""); const [senha, setSenha] = useState(""); const [nome, setNome] = useState("");
   const [erro, setErro] = useState(null); const [busy, setBusy] = useState(false);
-  useEffect(() => { apiAuth({ acao: "precisa_bootstrap" }).then((d) => { if (d.bootstrap) { setBootstrap(true); setModo("bootstrap"); } }).catch(() => {}); }, []);
+  useEffect(() => { apiAuth({ acao: "precisa_bootstrap" }).then((d) => { if (d.bootstrap) setModo("bootstrap"); }).catch(() => {}); }, []);
   const enviar = async () => {
     setBusy(true); setErro(null);
     const d = await apiAuth(modo === "bootstrap" ? { acao: "bootstrap", nome, email, senha } : { acao: "login", email, senha });
@@ -32,51 +62,116 @@ function Login({ onEntrar }) {
           <img src={LOGO_FULL} alt="Miriad Construtora" style={{ width: 230, maxWidth: "100%", display: "block" }} />
           <div style={{ fontSize: 14, fontWeight: 800, color: C.laranja, marginTop: 6, letterSpacing: ".02em" }}>Construction Control</div>
         </div>
-        <div style={{ fontSize: 13, color: C.dim, margin: "8px 0 22px" }}>{modo === "bootstrap" ? "Cadastre o primeiro acesso (gestor)." : "Acesse com seu e-mail e senha."}</div>
+        <div style={{ fontSize: 13, color: C.dim, margin: "8px 0 22px" }}>{modo === "bootstrap" ? "Cadastre o primeiro acesso (CEO)." : "Acesse com seu e-mail e senha."}</div>
         {modo === "bootstrap" && <div style={{ marginBottom: 10 }}><Lbl>Nome completo</Lbl><input value={nome} onChange={(e) => setNome(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>}
         <div style={{ marginBottom: 10 }}><Lbl>E-mail</Lbl><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
         <div style={{ marginBottom: 14 }}><Lbl>Senha</Lbl><input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} onKeyDown={(e) => e.key === "Enter" && enviar()} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
         {erro && <div style={{ color: C.vermelho, fontSize: 12, marginBottom: 10 }}>{erro}</div>}
-        <Btn onClick={enviar} disabled={busy || !email || !senha || (modo === "bootstrap" && !nome)}>{busy ? "…" : modo === "bootstrap" ? "Criar acesso de gestor" : "Entrar"}</Btn>
+        <Btn onClick={enviar} disabled={busy || !email || !senha || (modo === "bootstrap" && !nome)}>{busy ? "…" : modo === "bootstrap" ? "Criar acesso de CEO" : "Entrar"}</Btn>
       </div>
     </div>
   );
 }
 
-/* ---------------- Gestão de usuários (gestor) ---------------- */
-function Usuarios() {
-  const [lista, setLista] = useState([]); const [obras, setObras] = useState([]);
-  const [u, setU] = useState({ nome: "", email: "", senha: "", papel: "supervisor", obra_id: "" });
+/* ---------------- Gestão de usuários ---------------- */
+function Usuarios({ usuario }) {
+  const [lista, setLista] = useState([]); const [obras, setObras] = useState([]); const [designacoes, setDesignacoes] = useState([]);
+  const criaveis = papeisQuePodeCriar(usuario.papel);
+  const vazio = { nome: "", email: "", papel: criaveis[0] || "sup_obras", obras: [] };
+  const [u, setU] = useState(vazio);
   const [busy, setBusy] = useState(false); const [erro, setErro] = useState(null);
-  const carregar = () => { listar("usuarios").then(setLista).catch(() => {}); listar("obras").then(setObras).catch(() => {}); };
+  const [convite, setConvite] = useState(null); const [expandido, setExpandido] = useState(null);
+  const carregar = () => {
+    listar("usuarios").then(setLista).catch(() => {});
+    listar("obras").then(setObras).catch(() => {});
+    listar("designacoes").then(setDesignacoes).catch(() => {});
+  };
   useEffect(() => { carregar(); }, []);
+  const precisaObra = PRECISA_DESIGNACAO.has(u.papel);
+  const toggleObraNova = (id) => setU((x) => ({ ...x, obras: x.obras.includes(id) ? x.obras.filter((o) => o !== id) : [...x.obras, id] }));
   const salvar = async () => {
-    setBusy(true); setErro(null);
-    try { const { criar } = await import("./core.jsx"); await criar("usuarios", { ...u, obra_id: u.papel === "residente" ? (u.obra_id || null) : null }); setU({ nome: "", email: "", senha: "", papel: "supervisor", obra_id: "" }); carregar(); }
-    catch (e) { setErro(e.message); } finally { setBusy(false); }
+    setBusy(true); setErro(null); setConvite(null);
+    try {
+      const r = await criarUsuario({ nome: u.nome, email: u.email, papel: u.papel, obras: precisaObra ? u.obras : [] });
+      if (r && r.convite) {
+        const link = `${window.location.origin}${window.location.pathname}?convite=${r.convite}`;
+        setConvite({ nome: u.nome, link });
+      }
+      setU(vazio); carregar();
+    } catch (e) { setErro(e.message); } finally { setBusy(false); }
+  };
+  const obrasDoUsuario = (uid) => designacoes.filter((d) => d.usuario_id === uid);
+  const toggleDesignacao = async (uid, obraId, papel) => {
+    const existente = designacoes.find((d) => d.usuario_id === uid && d.obra_id === obraId);
+    try {
+      if (existente) await remover("designacoes", existente.id);
+      else await criar("designacoes", { usuario_id: uid, obra_id: obraId, funcao: papel });
+      listar("designacoes").then(setDesignacoes);
+    } catch (e) { alert(e.message); }
   };
   const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
-  const papelLabel = { gestor: "Gestor", supervisor: "Supervisor", residente: "Sup. Residente" };
-  const papelCor = (p) => p === "gestor" ? C.preto : p === "residente" ? C.laranja : C.cinza2;
+  const corPapel = (p) => p === "ceo" ? C.preto : ehDirecao(p) ? "#7c2d12" : p.startsWith("coord") ? C.laranja : p === "financeiro" ? C.azul : C.cinza2;
+
   return (
     <Card title="Usuários e permissões">
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
-        <div style={{ flex: 1, minWidth: 150 }}><Lbl>Nome</Lbl><input value={u.nome} onChange={(e) => setU({ ...u, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-        <div style={{ flex: 1, minWidth: 150 }}><Lbl>E-mail</Lbl><input value={u.email} onChange={(e) => setU({ ...u, email: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-        <div><Lbl>Senha</Lbl><input type="password" value={u.senha} onChange={(e) => setU({ ...u, senha: e.target.value })} style={inp({ width: 120 })} /></div>
-        <div><Lbl>Papel</Lbl><select value={u.papel} onChange={(e) => setU({ ...u, papel: e.target.value })} style={inp()}><option value="supervisor">Supervisor</option><option value="residente">Supervisor Residente</option><option value="gestor">Gestor</option></select></div>
-        {u.papel === "residente" && <div style={{ minWidth: 150 }}><Lbl>Obra designada</Lbl><select value={u.obra_id} onChange={(e) => setU({ ...u, obra_id: e.target.value })} style={inp({ width: "100%" })}><option value="">— selecione —</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>}
-        <Btn small disabled={busy || !u.nome || !u.email || !u.senha || (u.papel === "residente" && !u.obra_id)} onClick={salvar}>+ Criar</Btn>
-      </div>
-      {u.papel === "residente" && <div style={{ fontSize: 12, color: C.dim, marginBottom: 10 }}>O Supervisor Residente acessa apenas o módulo Operacional e enxerga somente a obra designada.</div>}
-      {erro && <div style={{ color: C.vermelho, fontSize: 12, marginBottom: 8 }}>{erro}</div>}
-      <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Nome", "E-mail", "Papel", "Obra"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
-        <tbody>{lista.map((x) => <tr key={x.id}><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{x.nome}</td><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}>{x.email}</td><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}><span style={{ background: papelCor(x.papel), color: x.papel === "supervisor" ? C.dim : "#fff", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{papelLabel[x.papel] || x.papel}</span></td><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}>{x.papel === "residente" ? nomeObra(x.obra_id) : "—"}</td></tr>)}</tbody></table>
+      {criaveis.length === 0 ? <div style={{ fontSize: 13, color: C.dim }}>Seu papel não permite cadastrar usuários.</div> : <>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 8 }}>
+          <div style={{ flex: 1, minWidth: 150 }}><Lbl>Nome</Lbl><input value={u.nome} onChange={(e) => setU({ ...u, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div style={{ flex: 1, minWidth: 150 }}><Lbl>E-mail</Lbl><input value={u.email} onChange={(e) => setU({ ...u, email: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div style={{ minWidth: 190 }}><Lbl>Papel</Lbl><select value={u.papel} onChange={(e) => setU({ ...u, papel: e.target.value, obras: [] })} style={inp({ width: "100%" })}>{criaveis.map((p) => <option key={p} value={p}>{PAPEIS[p]}</option>)}</select></div>
+          <Btn small disabled={busy || !u.nome || !u.email || (precisaObra && u.obras.length === 0)} onClick={salvar}>+ Criar e gerar convite</Btn>
+        </div>
+        {precisaObra && (
+          <div style={{ marginBottom: 10 }}>
+            <Lbl>Obras designadas (o usuário só enxerga estas)</Lbl>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {obras.map((o) => <button key={o.id} onClick={() => toggleObraNova(o.id)} style={{ border: `1.5px solid ${u.obras.includes(o.id) ? C.laranja : C.linha}`, background: u.obras.includes(o.id) ? C.laranjaClaro : "#fff", color: C.preto, borderRadius: 7, padding: "5px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{o.codigo}</button>)}
+              {obras.length === 0 && <span style={{ fontSize: 12, color: C.dim }}>Nenhuma obra cadastrada ainda.</span>}
+            </div>
+          </div>
+        )}
+        <div style={{ fontSize: 12, color: C.dim, marginBottom: 10 }}>Ao criar, o sistema gera um <b>link de convite</b> para o usuário definir a própria senha. Copie e envie a ele.</div>
+        {convite && (
+          <div style={{ background: `${C.verde}10`, border: `1px solid ${C.verde}55`, borderRadius: 8, padding: 12, marginBottom: 12 }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.verde, marginBottom: 6 }}>✓ Convite gerado para {convite.nome}. Envie este link (válido por 7 dias):</div>
+            <div style={{ display: "flex", gap: 8 }}>
+              <input readOnly value={convite.link} onFocus={(e) => e.target.select()} style={inp({ width: "100%", boxSizing: "border-box", fontSize: 11 })} />
+              <Btn small kind="ghost" onClick={() => { navigator.clipboard?.writeText(convite.link); }}>Copiar</Btn>
+            </div>
+          </div>
+        )}
+        {erro && <div style={{ color: C.vermelho, fontSize: 12, marginBottom: 8 }}>{erro}</div>}
+      </>}
+
+      <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Nome", "E-mail", "Papel", "Status", "Obras"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+        <tbody>{lista.map((x) => {
+          const scoped = PRECISA_DESIGNACAO.has(x.papel);
+          const dos = obrasDoUsuario(x.id);
+          return <React.Fragment key={x.id}>
+            <tr>
+              <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{x.nome}</td>
+              <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}>{x.email}</td>
+              <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}><span style={{ background: corPapel(x.papel), color: "#fff", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{PAPEIS[x.papel] || x.papel}</span></td>
+              <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, color: x.travado ? C.vermelho : x.senha_definida ? C.verde : C.amareloAlerta, fontWeight: 700 }}>{x.travado ? "bloqueado" : x.senha_definida ? "ativo" : "convite pendente"}</td>
+              <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>
+                {scoped ? <button onClick={() => setExpandido(expandido === x.id ? null : x.id)} style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer", color: C.dim }}>{dos.length ? dos.map((d) => nomeObra(d.obra_id)).join(", ") : "designar"} ▾</button> : "—"}
+              </td>
+            </tr>
+            {expandido === x.id && scoped && criaveis.length > 0 && (
+              <tr><td colSpan={5} style={{ padding: "8px 10px", borderBottom: `1px solid ${C.linha}`, background: "#fafafa" }}>
+                <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Obras designadas a {x.nome.split(" ")[0]}:</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {obras.map((o) => { const on = dos.some((d) => d.obra_id === o.id); return <button key={o.id} onClick={() => toggleDesignacao(x.id, o.id, x.papel)} style={{ border: `1.5px solid ${on ? C.laranja : C.linha}`, background: on ? C.laranjaClaro : "#fff", color: C.preto, borderRadius: 7, padding: "4px 11px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{on ? "✓ " : ""}{o.codigo}</button>; })}
+                </div>
+              </td></tr>
+            )}
+          </React.Fragment>;
+        })}</tbody></table>
     </Card>
   );
 }
 
-/* ---------------- Painel Geral wrapper (carrega dados) ---------------- */
+/* ---------------- Painel Geral wrapper ---------------- */
 function PainelGeralWrap() {
   const [d, setD] = useState(null);
   useEffect(() => { (async () => {
@@ -88,62 +183,85 @@ function PainelGeralWrap() {
   return <PainelGeral {...d} />;
 }
 
-/* ---------------- Shell com menu lateral ---------------- */
-const MENU = [
-  { id: "painel", label: "Painel Geral", icone: "▣", papel: "gestor" },
-  { grupo: "Financeiro", papel: "gestor", itens: [{ id: "financeiro", label: "Fluxo de Caixa", icone: "$" }] },
-  { grupo: "Operacional", papel: "todos", itens: [{ id: "operacional", label: "RDO-i · RSO-i · OC-i", icone: "▤" }] },
+/* ---------------- Itens do menu Operacional (com notas) ---------------- */
+const OP_ITENS = [
+  { id: "rdo", label: "RDO-i", nota: "Relatório diário de obra" },
+  { id: "smi", label: "SM-i", nota: "Solicitação de material", embreve: "v7.1" },
+  { id: "ssi", label: "SS-i", nota: "Solicitação de serviço", embreve: "v7.3" },
+  { id: "oc", label: "OC-i", nota: "Ordem de compra de materiais" },
+  { id: "os", label: "OS-i", nota: "Ordem de serviço (mão de obra)" },
+  { id: "prestadores", label: "Prestadores", nota: "Mão de obra direta e indireta" },
+  { id: "eap", label: "EAP & Custos", nota: "Orçamento e curva de custos" },
+  { id: "obras", label: "Obras", nota: "Cadastro e EAP das obras" },
 ];
 
+/* ---------------- Shell ---------------- */
 function Shell({ usuario, onSair }) {
-  const ehGestor = usuario.papel === "gestor";
-  const [secao, setSecao] = useState(ehGestor ? "painel" : "operacional");
+  const p = usuario.papel;
+  const secaoInicial = pode(p, "painel") ? "painel" : pode(p, "operacional") ? "operacional" : "financeiro";
+  const [secao, setSecao] = useState(secaoInicial);
+  const [opTab, setOpTab] = useState("rdo");
   const [usuariosAberto, setUsuariosAberto] = useState(false);
-  const item = (id, label, icone, on) => (
-    <button key={id} onClick={() => { setSecao(id); setUsuariosAberto(false); }}
-      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: secao === id && !usuariosAberto ? C.laranja : "transparent",
-        color: secao === id && !usuariosAberto ? "#fff" : "#d4d4d4", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 13, fontWeight: 700, cursor: "pointer", marginBottom: 2 }}>
-      <span style={{ width: 18, textAlign: "center", opacity: 0.9 }}>{icone}</span>{label}</button>
+
+  const abrir = (sec, tab) => { setSecao(sec); if (tab) setOpTab(tab); setUsuariosAberto(false); };
+  const ativo = (sec, tab) => !usuariosAberto && secao === sec && (sec !== "operacional" || opTab === tab);
+
+  const botao = (sec, tab, label, icone, nota) => (
+    <button key={(tab || sec)} onClick={() => abrir(sec, tab)}
+      style={{ display: "block", width: "100%", textAlign: "left", background: ativo(sec, tab) ? C.laranja : "transparent", color: ativo(sec, tab) ? "#fff" : "#d4d4d4", border: "none", borderRadius: 8, padding: "8px 12px", cursor: "pointer", marginBottom: 2 }}>
+      <span style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, fontWeight: 700 }}><span style={{ width: 18, textAlign: "center", opacity: 0.9 }}>{icone}</span>{label}</span>
+      {nota && <span style={{ display: "block", fontSize: 10.5, color: ativo(sec, tab) ? "#ffe2cf" : "#7d7d7d", marginLeft: 28, marginTop: 1 }}>{nota}</span>}
+    </button>
   );
+
+  const tituloOp = OP_ITENS.find((i) => i.id === opTab);
+  const titulo = usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? "Financeiro · Fluxo de Caixa" : `Operacional · ${tituloOp?.label || ""}`;
+
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: C.cinza, fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <aside style={{ width: 234, background: C.preto, padding: "18px 14px", position: "sticky", top: 0, height: "100vh", boxSizing: "border-box", display: "flex", flexDirection: "column", flexShrink: 0 }}>
+      <aside style={{ width: 248, background: C.preto, padding: "18px 14px", position: "sticky", top: 0, height: "100vh", boxSizing: "border-box", display: "flex", flexDirection: "column", flexShrink: 0, overflowY: "auto" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 4, padding: "0 4px" }}><LogoMiriad size={28} />
           <div style={{ color: "#fff", fontSize: 15, fontWeight: 900, lineHeight: 1.05 }}>Miriad<br /><span style={{ color: C.laranja, fontSize: 11, fontWeight: 700 }}>Construction Control</span></div></div>
         <div style={{ height: 1, background: "#333", margin: "14px 0" }} />
-        {ehGestor && item("painel", "Painel Geral", "▣")}
-        {ehGestor && <>
+
+        {pode(p, "painel") && botao("painel", null, "Painel Geral", "▣", "Visão consolidada das obras")}
+
+        {pode(p, "financeiro") && <>
           <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Financeiro</div>
-          {item("financeiro", "Fluxo de Caixa", "$")}
+          {botao("financeiro", null, "Fluxo de Caixa", "$", "Premissas, antecipação e custos")}
         </>}
-        <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Operacional</div>
-        {item("operacional", "RDO-i · RSO-i · OC-i", "▤")}
-        <div style={{ flex: 1 }} />
-        {ehGestor && <button onClick={() => setUsuariosAberto(true)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
+
+        {pode(p, "operacional") && <>
+          <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Operacional</div>
+          {OP_ITENS.map((i) => botao("operacional", i.id, i.label, "▤", i.embreve ? `${i.nota} · em breve (${i.embreve})` : i.nota))}
+        </>}
+
+        <div style={{ flex: 1, minHeight: 12 }} />
+        {pode(p, "usuarios") && <button onClick={() => setUsuariosAberto(true)} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
         <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
           <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
-          <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{usuario.papel === "gestor" ? "Gestor" : "Supervisor"}</div>
+          <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{PAPEIS[p] || p}</div>
           <button onClick={onSair} style={{ background: "transparent", border: "1px solid #444", color: "#aaa", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", width: "100%" }}>Sair</button>
         </div>
       </aside>
       <main style={{ flex: 1, padding: 24, maxWidth: 1320, minWidth: 0 }}>
-        <h1 style={{ fontSize: 22, fontWeight: 800, color: C.preto, margin: "0 0 18px" }}>
-          {usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? "Financeiro · Fluxo de Caixa" : "Operacional"}
-        </h1>
-        {usuariosAberto && ehGestor ? <Usuarios />
-          : secao === "painel" && ehGestor ? <PainelGeralWrap />
-          : secao === "financeiro" && ehGestor ? <ModuloFinanceiro />
-          : <ModuloOperacional usuario={usuario} />}
+        <h1 style={{ fontSize: 22, fontWeight: 800, color: C.preto, margin: "0 0 18px" }}>{titulo}</h1>
+        {usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
+          : secao === "painel" && pode(p, "painel") ? <PainelGeralWrap />
+          : secao === "financeiro" && pode(p, "financeiro") ? <ModuloFinanceiro />
+          : pode(p, "operacional") ? <ModuloOperacional usuario={usuario} sub={opTab} setSub={setOpTab} />
+          : <div style={{ color: C.dim }}>Sem acesso a este módulo.</div>}
       </main>
     </div>
   );
 }
 
 export default function App() {
+  const conviteToken = new URLSearchParams(window.location.search).get("convite");
   const [usuario, setUsuario] = useState(() => (getToken() ? getUser() : null));
   const sair = useCallback(() => { limparSessao(); setUsuario(null); }, []);
-  // valida sessão expirada ao montar
-  useEffect(() => { if (getToken()) listar("obras").catch((e) => { if (e instanceof AuthError) sair(); }); }, [sair]);
+  useEffect(() => { if (getToken() && !conviteToken) listar("obras").catch((e) => { if (e instanceof AuthError) sair(); }); }, [sair, conviteToken]);
+  if (conviteToken && !usuario) return <DefinirSenha token={conviteToken} onEntrar={setUsuario} />;
   if (!usuario) return <Login onEntrar={setUsuario} />;
   return <Shell usuario={usuario} onSair={sair} />;
 }

@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo, useRef } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie } from "recharts";
 import * as XLSX from "xlsx";
 import {
-  C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, addDiasISO, CLIMAS, ATRIBUICOES, VINCULOS,
+  C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, addDiasISO, CLIMAS, ATRIBUICOES, VINCULOS, SETOR_DE_PAPEL,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap,
   aplicarDesconto, definirMeta, uploadFoto,
@@ -12,8 +12,11 @@ import { observacoesPorItem, projecaoItem } from "./produtividade.js";
 
 const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
 
-export function ModuloOperacional({ usuario }) {
-  const [sub, setSub] = useState("rdo");
+export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp }) {
+  const [subLocal, setSubLocal] = useState("rdo");
+  const sub = subProp ?? subLocal;
+  const setSub = setSubProp ?? setSubLocal;
+  const controlado = subProp != null;
   const [obras, setObras] = useState([]);
   const [eapPorObra, setEapPorObra] = useState({});
   const [rdos, setRdos] = useState([]);
@@ -21,11 +24,13 @@ export function ModuloOperacional({ usuario }) {
   const [ocs, setOcs] = useState([]);
   const [funcionarios, setFuncionarios] = useState([]);
   const [restricoes, setRestricoes] = useState([]);
+  const [colaboradores, setColaboradores] = useState([]);
   const [pronto, setPronto] = useState(false);
 
   const carregar = async () => {
     const [ob, ct, oc, fu] = await Promise.all([listar("obras"), listar("contratos_servico"), listar("ordens_compra"), listar("funcionarios")]);
     setObras(ob); setContratos(ct); setOcs(oc); setFuncionarios(fu);
+    listar("colaboradores").then(setColaboradores).catch(() => {});
     const eaps = {}, rd = [], rt = [];
     await Promise.all(ob.map(async (o) => {
       eaps[o.id] = await listar("eap_itens", { obra_id: o.id });
@@ -37,20 +42,46 @@ export function ModuloOperacional({ usuario }) {
   useEffect(() => { carregar(); }, []);
   if (!pronto) return <div style={{ color: C.dim, padding: 20 }}>Carregando dados operacionais…</div>;
 
+  const emBreve = (titulo, versao) => (
+    <Card title={titulo}>
+      <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.6 }}>Este módulo entra na <b>{versao}</b>. A estrutura de dados já está pronta no banco; a interface (formulário e kanban de prazos) será habilitada na próxima etapa.</div>
+    </Card>
+  );
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-        {OP_TABS.map(([id, label]) => (
-          <button key={id} onClick={() => setSub(id)} style={{ background: sub === id ? C.preto : C.branco, color: sub === id ? "#fff" : C.dim, border: `1px solid ${sub === id ? C.preto : C.linha}`, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
-        ))}
-      </div>
-      {sub === "rdo" && <RdoI usuario={usuario} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} restricoes={restricoes} onMudou={carregar} />}
-      {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} onMudou={carregar} />}
-      {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} onMudou={carregar} />}
+      {!controlado && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+          {OP_TABS.map(([id, label]) => (
+            <button key={id} onClick={() => setSub(id)} style={{ background: sub === id ? C.preto : C.branco, color: sub === id ? "#fff" : C.dim, border: `1px solid ${sub === id ? C.preto : C.linha}`, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+          ))}
+        </div>
+      )}
+      {sub === "rdo" && <RdoI usuario={usuario} colaboradores={colaboradores} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} restricoes={restricoes} onMudou={carregar} />}
+      {sub === "smi" && emBreve("SM-i · Solicitação de Material Inteligente", "v7.1")}
+      {sub === "ssi" && emBreve("SS-i · Solicitação de Serviço", "v7.3")}
+      {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} colaboradores={colaboradores} usuario={usuario} onMudou={carregar} />}
+      {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} onMudou={carregar} />}
       {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
       {sub === "eap" && <EapCustos obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} onMudou={carregar} />}
       {sub === "obras" && <Obras obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
     </div>
+  );
+}
+
+/* Dropdown de responsável filtrado por setor; gestor (CEO/Diretor) vê todos.
+   Mantém a opção de digitar livremente para nomes fora do cadastro. */
+function PessoaSelect({ colaboradores = [], setores, usuario, value, onChange, placeholder = "selecione…", width }) {
+  const gestor = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor");
+  const opcoes = (colaboradores || []).filter((c) => gestor || !setores || setores.includes(SETOR_DE_PAPEL[c.papel]));
+  const nomes = opcoes.map((c) => c.nome);
+  const outro = value && !nomes.includes(value);
+  return (
+    <select value={outro ? "__outro" : (value || "")} onChange={(e) => { const v = e.target.value; if (v === "__outro") onChange(value || ""); else onChange(v); }} style={inp({ width: width || "100%", boxSizing: "border-box" })}>
+      <option value="">{placeholder}</option>
+      {opcoes.map((c) => <option key={c.id} value={c.nome}>{c.nome}</option>)}
+      {outro && <option value="__outro">{value} (manual)</option>}
+    </select>
   );
 }
 
@@ -521,7 +552,7 @@ function OcLinhas({ itens, valor = [], onChange }) {
   );
 }
 
-function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
+function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, onMudou }) {
   const vazio = { obra_id: "", numero: "", fornecedor: "", data: hojeISO(), itens_eap: [],
     data_faturamento: hojeISO(), cond: { tipo: "avista", entrada: 0, nParcelas: 3, primeiroDias: 30, intervaloDias: 30, diasTexto: "" },
     solicitante: "", comprador: "", cliente: "", solicitacaoNum: "", cnoOverride: "", observacao: "",
@@ -564,8 +595,8 @@ function OcI({ obras, eapPorObra, ocs, restricoes, onMudou }) {
           <div style={{ minWidth: 130 }}><Lbl>Cliente</Lbl><input value={oc.cliente} onChange={(e) => setOc({ ...oc, cliente: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
         </div>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
-          <div style={{ flex: 1, minWidth: 170 }}><Lbl>Solicitante (quem pediu)</Lbl><input value={oc.solicitante} onChange={(e) => setOc({ ...oc, solicitante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-          <div style={{ flex: 1, minWidth: 170 }}><Lbl>Comprador (responsável pela emissão da OC-i)</Lbl><input value={oc.comprador} onChange={(e) => setOc({ ...oc, comprador: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div style={{ flex: 1, minWidth: 170 }}><Lbl>Solicitante (quem pediu)</Lbl><PessoaSelect colaboradores={colaboradores} usuario={usuario} setores={["obras", "suprimentos"]} value={oc.solicitante} onChange={(v) => setOc({ ...oc, solicitante: v })} placeholder="selecione o solicitante…" /></div>
+          <div style={{ flex: 1, minWidth: 170 }}><Lbl>Comprador (responsável pela emissão da OC-i)</Lbl><PessoaSelect colaboradores={colaboradores} usuario={usuario} setores={["suprimentos"]} value={oc.comprador} onChange={(v) => setOc({ ...oc, comprador: v })} placeholder="selecione o comprador…" /></div>
           <div style={{ minWidth: 150 }}><Lbl>CNO da obra {obra?.cno ? "" : "(defina na aba Obras)"}</Lbl><input value={cnoEfetivo} onChange={(e) => setOc({ ...oc, cnoOverride: e.target.value })} placeholder="00.000.00000/00" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
         </div>
 
