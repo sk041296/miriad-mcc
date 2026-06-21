@@ -1,5 +1,17 @@
 # Miriad Construction Control (MCC)
 
+## v8.2 — Medição projetada no Financeiro
+Nova aba **Medição projetada** no módulo Financeiro, alimentada pelos **PMM**:
+- Consolida a medição prevista de cada obra **alocada por mês**, em matriz obra × mês (com totais),
+  no mesmo estilo da área de medições das Premissas.
+- Cada célula soma os PMM da obra no mês: valor contratado **com BDI** × % de avanço previsto de
+  cada item da EAP.
+- **Acesso:** Diretoria e CEO (que veem todo o Financeiro) e também o **Coordenador de Planejamento**,
+  que passa a ter no menu lateral apenas a aba Medição projetada do Financeiro.
+
+> **Sem migração** — usa a tabela `pmm` (criada na v8.1). Próxima etapa: v8.3 (ranking de supervisores).
+
+
 ## v8.1 — PMM (Plano de Medição Mensal)
 Mesma lógica do POS, porém mensal e voltado à medição prevista da obra:
 - **Preenchimento (Supervisor de Obras):** por obra e mês, os itens da EAP com a medição prevista

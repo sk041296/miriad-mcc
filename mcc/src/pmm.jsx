@@ -15,7 +15,7 @@ function medItem(it, eapItens) {
   const valorItem = Number(e?.valor_total) || 0;   // valor contratado COM BDI
   return { pct: p, financeiro: valorItem * p, valorItem };
 }
-function resumoPmm(pm, eapItens) {
+export function resumoPmm(pm, eapItens) {
   const it = (pm.itens || []).map((x) => ({ ...x, ...medItem(x, eapItens) }));
   const financeiro = sum(it.map((x) => x.financeiro));
   const baseValor = sum(it.map((x) => x.valorItem));
