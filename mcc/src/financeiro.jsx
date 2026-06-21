@@ -102,8 +102,11 @@ function autoAnticipate(p) {
 /* ---------- Sub-abas do módulo financeiro ---------- */
 const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"]];
 
-export function ModuloFinanceiro() {
-  const [sub, setSub] = useState("premissas");
+export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
+  const [subLocal, setSubLocal] = useState("premissas");
+  const sub = subProp ?? subLocal;
+  const setSub = setSubProp ?? setSubLocal;
+  const controlado = subProp != null;
   const [premissas, setPremissas] = useState(SEED_PREMISSAS);
   const [pronto, setPronto] = useState(false);
   useEffect(() => { getFin("premissas").then((v) => { if (v) { const p = v; if (!p.impostos) p.impostos = SEED_PREMISSAS.impostos; if (p.antecipacao && p.antecipacao.valores && !p.antecipacao.porContrato) p.antecipacao = { taxaMes: p.antecipacao.taxaMes, porContrato: { cense: p.antecipacao.valores } }; setPremissas(p); } setPronto(true); }).catch(() => setPronto(true)); }, []);
@@ -113,11 +116,13 @@ export function ModuloFinanceiro() {
 
   return (
     <div>
-      <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-        {FIN_TABS.map(([id, label]) => (
-          <button key={id} onClick={() => setSub(id)} style={{ background: sub === id ? C.preto : C.branco, color: sub === id ? "#fff" : C.dim, border: `1px solid ${sub === id ? C.preto : C.linha}`, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
-        ))}
-      </div>
+      {!controlado && (
+        <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+          {FIN_TABS.map(([id, label]) => (
+            <button key={id} onClick={() => setSub(id)} style={{ background: sub === id ? C.preto : C.branco, color: sub === id ? "#fff" : C.dim, border: `1px solid ${sub === id ? C.preto : C.linha}`, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{label}</button>
+          ))}
+        </div>
+      )}
       {sub === "premissas" && <Premissas premissas={premissas} setPremissas={setPremissas} cf={cf} />}
       {sub === "antecipacao" && <Antecipacao premissas={premissas} setPremissas={setPremissas} cf={cf} />}
       {sub === "comparativo" && <Comparativo premissas={premissas} cf={cf} />}

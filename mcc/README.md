@@ -1,5 +1,22 @@
 # Miriad Construction Control (MCC)
 
+## v8.0 — POS (Plano Operacional Semanal) e Financeiro no menu lateral
+- **POS (Plano Operacional Semanal):** lookahead da semana seguinte, **exclusivo do Supervisor de
+  Obras**. Ele indica as frentes (itens da EAP) que vai desenvolver, com a equipe e a produção
+  planejada de cada item. Deve ser preenchido **até sexta-feira**; passadas 24h do prazo sem
+  preenchimento, o acesso é **bloqueado** (mesma lógica das SM-is) — o Coordenador de Planejamento
+  destrava.
+- **Gestão do POS** (Coord. de Planejamento, Diretoria e CEO): vê todos os POS individualmente e em
+  **tabela com avanço físico e financeiro estimado** da semana. O financeiro vem do valor contratado
+  **com BDI** multiplicado pelo % de avanço planejado de cada item da EAP.
+- **Financeiro no menu lateral:** as abas do módulo Financeiro (Premissas, Antecipação, Antes×Depois,
+  Sensibilidade, Resultado, Custos por obra, Custos diretos) foram para a lateral, com notas, igual
+  ao Operacional.
+
+> **Migração:** rode `supabase/migration_v8.sql` (cria a tabela `pos`). Próximas etapas: v8.1 (PMM),
+> v8.2 (Medição projetada no Financeiro) e v8.3 (ranking de supervisores).
+
+
 ## v7.4 — SS-i (Solicitação de Serviço)
 Mesma lógica da SM-i, agora para serviços de **empreitada**, **locação de equipamentos** e outros:
 - **Formulário (Supervisor de Obras):** obra, tipo (empreitada/locação/outros), serviços/locações

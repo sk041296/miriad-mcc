@@ -253,6 +253,7 @@ function PainelGeralWrap() {
 /* ---------------- Itens do menu Operacional (com notas) ---------------- */
 const OP_ITENS = [
   { id: "rdo", label: "RDO-i", nota: "Relatório diário de obra" },
+  { id: "pos", label: "POS", nota: "Plano operacional semanal" },
   { id: "smi", label: "SM-i", nota: "Solicitação de material" },
   { id: "ssi", label: "SS-i", nota: "Solicitação de serviço e locação" },
   { id: "oc", label: "OC-i", nota: "Ordem de compra de materiais" },
@@ -261,6 +262,15 @@ const OP_ITENS = [
   { id: "eap", label: "EAP & Custos", nota: "Orçamento e curva de custos" },
   { id: "obras", label: "Obras", nota: "Cadastro e EAP das obras" },
 ];
+const FIN_ITENS = [
+  { id: "premissas", label: "Premissas", nota: "Contratos, impostos e medições" },
+  { id: "antecipacao", label: "Antecipação", nota: "Cenários de factoring" },
+  { id: "comparativo", label: "Antes × Depois", nota: "Impacto da antecipação" },
+  { id: "sensibilidade", label: "Sensibilidade", nota: "Variação de taxa e prazo" },
+  { id: "resultado", label: "Resultado", nota: "DRE e fluxo consolidado" },
+  { id: "custos", label: "Custos por obra", nota: "Serviço × material por mês" },
+  { id: "custosdir", label: "Custos diretos (auto)", nota: "Despesas diretas por obra" },
+];
 
 /* ---------------- Shell ---------------- */
 function Shell({ usuario, onSair }) {
@@ -268,10 +278,12 @@ function Shell({ usuario, onSair }) {
   const secaoInicial = pode(p, "painel") ? "painel" : pode(p, "operacional") ? "operacional" : "financeiro";
   const [secao, setSecao] = useState(secaoInicial);
   const [opTab, setOpTab] = useState("rdo");
+  const [finTab, setFinTab] = useState("premissas");
   const [usuariosAberto, setUsuariosAberto] = useState(false);
 
-  const abrir = (sec, tab) => { setSecao(sec); if (tab) setOpTab(tab); setUsuariosAberto(false); };
-  const ativo = (sec, tab) => !usuariosAberto && secao === sec && (sec !== "operacional" || opTab === tab);
+  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); };
+  const tabDe = (sec) => sec === "operacional" ? opTab : sec === "financeiro" ? finTab : null;
+  const ativo = (sec, tab) => !usuariosAberto && secao === sec && (!tab || tabDe(sec) === tab);
 
   const botao = (sec, tab, label, icone, nota) => (
     <button key={(tab || sec)} onClick={() => abrir(sec, tab)}
@@ -282,7 +294,8 @@ function Shell({ usuario, onSair }) {
   );
 
   const tituloOp = OP_ITENS.find((i) => i.id === opTab);
-  const titulo = usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? "Financeiro · Fluxo de Caixa" : `Operacional · ${tituloOp?.label || ""}`;
+  const tituloFin = FIN_ITENS.find((i) => i.id === finTab);
+  const titulo = usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
 
   return (
     <div style={{ minHeight: "100vh", display: "flex", background: C.cinza, fontFamily: "'Inter', system-ui, sans-serif" }}>
@@ -295,7 +308,7 @@ function Shell({ usuario, onSair }) {
 
         {pode(p, "financeiro") && <>
           <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Financeiro</div>
-          {botao("financeiro", null, "Fluxo de Caixa", "$", "Premissas, antecipação e custos")}
+          {FIN_ITENS.map((i) => botao("financeiro", i.id, i.label, "$", i.nota))}
         </>}
 
         {pode(p, "operacional") && <>
@@ -315,7 +328,7 @@ function Shell({ usuario, onSair }) {
         <h1 style={{ fontSize: 22, fontWeight: 800, color: C.preto, margin: "0 0 18px" }}>{titulo}</h1>
         {usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
           : secao === "painel" && pode(p, "painel") ? <PainelGeralWrap />
-          : secao === "financeiro" && pode(p, "financeiro") ? <ModuloFinanceiro />
+          : secao === "financeiro" && pode(p, "financeiro") ? <ModuloFinanceiro sub={finTab} setSub={setFinTab} />
           : pode(p, "operacional") ? <ModuloOperacional usuario={usuario} sub={opTab} setSub={setOpTab} />
           : <div style={{ color: C.dim }}>Sem acesso a este módulo.</div>}
       </main>
