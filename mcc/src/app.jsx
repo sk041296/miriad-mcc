@@ -14,6 +14,17 @@ function LogoMiriad({ size = 26 }) {
 }
 const btnMini = (cor) => ({ background: "none", border: `1px solid ${cor}`, color: cor, borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer" });
 
+function useIsMobile(bp = 820) {
+  const [m, setM] = useState(typeof window !== "undefined" && window.innerWidth <= bp);
+  useEffect(() => {
+    const mq = window.matchMedia(`(max-width:${bp}px)`);
+    const fn = (e) => setM(e.matches);
+    setM(mq.matches); mq.addEventListener ? mq.addEventListener("change", fn) : mq.addListener(fn);
+    return () => { mq.removeEventListener ? mq.removeEventListener("change", fn) : mq.removeListener(fn); };
+  }, [bp]);
+  return m;
+}
+
 /* ---------------- Definir senha pelo convite ---------------- */
 function DefinirSenha({ token, onEntrar }) {
   const [info, setInfo] = useState(null); const [erro, setErro] = useState(null);
@@ -293,8 +304,10 @@ function Shell({ usuario, onSair }) {
   const [usuariosAberto, setUsuariosAberto] = useState(false);
   const [rankingAberto, setRankingAberto] = useState(false);
   const ehDir = p === "ceo" || p === "diretor";
+  const mobile = useIsMobile();
+  const [drawer, setDrawer] = useState(false);
 
-  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); setRankingAberto(false); };
+  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); setRankingAberto(false); setDrawer(false); };
   const tabDe = (sec) => sec === "operacional" ? opTab : sec === "financeiro" ? finTab : null;
   const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && secao === sec && (!tab || tabDe(sec) === tab);
 
@@ -310,42 +323,72 @@ function Shell({ usuario, onSair }) {
   const tituloFin = FIN_ITENS.find((i) => i.id === finTab);
   const titulo = rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
 
+  const navInterno = (
+    <>
+      <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 4, padding: "0 4px" }}><LogoMiriad size={28} />
+        <div style={{ color: "#fff", fontSize: 15, fontWeight: 900, lineHeight: 1.05 }}>Miriad<br /><span style={{ color: C.laranja, fontSize: 11, fontWeight: 700 }}>Construction Control</span></div></div>
+      <div style={{ height: 1, background: "#333", margin: "14px 0" }} />
+
+      {pode(p, "painel") && botao("painel", null, "Painel Geral", "▣", "Visão consolidada das obras")}
+
+      {temFin && <>
+        <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Financeiro</div>
+        {finItens.map((i) => botao("financeiro", i.id, i.label, "$", i.nota))}
+      </>}
+
+      {pode(p, "operacional") && <>
+        <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Operacional</div>
+        {OP_ITENS.map((i) => botao("operacional", i.id, i.label, "▤", i.embreve ? `${i.nota} · em breve (${i.embreve})` : i.nota))}
+      </>}
+
+      <div style={{ flex: 1, minHeight: 12 }} />
+      {ehDir && <button onClick={() => { setRankingAberto(true); setUsuariosAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
+      {pode(p, "usuarios") && <button onClick={() => { setUsuariosAberto(true); setRankingAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
+      <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
+        <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
+        <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{PAPEIS[p] || p}</div>
+        <button onClick={onSair} style={{ background: "transparent", border: "1px solid #444", color: "#aaa", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", width: "100%" }}>Sair</button>
+      </div>
+    </>
+  );
+
+  const conteudo = (
+    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}`} className="mcc-fade">
+      {rankingAberto && ehDir ? <Ranking />
+        : usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
+        : secao === "painel" && pode(p, "painel") ? <PainelGeralWrap />
+        : secao === "financeiro" && temFin ? <ModuloFinanceiro sub={finTab} setSub={setFinTab} />
+        : pode(p, "operacional") ? <ModuloOperacional usuario={usuario} sub={opTab} setSub={setOpTab} />
+        : <div style={{ color: C.dim }}>Sem acesso a este módulo.</div>}
+    </div>
+  );
+
+  if (mobile) {
+    return (
+      <div style={{ minHeight: "100vh", background: C.cinza }}>
+        <header style={{ position: "sticky", top: 0, zIndex: 30, background: C.preto, display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", boxShadow: "0 2px 10px rgba(0,0,0,.25)" }}>
+          <button aria-label="Menu" onClick={() => setDrawer(true)} style={{ background: "transparent", border: "none", color: "#fff", fontSize: 22, lineHeight: 1, cursor: "pointer", padding: 4 }}>☰</button>
+          <LogoMiriad size={24} />
+          <div style={{ color: "#fff", fontSize: 14, fontWeight: 800, flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{titulo}</div>
+        </header>
+        {drawer && <>
+          <div className="mcc-backdrop" onClick={() => setDrawer(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.5)", zIndex: 40 }} />
+          <aside className="mcc-drawer" style={{ position: "fixed", top: 0, left: 0, bottom: 0, width: 264, maxWidth: "84vw", background: C.preto, padding: "16px 14px", boxSizing: "border-box", display: "flex", flexDirection: "column", zIndex: 50, overflowY: "auto", boxShadow: "4px 0 24px rgba(0,0,0,.4)" }}>{navInterno}</aside>
+        </>}
+        <main className="mcc-main" style={{ padding: "16px 14px" }}>
+          <h1 style={{ fontSize: 19, fontWeight: 800, color: C.preto, margin: "2px 0 14px" }}>{titulo}</h1>
+          {conteudo}
+        </main>
+      </div>
+    );
+  }
+
   return (
-    <div style={{ minHeight: "100vh", display: "flex", background: C.cinza, fontFamily: "'Inter', system-ui, sans-serif" }}>
-      <aside style={{ width: 248, background: C.preto, padding: "18px 14px", position: "sticky", top: 0, height: "100vh", boxSizing: "border-box", display: "flex", flexDirection: "column", flexShrink: 0, overflowY: "auto" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 9, marginBottom: 4, padding: "0 4px" }}><LogoMiriad size={28} />
-          <div style={{ color: "#fff", fontSize: 15, fontWeight: 900, lineHeight: 1.05 }}>Miriad<br /><span style={{ color: C.laranja, fontSize: 11, fontWeight: 700 }}>Construction Control</span></div></div>
-        <div style={{ height: 1, background: "#333", margin: "14px 0" }} />
-
-        {pode(p, "painel") && botao("painel", null, "Painel Geral", "▣", "Visão consolidada das obras")}
-
-        {temFin && <>
-          <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Financeiro</div>
-          {finItens.map((i) => botao("financeiro", i.id, i.label, "$", i.nota))}
-        </>}
-
-        {pode(p, "operacional") && <>
-          <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Operacional</div>
-          {OP_ITENS.map((i) => botao("operacional", i.id, i.label, "▤", i.embreve ? `${i.nota} · em breve (${i.embreve})` : i.nota))}
-        </>}
-
-        <div style={{ flex: 1, minHeight: 12 }} />
-        {ehDir && <button onClick={() => { setRankingAberto(true); setUsuariosAberto(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
-        {pode(p, "usuarios") && <button onClick={() => { setUsuariosAberto(true); setRankingAberto(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
-        <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
-          <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
-          <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{PAPEIS[p] || p}</div>
-          <button onClick={onSair} style={{ background: "transparent", border: "1px solid #444", color: "#aaa", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", width: "100%" }}>Sair</button>
-        </div>
-      </aside>
-      <main style={{ flex: 1, padding: 24, maxWidth: 1320, minWidth: 0 }}>
+    <div style={{ minHeight: "100vh", display: "flex", background: C.cinza }}>
+      <aside style={{ width: 248, background: C.preto, padding: "18px 14px", position: "sticky", top: 0, height: "100vh", boxSizing: "border-box", display: "flex", flexDirection: "column", flexShrink: 0, overflowY: "auto" }}>{navInterno}</aside>
+      <main className="mcc-main" style={{ flex: 1, padding: 24, maxWidth: 1320, minWidth: 0 }}>
         <h1 style={{ fontSize: 22, fontWeight: 800, color: C.preto, margin: "0 0 18px" }}>{titulo}</h1>
-        {rankingAberto && ehDir ? <Ranking />
-          : usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
-          : secao === "painel" && pode(p, "painel") ? <PainelGeralWrap />
-          : secao === "financeiro" && temFin ? <ModuloFinanceiro sub={finTab} setSub={setFinTab} />
-          : pode(p, "operacional") ? <ModuloOperacional usuario={usuario} sub={opTab} setSub={setOpTab} />
-          : <div style={{ color: C.dim }}>Sem acesso a este módulo.</div>}
+        {conteudo}
       </main>
     </div>
   );

@@ -1,5 +1,34 @@
 # Miriad Construction Control (MCC)
 
+## v9.0 — Mobile e acabamento de UI
+Otimização para celular e refinamento estético, mantendo as cores e o tema claro:
+- **Layout responsivo:** no celular, barra superior fixa com botão de menu (☰) + logo + título, e
+  o menu lateral vira um **drawer deslizante** com fundo escurecido; conteúdo em largura cheia com
+  espaçamento adequado. No desktop, a sidebar fixa de sempre.
+- **Tipografia Inter** carregada de verdade (Google Fonts) e ajustes de leitura.
+- **Interações premium (CSS global):** transições suaves, anel de foco laranja nos campos, leve
+  elevação em botões e cartões no hover, realce de linha nas tabelas, animação de entrada do
+  conteúdo a cada troca de tela, animações de abertura do menu e scrollbars discretas.
+- Acabamento nos componentes (cartões, KPIs e botões): cantos mais suaves e sombras mais leves.
+
+> **Sem migração** — mudança apenas de frontend. Recomenda-se testar no celular; se quiser ajustes
+> visuais específicos com base no buildots.com, envie um print da tela de referência.
+
+
+## v9.0 — Mobile e acabamento de UI
+Versão focada em experiência, mantendo as cores (laranja/preto/branco) e o tema claro:
+- **Mobile:** no celular, a navegação vira uma **barra superior fixa** com botão de menu (☰), logo e
+  título; o menu lateral passa a ser um **drawer deslizante** com fundo escurecido, fechando ao
+  escolher um item. Conteúdo em largura cheia, espaçamentos e tipografia ajustados para telas
+  pequenas. No desktop, a sidebar fixa continua igual.
+- **Acabamento premium:** fonte **Inter**, transições suaves, anel de foco laranja nos campos,
+  leve elevação no hover de botões e cartões, realce de linha nas tabelas, sombras mais suaves,
+  scrollbars discretas e animação de entrada do conteúdo a cada troca de tela.
+
+> **Sem migração** — mudança apenas de frontend. Recomendado testar no celular; se quiser reproduzir
+> algum detalhe visual específico de uma referência, envie um print.
+
+
 ## v8.3 — Ranking de Supervisores
 Botão **Ranking** no menu lateral (Diretoria e CEO). Nota composta por:
 - **RDO em dia (30%)** — RDO entregue no prazo, por obra, nos últimos 14 dias úteis.

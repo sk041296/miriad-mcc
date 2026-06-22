@@ -90,7 +90,7 @@ export const VINCULOS = ["direto", "indireto"];
 
 /* ---------------- UI primitives ---------------- */
 export const Card = ({ title, right, children, style }) => (
-  <div style={{ background: C.branco, border: `1px solid ${C.linha}`, borderRadius: 12, padding: 18, boxShadow: "0 1px 3px rgba(0,0,0,0.05)", ...style }}>
+  <div className="mcc-card" style={{ background: C.branco, border: `1px solid ${C.linha}`, borderRadius: 14, padding: 18, boxShadow: "0 1px 2px rgba(16,24,40,0.04), 0 1px 3px rgba(16,24,40,0.06)", ...style }}>
     {(title || right) && (
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 10, flexWrap: "wrap" }}>
         <div style={{ fontSize: 12, letterSpacing: "0.08em", textTransform: "uppercase", color: C.preto, fontWeight: 800, borderLeft: `4px solid ${C.laranja}`, paddingLeft: 10 }}>{title}</div>
@@ -107,15 +107,15 @@ export const Btn = ({ children, onClick, kind = "primary", small, disabled, type
     ghost: { background: "transparent", color: C.texto, border: `1.5px solid ${C.linha}` },
     danger: { background: "transparent", color: C.vermelho, border: `1.5px solid ${C.vermelho}55` },
   }[kind];
-  return <button type={type || "button"} onClick={onClick} disabled={disabled}
-    style={{ ...st, borderRadius: 8, padding: small ? "5px 12px" : "9px 18px", fontSize: small ? 12 : 14, fontWeight: 700, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1 }}>{children}</button>;
+  return <button type={type || "button"} onClick={onClick} disabled={disabled} className="mcc-btn"
+    style={{ ...st, borderRadius: 9, padding: small ? "6px 13px" : "9px 18px", fontSize: small ? 12 : 14, fontWeight: 700, cursor: disabled ? "default" : "pointer", opacity: disabled ? 0.5 : 1 }}>{children}</button>;
 };
 export const inp = (extra = {}) => ({ background: C.branco, border: `1.5px solid ${C.linha}`, color: C.texto, borderRadius: 8, padding: "8px 10px", fontSize: 14, outline: "none", ...extra });
 export const Lbl = ({ children }) => <div style={{ fontSize: 11, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{children}</div>;
 export const Th = ({ children, right }) => <th style={{ padding: "8px 10px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: C.branco, background: C.preto, textAlign: right ? "right" : "left", whiteSpace: "nowrap" }}>{children}</th>;
 export const Td = ({ children, right, color, style, colSpan, onClick }) => <td colSpan={colSpan} onClick={onClick} style={{ padding: "7px 10px", fontSize: 13, color: color || C.texto, textAlign: right ? "right" : "left", borderBottom: `1px solid ${C.linha}`, ...(right ? { fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" } : {}), ...style }}>{children}</td>;
 export const Kpi = ({ label, value, sub, dark, accent }) => (
-  <div style={{ background: dark ? C.preto : C.branco, border: `1px solid ${dark ? C.preto : C.linha}`, borderRadius: 12, padding: "16px 18px", flex: 1, minWidth: 175 }}>
+  <div className="mcc-kpi" style={{ background: dark ? C.preto : C.branco, border: `1px solid ${dark ? C.preto : C.linha}`, borderRadius: 14, padding: "16px 18px", flex: 1, minWidth: 175, boxShadow: dark ? "0 4px 14px rgba(20,20,20,0.18)" : "0 1px 2px rgba(16,24,40,0.04)" }}>
     <div style={{ fontSize: 10, letterSpacing: "0.1em", textTransform: "uppercase", color: dark ? "#a3a3a3" : C.dim, fontWeight: 700 }}>{label}</div>
     <div style={{ fontSize: 23, fontWeight: 800, color: accent || (dark ? C.laranja : C.preto), marginTop: 4, fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{value}</div>
     {sub && <div style={{ fontSize: 11, color: dark ? "#a3a3a3" : C.dim, marginTop: 3 }}>{sub}</div>}
