@@ -215,13 +215,15 @@ function AvisoEnvioSupervisor({ onState }) {
     </div>
   );
 }
-export function SmI({ usuario, obras, eapPorObra, colaboradores = [], onMudou }) {
+export function SmI({ usuario, obras, eapPorObra, colaboradores = [], onGerarOc, onMudou }) {
   const [sms, setSms] = useState([]); const [pronto, setPronto] = useState(false);
   const [compSup, setCompSup] = useState(null);
+  const [perguntarOc, setPerguntarOc] = useState(null);
   const p = usuario.papel;
   const ehSup = p === "sup_obras";
   const ehOperador = p === "op_suprimentos";
   const ehCoord = p === "coord_suprimentos";
+  const ehCoordPlan = p === "coord_planejamento";
   const gestor = p === "ceo" || p === "diretor";
 
   const carregar = () => listar("sm_itens").then((r) => { setSms(r); setPronto(true); }).catch(() => setPronto(true));
@@ -232,7 +234,10 @@ export function SmI({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
     const pz = prazoSm(sm.data_necessidade);
     if (status === "em_atendimento") patch.atendido_por = usuario.id;
     if (status === "atendida") { patch.baixado_em = new Date().toISOString(); if ((pz.nivel === "vencida" || pz.nivel === "hoje") && (ehCoord || gestor)) patch.baixa_autorizada_por = usuario.id; }
-    try { await editar("sm_itens", sm.id, patch); carregar(); onMudou && onMudou(); } catch (e) { alert(e.message); }
+    try {
+      await editar("sm_itens", sm.id, patch); carregar(); onMudou && onMudou();
+      if (status === "atendida" && (ehOperador || ehCoord || gestor) && onGerarOc) setPerguntarOc(sm);
+    } catch (e) { alert(e.message); }
   };
 
   if (!pronto) return <div style={{ color: C.dim, padding: 20 }}>Carregando solicitações…</div>;
@@ -260,8 +265,8 @@ export function SmI({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
         </div>
       )}
 
-      {(ehSup || ehOperador || ehCoord || gestor) && (
-        <Card title={ehSup ? "Minhas solicitações" : ehCoord ? "Gestão de SM-is (todas as obras)" : ehOperador ? "Atendimento de SM-is (suas obras)" : "Todas as SM-is"}>
+      {(ehSup || ehOperador || ehCoord || ehCoordPlan || gestor) && (
+        <Card title={ehSup ? "Minhas solicitações" : ehCoord ? "Gestão de SM-is (todas as obras)" : ehOperador ? "Atendimento de SM-is (suas obras)" : ehCoordPlan ? "Visualização de SM-is (todas as obras)" : "Todas as SM-is"}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
             <Coluna titulo="Aberta" cor={C.preto} lista={abertas} {...propsCard} />
             <Coluna titulo="Em atendimento" cor={C.laranja} lista={emAtend} {...propsCard} />
@@ -271,6 +276,32 @@ export function SmI({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
           <div style={{ fontSize: 11, color: C.dim, marginTop: 12 }}>Prazos: verde &gt;5 dias · amarelo 5/3/2 dias · laranja 1 dia (destaque) · vermelho no dia ou vencida. SM-i vencida só pode ser baixada com autorização do Coordenador de Suprimentos.</div>
         </Card>
       )}
+
+      {perguntarOc && (
+        <ModalGerar
+          titulo="SM-i baixada"
+          texto="Deseja gerar uma OC-i (Ordem de Compra) já pré-preenchida com os itens desta solicitação? Você completará o fornecedor e os valores antes de emitir o PDF."
+          rotuloOk="Gerar OC-i"
+          onSim={() => { const sm = perguntarOc; setPerguntarOc(null); onGerarOc && onGerarOc(sm); }}
+          onNao={() => setPerguntarOc(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* Modal simples de confirmação para gerar OC-i / OS-i a partir da solicitação */
+export function ModalGerar({ titulo, texto, rotuloOk, onSim, onNao }) {
+  return (
+    <div onClick={onNao} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} className="mcc-card" style={{ background: "#fff", borderRadius: 14, padding: 22, maxWidth: 420, width: "100%", boxShadow: "0 18px 50px rgba(0,0,0,.3)" }}>
+        <div style={{ fontSize: 16, fontWeight: 800, color: C.preto, marginBottom: 8 }}>{titulo}</div>
+        <div style={{ fontSize: 13.5, color: C.texto, lineHeight: 1.55, marginBottom: 18 }}>{texto}</div>
+        <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+          <Btn small kind="ghost" onClick={onNao}>Agora não</Btn>
+          <Btn small onClick={onSim}>{rotuloOk}</Btn>
+        </div>
+      </div>
     </div>
   );
 }

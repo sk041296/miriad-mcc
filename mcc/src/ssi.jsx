@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import { C, fmt, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar } from "./core.jsx";
-import { prazoSm, ehEmergencial } from "./smi.jsx";
+import { prazoSm, ehEmergencial, ModalGerar } from "./smi.jsx";
 
 const TIPOS = [["empreitada", "Empreitada"], ["locacao", "Locação de equipamentos"], ["outros", "Outros serviços"]];
 const tipoLabel = (t) => (TIPOS.find((x) => x[0] === t) || [, "—"])[1];
@@ -124,13 +124,15 @@ function PainelAutorizaSs({ usuario, sss, obras, colaboradores, onMudou }) {
 }
 
 /* ============================ Módulo SS-i ============================ */
-export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onMudou }) {
+export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onGerarOs, onMudou }) {
   const [sss, setSss] = useState([]); const [pronto, setPronto] = useState(false);
+  const [perguntarOs, setPerguntarOs] = useState(null);
   const p = usuario.papel;
   const ehSup = p === "sup_obras";
   const ehOperador = p === "op_suprimentos";
   const ehCoord = p === "coord_suprimentos";
   const ehCoordObras = p === "coord_obras";
+  const ehCoordPlan = p === "coord_planejamento";
   const gestor = p === "ceo" || p === "diretor";
 
   const carregar = () => listar("ss_itens").then((r) => { setSss(r); setPronto(true); }).catch(() => setPronto(true));
@@ -140,7 +142,10 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
     const patch = { status };
     if (status === "em_atendimento" || status === "ativa") patch.atendido_por = usuario.id;
     if (status === "baixada") { patch.baixado_por = usuario.id; patch.baixado_em = new Date().toISOString(); }
-    try { await editar("ss_itens", ss.id, patch); carregar(); onMudou && onMudou(); } catch (e) { alert(e.message); }
+    try {
+      await editar("ss_itens", ss.id, patch); carregar(); onMudou && onMudou();
+      if (status === "ativa" && (ehOperador || ehCoord || gestor) && onGerarOs) setPerguntarOs(ss);
+    } catch (e) { alert(e.message); }
   };
 
   if (!pronto) return <div style={{ color: C.dim, padding: 20 }}>Carregando solicitações de serviço…</div>;
@@ -173,8 +178,8 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
         </div>
       )}
 
-      {(ehSup || ehOperador || ehCoord || gestor) && (
-        <Card title={ehSup ? "Minhas solicitações de serviço" : ehCoord ? "Gestão de SS-is (todas as obras)" : ehOperador ? "Atendimento de SS-is (suas obras)" : "Todas as SS-is"}>
+      {(ehSup || ehOperador || ehCoord || ehCoordPlan || gestor) && (
+        <Card title={ehSup ? "Minhas solicitações de serviço" : ehCoord ? "Gestão de SS-is (todas as obras)" : ehOperador ? "Atendimento de SS-is (suas obras)" : ehCoordPlan ? "Visualização de SS-is (todas as obras)" : "Todas as SS-is"}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
             <Coluna titulo="Aberta" cor={C.preto} lista={abertas} {...propsCard} />
             <Coluna titulo="Em atendimento" cor={C.laranja} lista={emAtend} {...propsCard} />
@@ -184,6 +189,16 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
           {ativasTodas.length === 0 && <div style={{ fontSize: 13, color: C.dim, marginTop: 8 }}>Nenhuma SS-i no momento.</div>}
           <div style={{ fontSize: 11, color: C.dim, marginTop: 12 }}>A SS-i é <b>baixada pelo Supervisor de Obras</b> ao concluir o serviço ou encerrar a locação. SS-is abertas há mais de 2 meses são sinalizadas para evitar locação de equipamento fora de uso.</div>
         </Card>
+      )}
+
+      {perguntarOs && (
+        <ModalGerar
+          titulo="SS-i marcada como ativa"
+          texto="Deseja gerar uma OS-i (Ordem de Serviço) já pré-preenchida com os itens desta solicitação? Você completará a empresa e os valores antes de formalizar."
+          rotuloOk="Gerar OS-i"
+          onSim={() => { const ss = perguntarOs; setPerguntarOs(null); onGerarOs && onGerarOs(ss); }}
+          onNao={() => setPerguntarOs(null)}
+        />
       )}
     </div>
   );

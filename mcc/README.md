@@ -1,5 +1,21 @@
 # Miriad Construction Control (MCC)
 
+## v9.1 — SM-i/SS-i geram OC-i/OS-i pré-preenchida e acesso ao Planejamento
+- **Gerar OC-i a partir da SM-i:** quando o Suprimentos baixa uma SM-i (move para Atendida), surge
+  um pop-up perguntando se deseja **gerar a OC-i** já pré-preenchida com a obra, o solicitante e os
+  itens da solicitação (item da EAP, material, quantidade e unidade). Basta completar fornecedor e
+  valores e emitir o PDF para o fornecedor.
+- **Gerar OS-i a partir da SS-i:** quando o Suprimentos marca uma SS-i como contratada/ativa, surge
+  o pop-up para **gerar a OS-i** pré-preenchida com a obra e os itens da EAP do serviço.
+- **Item da EAP na solicitação:** a SM-i e a SS-i continuam exigindo o item da EAP em cada linha, e
+  agora esse vínculo é levado automaticamente para a OC-i/OS-i gerada.
+- **Acesso do Coordenador de Planejamento:** passa a visualizar (somente leitura) as SM-is e SS-is
+  de todos os supervisores, em todas as obras.
+
+> **Sem migração** — apenas frontend. As OC-i/OS-i são geradas como rascunho na respectiva tela; nada
+> é emitido sem a conferência e o salvamento pelo Suprimentos.
+
+
 ## v9.0 — Mobile e acabamento de UI
 Otimização para celular e refinamento estético, mantendo as cores e o tema claro:
 - **Layout responsivo:** no celular, barra superior fixa com botão de menu (☰) + logo + título, e

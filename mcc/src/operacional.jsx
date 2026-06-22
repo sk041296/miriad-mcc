@@ -30,6 +30,26 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp })
   const [restricoes, setRestricoes] = useState([]);
   const [colaboradores, setColaboradores] = useState([]);
   const [pronto, setPronto] = useState(false);
+  const [draftOc, setDraftOc] = useState(null);
+  const [draftOs, setDraftOs] = useState(null);
+  const gerarOcDeSm = (sm) => {
+    setDraftOc({
+      obra_id: sm.obra_id,
+      solicitante: (colaboradores.find((c) => c.id === sm.solicitante_id) || {}).nome || "",
+      solicitacaoNum: String(sm.id).slice(0, 8).toUpperCase(),
+      observacao: "Gerada a partir da SM-i" + (sm.descricao ? ` — ${sm.descricao}` : ""),
+      itens_eap: (sm.itens || []).map((i) => ({ eap_codigo: i.eap_codigo, descricao: i.descricao || "", material: i.material || "", quantidade: Number(i.quantidade) || 1, unidade: i.unidade || "un", valorUnit: 0, valor: 0 })),
+    });
+    setSub("oc");
+  };
+  const gerarOsDeSs = (ss) => {
+    setDraftOs({
+      obra_id: ss.obra_id,
+      responsavel: (colaboradores.find((c) => c.id === ss.solicitante_id) || {}).nome || "",
+      itens_eap: (ss.itens || []).map((i) => ({ eap_codigo: i.eap_codigo, descricao: i.servico || i.descricao || "", valor: 0 })),
+    });
+    setSub("os");
+  };
 
   const carregar = async () => {
     const [ob, ct, oc, fu] = await Promise.all([listar("obras"), listar("contratos_servico"), listar("ordens_compra"), listar("funcionarios")]);
@@ -62,12 +82,12 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp })
         </div>
       )}
       {sub === "rdo" && <RdoI usuario={usuario} colaboradores={colaboradores} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} restricoes={restricoes} onMudou={carregar} />}
-      {sub === "smi" && <SmI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
-      {sub === "ssi" && <SsI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
+      {sub === "smi" && <SmI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onGerarOc={gerarOcDeSm} onMudou={carregar} />}
+      {sub === "ssi" && <SsI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onGerarOs={gerarOsDeSs} onMudou={carregar} />}
       {sub === "pos" && <Pos usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
       {sub === "pmm" && <Pmm usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
-      {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} colaboradores={colaboradores} usuario={usuario} onMudou={carregar} />}
-      {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} onMudou={carregar} />}
+      {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} draft={draftOs} onConsumeDraft={() => setDraftOs(null)} usuario={usuario} onMudou={carregar} />}
+      {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} draft={draftOc} onConsumeDraft={() => setDraftOc(null)} onMudou={carregar} />}
       {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
       {sub === "eap" && <EapCustos obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} onMudou={carregar} />}
       {sub === "obras" && <Obras obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
@@ -433,9 +453,15 @@ function MedicaoGerador({ obras, eapPorObra, rdos, usuarioNome }) {
 }
 
 /* ============================ OS-i (Ordem de Serviço Inteligente) ============================ */
-function OsI({ obras, eapPorObra, contratos, onMudou }) {
+function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
   const vazio = { obra_id: "", empresa: "", cnpj: "", responsavel: "", tipo: "indireto", custo_mensal: 0, meses: 1, itens_eap: [], valor: 0 };
   const [ct, setCt] = useState(vazio);
+  useEffect(() => {
+    if (draft) {
+      setCt({ ...vazio, obra_id: draft.obra_id || "", tipo: "indireto", responsavel: draft.responsavel || "", itens_eap: draft.itens_eap || [] });
+      onConsumeDraft && onConsumeDraft();
+    }
+  }, [draft]); // eslint-disable-line
   const [busy, setBusy] = useState(false);
   const cnpjMask = (v) => v.replace(/\D/g, "").slice(0, 14).replace(/(\d{2})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1/$2").replace(/(\d{4})(\d)/, "$1-$2");
   const eapItens = eapPorObra[ct.obra_id] || [];
@@ -558,13 +584,19 @@ function OcLinhas({ itens, valor = [], onChange }) {
   );
 }
 
-function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, onMudou }) {
+function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, draft, onConsumeDraft, onMudou }) {
   const vazio = { obra_id: "", numero: "", fornecedor: "", data: hojeISO(), itens_eap: [],
     data_faturamento: hojeISO(), cond: { tipo: "avista", entrada: 0, nParcelas: 3, primeiroDias: 30, intervaloDias: 30, diasTexto: "" },
     solicitante: "", comprador: "", cliente: "", solicitacaoNum: "", cnoOverride: "", observacao: "",
     forn: { razao: "", cnpj: "", vendedor: "", contatoVendedor: "", endereco: "", contatoLoja: "" },
     entrega: { data: "", endereco: "", responsavel: "", contato: "" } };
   const [oc, setOc] = useState(vazio);
+  useEffect(() => {
+    if (draft) {
+      setOc({ ...vazio, obra_id: draft.obra_id || "", itens_eap: draft.itens_eap || [], solicitante: draft.solicitante || "", solicitacaoNum: draft.solicitacaoNum || "", observacao: draft.observacao || "" });
+      onConsumeDraft && onConsumeDraft();
+    }
+  }, [draft]); // eslint-disable-line
   const [busy, setBusy] = useState(false);
   const [abrirForn, setAbrirForn] = useState(false);
   const obra = obras.find((o) => o.id === oc.obra_id);
