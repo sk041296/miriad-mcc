@@ -1,5 +1,24 @@
 # Miriad Construction Control (MCC)
 
+## v9.2 — Painel Gerencial (CEO/Diretor)
+Nova tela executiva no menu lateral (📊 Painel Gerencial), só para Diretoria e CEO:
+- **Pendências de envio:** obras sem RDO hoje, supervisores sem POS da próxima semana, sem PMM do
+  próximo mês, SM-is aguardando atendimento e SS-is em aberto.
+- **Compras nas obras (OC-i):** valor adquirido total (regime de competência) e o desembolso por mês
+  (regime de caixa), conforme as condições de pagamento das OC-i. (A SM-i não carrega valor; ele é
+  realizado na OC-i.)
+- **Produção por obra:** ranking de avanço físico (% medido pelos RDOs sobre o contratado).
+- **Fluxo de caixa projetado (6 meses):** entradas das medições projetadas (PMM) deslocadas pelo
+  prazo de recebimento (lido das premissas), menos as saídas — pagamentos de OC-i e OS-i no
+  vencimento e as despesas fixas mensais informadas (folha de escritório, despesas financeiras e
+  outras), com saldo do mês e acumulado.
+- **Alertas de avanço:** obras sem avanço há mais de 3 dias (ou sem nenhum avanço registrado).
+- **Últimas atividades:** feed das ações recentes no sistema (RDO, POS, PMM, SM-i, SS-i, OC-i).
+
+> **Sem migração.** Os parâmetros de despesas/prazo do fluxo são salvos no estado financeiro
+> (acessível a CEO/Diretor/Financeiro).
+
+
 ## v9.1 — SM-i/SS-i geram OC-i/OS-i pré-preenchida e acesso ao Planejamento
 - **Gerar OC-i a partir da SM-i:** quando o Suprimentos baixa uma SM-i (move para Atendida), surge
   um pop-up perguntando se deseja **gerar a OC-i** já pré-preenchida com a obra, o solicitante e os

@@ -7,6 +7,7 @@ import { ModuloFinanceiro } from "./financeiro.jsx";
 import { ModuloOperacional } from "./operacional.jsx";
 import { PainelGeral } from "./painel.jsx";
 import { Ranking } from "./ranking.jsx";
+import { PainelGerencial } from "./painelger.jsx";
 import { LOGO_FULL, LOGO_MARK } from "./logo.js";
 
 function LogoMiriad({ size = 26 }) {
@@ -303,13 +304,14 @@ function Shell({ usuario, onSair }) {
   const [finTab, setFinTab] = useState(finItens[0]?.id || "premissas");
   const [usuariosAberto, setUsuariosAberto] = useState(false);
   const [rankingAberto, setRankingAberto] = useState(false);
+  const [gerencialAberto, setGerencialAberto] = useState(false);
   const ehDir = p === "ceo" || p === "diretor";
   const mobile = useIsMobile();
   const [drawer, setDrawer] = useState(false);
 
-  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); setRankingAberto(false); setDrawer(false); };
+  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setDrawer(false); };
   const tabDe = (sec) => sec === "operacional" ? opTab : sec === "financeiro" ? finTab : null;
-  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && secao === sec && (!tab || tabDe(sec) === tab);
+  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && secao === sec && (!tab || tabDe(sec) === tab);
 
   const botao = (sec, tab, label, icone, nota) => (
     <button key={(tab || sec)} onClick={() => abrir(sec, tab)}
@@ -321,7 +323,7 @@ function Shell({ usuario, onSair }) {
 
   const tituloOp = OP_ITENS.find((i) => i.id === opTab);
   const tituloFin = FIN_ITENS.find((i) => i.id === finTab);
-  const titulo = rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
+  const titulo = gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
 
   const navInterno = (
     <>
@@ -342,8 +344,9 @@ function Shell({ usuario, onSair }) {
       </>}
 
       <div style={{ flex: 1, minHeight: 12 }} />
-      {ehDir && <button onClick={() => { setRankingAberto(true); setUsuariosAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
-      {pode(p, "usuarios") && <button onClick={() => { setUsuariosAberto(true); setRankingAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
+      {ehDir && <button onClick={() => { setGerencialAberto(true); setRankingAberto(false); setUsuariosAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: gerencialAberto ? C.laranja : "transparent", color: gerencialAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>📊</span>Painel Gerencial</button>}
+      {ehDir && <button onClick={() => { setRankingAberto(true); setUsuariosAberto(false); setGerencialAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
+      {pode(p, "usuarios") && <button onClick={() => { setUsuariosAberto(true); setRankingAberto(false); setGerencialAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
       <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
         <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
         <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{PAPEIS[p] || p}</div>
@@ -353,8 +356,9 @@ function Shell({ usuario, onSair }) {
   );
 
   const conteudo = (
-    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}`} className="mcc-fade">
-      {rankingAberto && ehDir ? <Ranking />
+    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}`} className="mcc-fade">
+      {gerencialAberto && ehDir ? <PainelGerencial />
+        : rankingAberto && ehDir ? <Ranking />
         : usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
         : secao === "painel" && pode(p, "painel") ? <PainelGeralWrap />
         : secao === "financeiro" && temFin ? <ModuloFinanceiro sub={finTab} setSub={setFinTab} />
