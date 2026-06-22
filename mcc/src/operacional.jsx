@@ -16,7 +16,7 @@ import { Pmm } from "./pmm.jsx";
 
 const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
 
-export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp }) {
+export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, acesso }) {
   const [subLocal, setSubLocal] = useState("rdo");
   const sub = subProp ?? subLocal;
   const setSub = setSubProp ?? setSubLocal;
@@ -82,10 +82,10 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp })
         </div>
       )}
       {sub === "rdo" && <RdoI usuario={usuario} colaboradores={colaboradores} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} restricoes={restricoes} onMudou={carregar} />}
-      {sub === "smi" && <SmI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onGerarOc={gerarOcDeSm} onMudou={carregar} />}
-      {sub === "ssi" && <SsI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onGerarOs={gerarOsDeSs} onMudou={carregar} />}
-      {sub === "pos" && <Pos usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
-      {sub === "pmm" && <Pmm usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} onMudou={carregar} />}
+      {sub === "smi" && <SmI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onGerarOc={gerarOcDeSm} onMudou={carregar} />}
+      {sub === "ssi" && <SsI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onGerarOs={gerarOsDeSs} onMudou={carregar} />}
+      {sub === "pos" && <Pos usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onMudou={carregar} />}
+      {sub === "pmm" && <Pmm usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onMudou={carregar} />}
       {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} draft={draftOs} onConsumeDraft={() => setDraftOs(null)} usuario={usuario} onMudou={carregar} />}
       {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} draft={draftOc} onConsumeDraft={() => setDraftOc(null)} onMudou={carregar} />}
       {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}

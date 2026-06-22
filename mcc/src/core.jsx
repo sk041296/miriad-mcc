@@ -182,3 +182,44 @@ export function papeisQuePodeCriar(criador) {
 }
 /* papéis cujo acesso é restrito às obras designadas */
 export const PRECISA_DESIGNACAO = new Set(["sup_obras", "op_suprimentos", "op_planejamento", "op_orcamento"]);
+
+/* ===================== Acesso configurável por cargo (v9.3) ===================== */
+export const OP_IDS = ["rdo", "pos", "pmm", "smi", "ssi", "oc", "os", "prestadores", "eap", "obras"];
+export const FIN_IDS = ["premissas", "antecipacao", "comparativo", "sensibilidade", "resultado", "custos", "custosdir", "medprojetada"];
+const mapBool = (ids, val) => Object.fromEntries(ids.map((k) => [k, typeof val === "function" ? !!val(k) : !!val]));
+const inc = (papel, ...lista) => lista.includes(papel);
+
+export function acessoPadrao(papel) {
+  const P = PERMS[papel] || {};
+  const dir = papel === "ceo" || papel === "diretor";
+  const finFull = dir || papel === "financeiro";
+  return {
+    painel: !!P.painel, usuarios: !!P.usuarios, ranking: dir, gerencial: dir,
+    op: mapBool(OP_IDS, !!P.operacional),
+    fin: mapBool(FIN_IDS, finFull ? true : (papel === "coord_planejamento" ? (k) => k === "medprojetada" : false)),
+    cap: {
+      smi_criar: inc(papel, "sup_obras", "coord_planejamento"),
+      ssi_criar: inc(papel, "sup_obras", "coord_planejamento"),
+      pos_criar: inc(papel, "sup_obras", "coord_planejamento"),
+      pmm_criar: inc(papel, "sup_obras", "coord_planejamento"),
+      smi_gestao: inc(papel, "op_suprimentos", "coord_suprimentos", "coord_obras", "coord_planejamento", "ceo", "diretor"),
+      ssi_gestao: inc(papel, "op_suprimentos", "coord_suprimentos", "coord_obras", "coord_planejamento", "ceo", "diretor"),
+      pos_gestao: inc(papel, "coord_planejamento", "ceo", "diretor"),
+      pmm_gestao: inc(papel, "coord_obras", "coord_planejamento", "ceo", "diretor"),
+    },
+  };
+}
+export function mapaAcessoPadrao() { const m = {}; Object.keys(PAPEIS).forEach((p) => (m[p] = acessoPadrao(p))); return m; }
+export function mesclarAcesso(base, ov) {
+  const out = JSON.parse(JSON.stringify(base));
+  Object.keys(ov || {}).forEach((p) => {
+    if (!out[p]) out[p] = acessoPadrao(p);
+    const o = ov[p] || {};
+    ["painel", "usuarios", "ranking", "gerencial"].forEach((k) => { if (typeof o[k] === "boolean") out[p][k] = o[k]; });
+    ["op", "fin", "cap"].forEach((g) => { if (o[g]) out[p][g] = { ...out[p][g], ...o[g] }; });
+  });
+  return out;
+}
+export const acessoDe = (mapa, papel) => (mapa && mapa[papel]) || acessoPadrao(papel);
+export const getConfig = (chave = "acesso") => req(`/api/data?t=config&chave=${chave}`).then((d) => d.valor);
+export const setConfig = (chave, valor) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "config", chave, valor }) });

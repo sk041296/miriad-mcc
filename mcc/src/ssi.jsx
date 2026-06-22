@@ -124,7 +124,7 @@ function PainelAutorizaSs({ usuario, sss, obras, colaboradores, onMudou }) {
 }
 
 /* ============================ Módulo SS-i ============================ */
-export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onGerarOs, onMudou }) {
+export function SsI({ usuario, obras, eapPorObra, colaboradores = [], acesso, onGerarOs, onMudou }) {
   const [sss, setSss] = useState([]); const [pronto, setPronto] = useState(false);
   const [perguntarOs, setPerguntarOs] = useState(null);
   const p = usuario.papel;
@@ -134,6 +134,8 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onGerarOs,
   const ehCoordObras = p === "coord_obras";
   const ehCoordPlan = p === "coord_planejamento";
   const gestor = p === "ceo" || p === "diretor";
+  const podeCriar = acesso?.ssi_criar ?? ehSup;
+  const podeVer = (acesso?.ssi_gestao ?? (ehOperador || ehCoord || ehCoordPlan || gestor)) || podeCriar;
 
   const carregar = () => listar("ss_itens").then((r) => { setSss(r); setPronto(true); }).catch(() => setPronto(true));
   useEffect(() => { carregar(); }, []);
@@ -162,7 +164,7 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onGerarOs,
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {ehSup && <FormSsI obras={obras} eapPorObra={eapPorObra} usuario={usuario} onCriou={carregar} />}
+      {podeCriar && <FormSsI obras={obras} eapPorObra={eapPorObra} usuario={usuario} onCriou={carregar} />}
 
       {ehSup && minhasAbertas.length > 0 && (
         <div style={{ background: `${C.amareloAlerta}14`, border: `1px solid ${C.amareloAlerta}66`, borderRadius: 8, padding: "10px 14px", fontSize: 13, color: C.texto }}>
@@ -178,8 +180,8 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], onGerarOs,
         </div>
       )}
 
-      {(ehSup || ehOperador || ehCoord || ehCoordPlan || gestor) && (
-        <Card title={ehSup ? "Minhas solicitações de serviço" : ehCoord ? "Gestão de SS-is (todas as obras)" : ehOperador ? "Atendimento de SS-is (suas obras)" : ehCoordPlan ? "Visualização de SS-is (todas as obras)" : "Todas as SS-is"}>
+      {podeVer && (
+        <Card title={ehSup ? "Minhas solicitações de serviço" : ehCoord ? "Gestão de SS-is (todas as obras)" : ehOperador ? "Atendimento de SS-is (suas obras)" : "SS-is (todas as obras)"}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
             <Coluna titulo="Aberta" cor={C.preto} lista={abertas} {...propsCard} />
             <Coluna titulo="Em atendimento" cor={C.laranja} lista={emAtend} {...propsCard} />

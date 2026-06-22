@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback } from "react";
 import {
   C, Btn, Card, inp, Lbl, listar, criar, criarUsuario, editar, remover, acaoData, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError,
   PAPEIS, PERMS, pode, ehDirecao, papeisQuePodeCriar, PRECISA_DESIGNACAO, SETOR_DE_PAPEL,
+  OP_IDS, FIN_IDS, acessoDe, mapaAcessoPadrao, mesclarAcesso, getConfig, setConfig,
 } from "./core.jsx";
 import { ModuloFinanceiro } from "./financeiro.jsx";
 import { ModuloOperacional } from "./operacional.jsx";
@@ -293,25 +294,84 @@ const finItensDe = (papel) => {
   return [];
 };
 
+const CAP_LABELS = [
+  ["smi_criar", "Criar SM-i"], ["smi_gestao", "Ver / gerir SM-i"],
+  ["ssi_criar", "Criar SS-i"], ["ssi_gestao", "Ver / gerir SS-i"],
+  ["pos_criar", "Criar POS"], ["pos_gestao", "Gerir POS"],
+  ["pmm_criar", "Criar PMM"], ["pmm_gestao", "Gerir PMM"],
+];
+
+function Permissoes({ acessoMap, onSaved }) {
+  const [mapa, setMapa] = useState(() => JSON.parse(JSON.stringify(acessoMap || mapaAcessoPadrao())));
+  const [papel, setPapel] = useState("coord_planejamento");
+  const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(null);
+  const a = mapa[papel] || mapaAcessoPadrao()[papel];
+
+  const setTop = (k, v) => setMapa((m) => ({ ...m, [papel]: { ...m[papel], [k]: v } }));
+  const setGrupo = (g, k, v) => setMapa((m) => ({ ...m, [papel]: { ...m[papel], [g]: { ...m[papel][g], [k]: v } } }));
+  const restaurar = () => setMapa((m) => ({ ...m, [papel]: JSON.parse(JSON.stringify(mapaAcessoPadrao()[papel])) }));
+  const salvar = async () => { setBusy(true); setMsg(null); try { await setConfig("acesso", mapa); onSaved && onSaved(mapa); setMsg("Permissões salvas."); setTimeout(() => setMsg(null), 2500); } catch (e) { setMsg(e.message); } finally { setBusy(false); } };
+
+  const Check = ({ on, onClick, label }) => (
+    <label onClick={onClick} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, cursor: "pointer", padding: "5px 8px", borderRadius: 7, background: on ? C.laranjaClaro : "#fafafa", border: `1px solid ${on ? C.laranja : C.linha}` }}>
+      <span style={{ width: 16, height: 16, borderRadius: 4, border: `2px solid ${on ? C.laranja : C.dim}`, background: on ? C.laranja : "#fff", color: "#fff", fontSize: 11, lineHeight: "12px", textAlign: "center", flexShrink: 0 }}>{on ? "✓" : ""}</span>
+      {label}
+    </label>
+  );
+  const grade = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 8, marginBottom: 6 };
+
+  return (
+    <Card title="Permissões por cargo" right={<span style={{ fontSize: 12, color: msg ? C.verde : C.dim, fontWeight: 700 }}>{msg}</span>}>
+      <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 12 }}>Defina o que cada cargo enxerga e pode fazer. Itens sensíveis (dados financeiros, gestão de usuários) continuam protegidos no servidor independentemente desta tela.</div>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 16 }}>
+        <div style={{ minWidth: 240 }}><Lbl>Cargo</Lbl><select value={papel} onChange={(e) => setPapel(e.target.value)} style={inp({ width: "100%" })}>{Object.keys(PAPEIS).map((p) => <option key={p} value={p}>{PAPEIS[p]}</option>)}</select></div>
+        <Btn small kind="ghost" onClick={restaurar}>Restaurar padrão deste cargo</Btn>
+        <Btn small disabled={busy} onClick={salvar}>{busy ? "Salvando…" : "Salvar permissões"}</Btn>
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 800, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", margin: "10px 0 6px" }}>Módulos gerais</div>
+      <div style={grade}>
+        <Check on={a.painel} onClick={() => setTop("painel", !a.painel)} label="Painel Geral" />
+        <Check on={a.usuarios} onClick={() => setTop("usuarios", !a.usuarios)} label="Usuários" />
+        <Check on={a.ranking} onClick={() => setTop("ranking", !a.ranking)} label="Ranking" />
+        <Check on={a.gerencial} onClick={() => setTop("gerencial", !a.gerencial)} label="Painel Gerencial" />
+      </div>
+
+      <div style={{ fontSize: 11, fontWeight: 800, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", margin: "14px 0 6px" }}>Operacional (telas)</div>
+      <div style={grade}>{OP_ITENS.map((i) => <Check key={i.id} on={!!a.op[i.id]} onClick={() => setGrupo("op", i.id, !a.op[i.id])} label={i.label} />)}</div>
+
+      <div style={{ fontSize: 11, fontWeight: 800, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", margin: "14px 0 6px" }}>Financeiro (abas)</div>
+      <div style={grade}>{FIN_ITENS.map((i) => <Check key={i.id} on={!!a.fin[i.id]} onClick={() => setGrupo("fin", i.id, !a.fin[i.id])} label={i.label} />)}</div>
+
+      <div style={{ fontSize: 11, fontWeight: 800, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", margin: "14px 0 6px" }}>Capacidades dos entregáveis</div>
+      <div style={grade}>{CAP_LABELS.map(([k, label]) => <Check key={k} on={!!a.cap[k]} onClick={() => setGrupo("cap", k, !a.cap[k])} label={label} />)}</div>
+    </Card>
+  );
+}
+
 /* ---------------- Shell ---------------- */
-function Shell({ usuario, onSair }) {
+function Shell({ usuario, onSair, acessoMap, setAcessoMap }) {
   const p = usuario.papel;
-  const finItens = finItensDe(p);
+  const A = acessoDe(acessoMap, p);
+  const finItens = FIN_ITENS.filter((i) => A.fin && A.fin[i.id]);
+  const opItens = OP_ITENS.filter((i) => A.op && A.op[i.id]);
   const temFin = finItens.length > 0;
-  const secaoInicial = pode(p, "painel") ? "painel" : pode(p, "operacional") ? "operacional" : "financeiro";
+  const temOp = opItens.length > 0;
+  const secaoInicial = A.painel ? "painel" : temOp ? "operacional" : "financeiro";
   const [secao, setSecao] = useState(secaoInicial);
-  const [opTab, setOpTab] = useState("rdo");
+  const [opTab, setOpTab] = useState(opItens[0]?.id || "rdo");
   const [finTab, setFinTab] = useState(finItens[0]?.id || "premissas");
   const [usuariosAberto, setUsuariosAberto] = useState(false);
   const [rankingAberto, setRankingAberto] = useState(false);
   const [gerencialAberto, setGerencialAberto] = useState(false);
+  const [permsAberto, setPermsAberto] = useState(false);
   const ehDir = p === "ceo" || p === "diretor";
   const mobile = useIsMobile();
   const [drawer, setDrawer] = useState(false);
 
-  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setDrawer(false); };
+  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setDrawer(false); };
   const tabDe = (sec) => sec === "operacional" ? opTab : sec === "financeiro" ? finTab : null;
-  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && secao === sec && (!tab || tabDe(sec) === tab);
+  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && !permsAberto && secao === sec && (!tab || tabDe(sec) === tab);
 
   const botao = (sec, tab, label, icone, nota) => (
     <button key={(tab || sec)} onClick={() => abrir(sec, tab)}
@@ -323,7 +383,7 @@ function Shell({ usuario, onSair }) {
 
   const tituloOp = OP_ITENS.find((i) => i.id === opTab);
   const tituloFin = FIN_ITENS.find((i) => i.id === finTab);
-  const titulo = gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
+  const titulo = permsAberto ? "Permissões por cargo" : gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
 
   const navInterno = (
     <>
@@ -331,22 +391,23 @@ function Shell({ usuario, onSair }) {
         <div style={{ color: "#fff", fontSize: 15, fontWeight: 900, lineHeight: 1.05 }}>Miriad<br /><span style={{ color: C.laranja, fontSize: 11, fontWeight: 700 }}>Construction Control</span></div></div>
       <div style={{ height: 1, background: "#333", margin: "14px 0" }} />
 
-      {pode(p, "painel") && botao("painel", null, "Painel Geral", "▣", "Visão consolidada das obras")}
+      {A.painel && botao("painel", null, "Painel Geral", "▣", "Visão consolidada das obras")}
 
       {temFin && <>
         <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Financeiro</div>
         {finItens.map((i) => botao("financeiro", i.id, i.label, "$", i.nota))}
       </>}
 
-      {pode(p, "operacional") && <>
+      {temOp && <>
         <div style={{ color: "#777", fontSize: 10, textTransform: "uppercase", letterSpacing: ".1em", margin: "12px 4px 6px", fontWeight: 800 }}>Operacional</div>
-        {OP_ITENS.map((i) => botao("operacional", i.id, i.label, "▤", i.embreve ? `${i.nota} · em breve (${i.embreve})` : i.nota))}
+        {opItens.map((i) => botao("operacional", i.id, i.label, "▤", i.embreve ? `${i.nota} · em breve (${i.embreve})` : i.nota))}
       </>}
 
       <div style={{ flex: 1, minHeight: 12 }} />
-      {ehDir && <button onClick={() => { setGerencialAberto(true); setRankingAberto(false); setUsuariosAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: gerencialAberto ? C.laranja : "transparent", color: gerencialAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>📊</span>Painel Gerencial</button>}
-      {ehDir && <button onClick={() => { setRankingAberto(true); setUsuariosAberto(false); setGerencialAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
-      {pode(p, "usuarios") && <button onClick={() => { setUsuariosAberto(true); setRankingAberto(false); setGerencialAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
+      {A.gerencial && ehDir && <button onClick={() => { setGerencialAberto(true); setRankingAberto(false); setUsuariosAberto(false); setPermsAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: gerencialAberto ? C.laranja : "transparent", color: gerencialAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>📊</span>Painel Gerencial</button>}
+      {A.ranking && ehDir && <button onClick={() => { setRankingAberto(true); setUsuariosAberto(false); setGerencialAberto(false); setPermsAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
+      {A.usuarios && pode(p, "usuarios") && <button onClick={() => { setUsuariosAberto(true); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
+      {ehDir && <button onClick={() => { setPermsAberto(true); setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: permsAberto ? C.laranja : "transparent", color: permsAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🔑</span>Permissões</button>}
       <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
         <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
         <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{PAPEIS[p] || p}</div>
@@ -356,13 +417,14 @@ function Shell({ usuario, onSair }) {
   );
 
   const conteudo = (
-    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}`} className="mcc-fade">
-      {gerencialAberto && ehDir ? <PainelGerencial />
+    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}-${permsAberto}`} className="mcc-fade">
+      {permsAberto && ehDir ? <Permissoes acessoMap={acessoMap} onSaved={setAcessoMap} />
+        : gerencialAberto && ehDir ? <PainelGerencial />
         : rankingAberto && ehDir ? <Ranking />
         : usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
-        : secao === "painel" && pode(p, "painel") ? <PainelGeralWrap />
+        : secao === "painel" && A.painel ? <PainelGeralWrap />
         : secao === "financeiro" && temFin ? <ModuloFinanceiro sub={finTab} setSub={setFinTab} />
-        : pode(p, "operacional") ? <ModuloOperacional usuario={usuario} sub={opTab} setSub={setOpTab} />
+        : temOp ? <ModuloOperacional usuario={usuario} sub={opTab} setSub={setOpTab} acesso={A.cap} />
         : <div style={{ color: C.dim }}>Sem acesso a este módulo.</div>}
     </div>
   );
@@ -401,9 +463,14 @@ function Shell({ usuario, onSair }) {
 export default function App() {
   const conviteToken = new URLSearchParams(window.location.search).get("convite");
   const [usuario, setUsuario] = useState(() => (getToken() ? getUser() : null));
+  const [acessoMap, setAcessoMap] = useState(null);
   const sair = useCallback(() => { limparSessao(); setUsuario(null); }, []);
   useEffect(() => { if (getToken() && !conviteToken) listar("obras").catch((e) => { if (e instanceof AuthError) sair(); }); }, [sair, conviteToken]);
+  useEffect(() => {
+    if (!usuario) { setAcessoMap(null); return; }
+    getConfig("acesso").then((ov) => setAcessoMap(mesclarAcesso(mapaAcessoPadrao(), ov || {}))).catch(() => setAcessoMap(mapaAcessoPadrao()));
+  }, [usuario]);
   if (conviteToken && !usuario) return <DefinirSenha token={conviteToken} onEntrar={setUsuario} />;
   if (!usuario) return <Login onEntrar={setUsuario} />;
-  return <Shell usuario={usuario} onSair={sair} />;
+  return <Shell usuario={usuario} onSair={sair} acessoMap={acessoMap} setAcessoMap={setAcessoMap} />;
 }

@@ -162,12 +162,13 @@ const hsub = { padding: "5px 8px", fontSize: 10.5, color: C.dim, textAlign: "lef
 const tsub = { padding: "5px 8px", fontSize: 12, borderBottom: `1px solid ${C.linha}` };
 
 /* ============================ Módulo POS ============================ */
-export function Pos({ usuario, obras, eapPorObra, colaboradores = [], onMudou }) {
+export function Pos({ usuario, obras, eapPorObra, colaboradores = [], acesso, onMudou }) {
   const [posLista, setPosLista] = useState([]); const [pronto, setPronto] = useState(false);
   const [comp, setComp] = useState(null);
   const p = usuario.papel;
   const ehSup = p === "sup_obras";
-  const gestao = p === "coord_planejamento" || p === "ceo" || p === "diretor";
+  const podeCriar = acesso?.pos_criar ?? ehSup;
+  const gestao = acesso?.pos_gestao ?? (p === "coord_planejamento" || p === "ceo" || p === "diretor");
 
   const carregar = () => listar("pos").then((r) => { setPosLista(r); setPronto(true); }).catch(() => setPronto(true));
   useEffect(() => { carregar(); }, []);
@@ -178,9 +179,9 @@ export function Pos({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {ehSup && <AvisoPos onState={setComp} />}
-      {ehSup && !comp?.travado && <FormPos obras={obras} eapPorObra={eapPorObra} usuario={usuario} meusPos={meusPos} onSalvou={carregar} />}
+      {podeCriar && !(ehSup && comp?.travado) && <FormPos obras={obras} eapPorObra={eapPorObra} usuario={usuario} meusPos={meusPos} onSalvou={carregar} />}
       {gestao && <GestaoPos posLista={posLista} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} />}
-      {!ehSup && !gestao && <Card title="POS"><div style={{ fontSize: 13, color: C.dim }}>O POS é preenchido pelo Supervisor de Obras e acompanhado pelo Coordenador de Planejamento e Diretoria.</div></Card>}
+      {!podeCriar && !gestao && <Card title="POS"><div style={{ fontSize: 13, color: C.dim }}>O POS é preenchido pelo Supervisor de Obras e acompanhado pelo Coordenador de Planejamento e Diretoria.</div></Card>}
     </div>
   );
 }

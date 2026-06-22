@@ -1,5 +1,18 @@
 # Miriad Construction Control (MCC)
 
+## v9.3 — Permissões por cargo configuráveis + Planejamento nos entregáveis
+- **Tela "Permissões" (🔑, só CEO/Diretor):** configure, por cargo, o que cada um acessa — módulos
+  gerais (Painel, Usuários, Ranking, Painel Gerencial), telas do Operacional, abas do Financeiro e as
+  capacidades dos entregáveis (criar/gerir SM-i, SS-i, POS e PMM). As escolhas são salvas e valem
+  para todos os usuários daquele cargo. Itens sensíveis (dados financeiros e gestão de usuários)
+  seguem protegidos no servidor, independentemente desta tela.
+- **Coordenador de Planejamento** passa a, por padrão, **criar e gerir** SM-i, SS-i, POS e PMM (além
+  da visão de gestão que já tinha). Tudo isso é editável na tela de Permissões.
+
+> **Migração:** rode `supabase/migration_v9_3.sql` (cria a tabela `app_config`). Sem ela, a tela de
+> Permissões não salva; o sistema continua funcionando com as permissões padrão.
+
+
 ## v9.2 — Painel Gerencial (CEO/Diretor)
 Nova tela executiva no menu lateral (📊 Painel Gerencial), só para Diretoria e CEO:
 - **Pendências de envio:** obras sem RDO hoje, supervisores sem POS da próxima semana, sem PMM do

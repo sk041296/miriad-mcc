@@ -161,12 +161,13 @@ const hsub = { padding: "5px 8px", fontSize: 10.5, color: C.dim, textAlign: "lef
 const tsub = { padding: "5px 8px", fontSize: 12, borderBottom: `1px solid ${C.linha}` };
 
 /* ============================ Módulo PMM ============================ */
-export function Pmm({ usuario, obras, eapPorObra, colaboradores = [], onMudou }) {
+export function Pmm({ usuario, obras, eapPorObra, colaboradores = [], acesso, onMudou }) {
   const [lista, setLista] = useState([]); const [pronto, setPronto] = useState(false);
   const [comp, setComp] = useState(null);
   const p = usuario.papel;
   const ehSup = p === "sup_obras";
-  const gestao = p === "coord_obras" || p === "ceo" || p === "diretor";
+  const podeCriar = acesso?.pmm_criar ?? ehSup;
+  const gestao = acesso?.pmm_gestao ?? (p === "coord_obras" || p === "coord_planejamento" || p === "ceo" || p === "diretor");
 
   const carregar = () => listar("pmm").then((r) => { setLista(r); setPronto(true); }).catch(() => setPronto(true));
   useEffect(() => { carregar(); }, []);
@@ -177,9 +178,9 @@ export function Pmm({ usuario, obras, eapPorObra, colaboradores = [], onMudou })
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {ehSup && <AvisoPmm onState={setComp} />}
-      {ehSup && !comp?.travado && <FormPmm obras={obras} eapPorObra={eapPorObra} usuario={usuario} meusPmm={meusPmm} onSalvou={carregar} />}
+      {podeCriar && !(ehSup && comp?.travado) && <FormPmm obras={obras} eapPorObra={eapPorObra} usuario={usuario} meusPmm={meusPmm} onSalvou={carregar} />}
       {gestao && <GestaoPmm pmmLista={lista} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} />}
-      {!ehSup && !gestao && <Card title="PMM"><div style={{ fontSize: 13, color: C.dim }}>O PMM é preenchido pelo Supervisor de Obras e acompanhado pelo Coordenador de Obras e Diretoria.</div></Card>}
+      {!podeCriar && !gestao && <Card title="PMM"><div style={{ fontSize: 13, color: C.dim }}>O PMM é preenchido pelo Supervisor de Obras e acompanhado pelo Coordenador de Obras e Diretoria.</div></Card>}
     </div>
   );
 }

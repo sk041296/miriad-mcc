@@ -87,6 +87,12 @@ export default async function handler(req, res) {
     const t = String(req.query.t || "");
     if (t === "ping") return res.status(200).json({ ok: true, papel: s.papel });
 
+    // configuração de acesso por cargo (leitura liberada a qualquer autenticado)
+    if (t === "config") {
+      const { data } = await supabase.from("app_config").select("valor").eq("chave", req.query.chave || "acesso").maybeSingle();
+      return res.status(200).json({ valor: data ? data.valor : null });
+    }
+
     // lista enxuta de colaboradores para os dropdowns de responsável (qualquer autenticado)
     if (t === "colaboradores") {
       const { data, error } = await supabase.from("usuarios").select("id,nome,papel,ativo").eq("ativo", true).order("nome");
@@ -110,6 +116,15 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     const { t, row, obra, itens } = req.body || {};
+
+    // gravação da configuração de acesso por cargo (apenas CEO/Diretor)
+    if (t === "config") {
+      if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas CEO/Diretor podem alterar as permissões." });
+      const { chave, valor } = req.body;
+      const { error } = await supabase.from("app_config").upsert({ chave: chave || "acesso", valor, atualizado_em: new Date().toISOString() });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true });
+    }
 
     // ---- conformidade semanal de envio das SM-is (Supervisor de Obras) ----
     if (t === "confirmar_envio") {
