@@ -168,6 +168,8 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
   const [salvando, setSalvando] = useState(false); const [msg, setMsg] = useState(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
+  const [ndForm, setNdForm] = useState(null); // atividade não descrita: { k, descricao, qtde, unidade }
+  const proxNumero = (obraId) => { const ns = rdos.filter((r) => r.obra_id === obraId).map((r) => parseInt(String(r.numero || "").replace(/\D/g, ""), 10)).filter((n) => !isNaN(n)); return ns.length ? String(Math.max(...ns) + 1) : "1"; };
   const fotoRef = useRef(null);
   const topoRef = useRef(null);
 
@@ -214,6 +216,19 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
 
   const valorUnit = (it) => (Number(it.valor_total) || 0) / (Number(it.qtde) || 1);
   const medicaoRdo = sum(form.atividades.map((a) => { const it = eapItens.find((i) => i.id === a.eapId); return it ? (Number(a.qtde) || 0) * valorUnit(it) : 0; }));
+  // auto-numeração: sugere o próximo nº quando a obra muda e o campo está vazio (não em edição)
+  useEffect(() => { if (!editandoId && form.obraId && !String(form.numero || "").trim()) setForm((f) => ({ ...f, numero: proxNumero(form.obraId) })); }, [form.obraId, editandoId]); // eslint-disable-line
+  const criarNaoDescrito = async () => {
+    const f = ndForm; if (!f || !f.descricao.trim()) { alert("Descreva a atividade."); return; }
+    const codigo = `ND-${eapItens.filter((i) => i.nao_descrito).length + 1}`;
+    try {
+      const row = await criar("eap_itens", { obra_id: form.obraId, codigo, descricao: f.descricao.trim(), unidade: f.unidade || "un", qtde: Number(f.qtde) || 0, valor_total: 0, nao_descrito: true });
+      await onMudou();
+      if (row && row.id) upAtv(f.k, { eapId: row.id });
+      setNdForm(null);
+      setMsg({ tipo: "ok", txt: `Atividade não descrita "${codigo}" criada e marcada na EAP para consulta posterior.` });
+    } catch (e) { alert(e.message); }
+  };
   const efetivoCalc = new Set(form.atividades.flatMap((a) => a.funcionarioIds)).size || form.efetivo;
 
   const salvar = async () => {
@@ -263,8 +278,8 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
         {msg && <span style={{ color: msg.tipo === "ok" ? C.verde : C.vermelho, fontSize: 13, fontWeight: 700 }}>{msg.txt}</span>}
       </div>}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
-          <div><Lbl>Obra</Lbl><select value={form.obraId} onChange={(e) => setForm({ ...form, obraId: e.target.value, atividades: [novaAtv()], restricoes: [] })} style={inp({ width: "100%" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
-          <div><Lbl>Relatório nº</Lbl><input value={form.numero} onChange={(e) => setForm({ ...form, numero: e.target.value })} placeholder="00371" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Obra</Lbl><select value={form.obraId} onChange={(e) => setForm({ ...form, obraId: e.target.value, numero: proxNumero(e.target.value), atividades: [novaAtv()], restricoes: [] })} style={inp({ width: "100%" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
+          <div><Lbl>Relatório nº (automático)</Lbl><input value={form.numero} onChange={(e) => setForm({ ...form, numero: e.target.value })} placeholder="00371" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
           <div><Lbl>Data</Lbl><input type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
           <div><Lbl>Clima predominante</Lbl><select value={form.clima} onChange={(e) => setForm({ ...form, clima: e.target.value })} style={inp({ width: "100%" })}>{CLIMAS.map((c) => <option key={c}>{c}</option>)}</select></div>
           <div><Lbl>Responsável</Lbl><input value={usuario.nome} disabled style={inp({ width: "100%", boxSizing: "border-box", background: C.cinza })} /></div>
@@ -287,6 +302,21 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
                   {form.atividades.length > 1 && <button onClick={() => setForm((f) => ({ ...f, atividades: f.atividades.filter((x) => x.k !== a.k) }))} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer", fontSize: 16 }}>✕</button>}</div>
                 <Lbl>Item da EAP (busca por código ou palavra)</Lbl>
                 <ComboEap itens={eapItens} valor={a.eapId} onSelect={(i) => upAtv(a.k, { eapId: i.id })} />
+                {it && it.nao_descrito && <div style={{ display: "inline-block", marginTop: 6, background: C.amareloAlerta, color: "#fff", fontSize: 10.5, fontWeight: 800, borderRadius: 5, padding: "2px 8px" }}>ATIVIDADE NÃO DESCRITA NA EAP</div>}
+                {ndForm && ndForm.k === a.k ? (
+                  <div style={{ marginTop: 8, border: `1.5px dashed ${C.amareloAlerta}`, borderRadius: 8, padding: 12, background: "#fffdf5" }}>
+                    <div style={{ fontSize: 12, fontWeight: 800, color: C.amareloAlerta, marginBottom: 8 }}>Atividade não descrita na EAP</div>
+                    <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", gap: 8 }}>
+                      <div><Lbl>Descrição da atividade</Lbl><input value={ndForm.descricao} onChange={(e) => setNdForm({ ...ndForm, descricao: e.target.value })} placeholder="Ex.: Reforço de viga não prevista" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+                      <div><Lbl>Qtde estimada</Lbl><input type="number" min="0" step="0.01" value={ndForm.qtde || ""} onChange={(e) => setNdForm({ ...ndForm, qtde: parseFloat(e.target.value) || 0 })} style={inp({ width: "100%", boxSizing: "border-box", textAlign: "right" })} /></div>
+                      <div><Lbl>Unidade</Lbl><input value={ndForm.unidade} onChange={(e) => setNdForm({ ...ndForm, unidade: e.target.value })} placeholder="un, m², m³…" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+                    </div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 8 }}><Btn small onClick={criarNaoDescrito}>Salvar e selecionar</Btn><Btn small kind="ghost" onClick={() => setNdForm(null)}>Cancelar</Btn></div>
+                    <div style={{ fontSize: 10.5, color: C.dim, marginTop: 6 }}>O item será criado na EAP marcado como “não descrito”, com valor zero, para consulta posterior do que foi executado fora do escopo.</div>
+                  </div>
+                ) : (
+                  !a.eapId && form.obraId && <button onClick={() => setNdForm({ k: a.k, descricao: "", qtde: 0, unidade: "un" })} style={{ marginTop: 6, background: "none", border: "none", color: C.amareloAlerta, fontSize: 12, fontWeight: 700, cursor: "pointer", padding: 0 }}>+ Atividade não descrita na EAP</button>
+                )}
                 {it && <div style={{ display: "flex", gap: 16, flexWrap: "wrap", margin: "10px 0", alignItems: "flex-end" }}>
                   <div><Lbl>Avanço do dia ({it.unidade})</Lbl><div style={{ display: "flex", alignItems: "center", gap: 6 }}>
                     <input type="number" min="0" step="0.01" value={a.qtde || ""} onChange={(e) => upAtv(a.k, { qtde: parseFloat(e.target.value) || 0 })} style={inp({ width: 120, textAlign: "right", fontWeight: 700, fontSize: 16 })} />
@@ -893,7 +923,7 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
         {!verDash && <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
           <thead><tr><Th>EAP</Th><Th>Atividade</Th><Th>Unid.</Th><Th right>Qtde</Th><Th right>Custo unit.</Th><Th right>Meta unit.</Th><Th right>Custo total</Th><Th right>Meta %</Th><Th right>Meta total</Th><Th right>Realizado</Th><Th right>Avanço</Th><Th right>CPI</Th><Th /></tr></thead>
           <tbody>{rows.map((r) => <tr key={r.id}>
-            <Td>{r.codigo}</Td><Td style={{ fontSize: 12 }}>{r.descricao.length > 36 ? r.descricao.slice(0, 36) + "…" : r.descricao}</Td>
+            <Td>{r.codigo}</Td><Td style={{ fontSize: 12 }}>{r.descricao.length > 36 ? r.descricao.slice(0, 36) + "…" : r.descricao}{r.nao_descrito ? <span style={{ marginLeft: 6, background: C.amareloAlerta, color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: 4, padding: "1px 5px", verticalAlign: "middle" }}>NÃO DESCR.</span> : null}</Td>
             <Td><b style={{ color: C.laranja }}>{r.unidade}</b></Td>
             <Td right>{fmt(r.qtde)}</Td>
             <Td right>{r.custoUnitDesc ? fmt(r.custoUnitDesc) : "—"}</Td>

@@ -17,6 +17,11 @@ function medObra(obra, eap, rdos) {
   rdos.filter((r) => r.obra_id === obra.id).forEach((r) => (r.atividades || []).forEach((a) => { const it = eap.find((e) => e.codigo === a.eap); if (it) v += (Number(a.qtde_dia ?? a.avanco) || 0) * valorUnit(it); }));
   return v;
 }
+function prodPeriodo(obra, eap, rdos, desdeISO) {
+  let v = 0;
+  rdos.filter((r) => r.obra_id === obra.id && (!desdeISO || String(r.data).slice(0, 10) >= desdeISO)).forEach((r) => (r.atividades || []).forEach((a) => { const it = eap.find((e) => e.codigo === a.eap); if (it) v += (Number(a.qtde_dia ?? a.avanco) || 0) * valorUnit(it); }));
+  return v;
+}
 function ultimoAvanco(obra, rdos) {
   const comAvanco = rdos.filter((r) => r.obra_id === obra.id && (r.atividades || []).some((a) => (Number(a.qtde_dia ?? a.avanco) || 0) > 0));
   if (!comAvanco.length) return null;
@@ -89,6 +94,14 @@ export function PainelGerencial() {
 
   // ---- ranking de obras por avanço ----
   const ranking = obras.map((o) => { const eap = eapPorObra[o.id] || []; const contrato = sum(eap.map((e) => Number(e.valor_total) || 0)); const med = medObra(o, eap, rdos); return { o, contrato, med, pct: contrato ? med / contrato : 0 }; }).sort((a, b) => b.pct - a.pct);
+
+  // produção por obra por período (regime de RDO)
+  const isoDe = (n) => { const d = new Date(); d.setDate(d.getDate() - n); return d.toISOString().slice(0, 10); };
+  const iniMes = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`; })();
+  const prod = obras.map((o) => { const eap = eapPorObra[o.id] || []; return {
+    o, dia: prodPeriodo(o, eap, rdos, hojeISO), d7: prodPeriodo(o, eap, rdos, isoDe(6)), d15: prodPeriodo(o, eap, rdos, isoDe(14)), mes: prodPeriodo(o, eap, rdos, iniMes), acum: prodPeriodo(o, eap, rdos, null),
+  }; }).sort((a, b) => b.acum - a.acum);
+  const totProd = { dia: sum(prod.map((p) => p.dia)), d7: sum(prod.map((p) => p.d7)), d15: sum(prod.map((p) => p.d15)), mes: sum(prod.map((p) => p.mes)), acum: sum(prod.map((p) => p.acum)) };
 
   // ---- alertas de avanço ----
   const alertasAvanco = obras.map((o) => { const ult = ultimoAvanco(o, rdos); return { o, ult, dias: ult ? diasDesde(ult) : null }; }).filter((x) => x.dias === null || x.dias > 3);
@@ -163,6 +176,25 @@ export function PainelGerencial() {
       </Card>
 
       {/* Ranking de obras */}
+      <Card title="Produção por obra (R$ executado pelos RDOs)">
+        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr style={{ background: C.preto }}><th style={{ ...th, textAlign: "left" }}>Obra</th><th style={th}>Dia</th><th style={th}>7 dias</th><th style={th}>15 dias</th><th style={th}>Mês</th><th style={th}>Acumulada</th></tr></thead>
+          <tbody>
+            {prod.map((p) => <tr key={p.o.id}><td style={{ ...td, textAlign: "left", fontWeight: 600 }}>{p.o.codigo}</td><td style={td}>{p.dia ? fmt(p.dia) : "—"}</td><td style={td}>{p.d7 ? fmt(p.d7) : "—"}</td><td style={td}>{p.d15 ? fmt(p.d15) : "—"}</td><td style={td}>{p.mes ? fmt(p.mes) : "—"}</td><td style={{ ...td, fontWeight: 700, color: C.laranja }}>{fmt(p.acum)}</td></tr>)}
+            {prod.length === 0 && <tr><td colSpan={6} style={{ ...td, textAlign: "left", color: C.dim }}>Sem produção registrada.</td></tr>}
+          </tbody>
+          <tfoot><tr style={{ background: C.preto }}>
+            <td style={{ ...td, textAlign: "left", color: "#fff", fontWeight: 800, borderBottom: "none" }}>TOTAL EMPRESA</td>
+            <td style={{ ...td, color: "#fff", fontWeight: 800, borderBottom: "none" }}>{fmt(totProd.dia)}</td>
+            <td style={{ ...td, color: "#fff", fontWeight: 800, borderBottom: "none" }}>{fmt(totProd.d7)}</td>
+            <td style={{ ...td, color: "#fff", fontWeight: 800, borderBottom: "none" }}>{fmt(totProd.d15)}</td>
+            <td style={{ ...td, color: "#fff", fontWeight: 800, borderBottom: "none" }}>{fmt(totProd.mes)}</td>
+            <td style={{ ...td, color: "#7be0a8", fontWeight: 800, borderBottom: "none" }}>{fmt(totProd.acum)}</td>
+          </tr></tfoot>
+        </table></div>
+        <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>Produção = valor financeiro executado (avanço × valor unitário com BDI dos itens da EAP), apurado pelos RDOs no período. A última linha soma a produção geral da empresa.</div>
+      </Card>
+
       <Card title="Produção por obra — % de avanço (pelos RDOs)">
         <div style={{ display: "flex", flexDirection: "column", gap: 7 }}>
           {ranking.map((r, i) => (

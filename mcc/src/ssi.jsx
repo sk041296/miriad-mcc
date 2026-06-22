@@ -71,21 +71,34 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
 
 /* ---- cartão de SS-i ---- */
 function CardSs({ ss, obras, colaboradores, podeAtender, podeBaixar, gestor, onMover, mostrarHistorico, alertaAberta }) {
+  const [aberto, setAberto] = useState(false);
   const obra = obras.find((o) => o.id === ss.obra_id);
   const solicitante = colaboradores.find((c) => c.id === ss.solicitante_id)?.nome || "—";
   const pz = prazoSm(ss.data_necessidade);
   const dias = diasDesde(ss.criado_em);
   const corBorda = alertaAberta && dias >= 60 ? C.vermelho : pz.cor;
+  const stop = (e) => e.stopPropagation();
   return (
-    <div style={{ background: "#fff", border: `1px solid ${C.linha}`, borderLeft: `4px solid ${corBorda}`, borderRadius: 8, padding: 10, marginBottom: 8 }}>
+    <div onClick={() => setAberto((a) => !a)} style={{ background: "#fff", border: `1px solid ${C.linha}`, borderLeft: `4px solid ${corBorda}`, borderRadius: 8, padding: 10, marginBottom: 8, cursor: "pointer" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <span style={{ fontWeight: 800, fontSize: 13, color: C.preto }}>{obra?.codigo || "—"}{ss.emergencial ? <span style={{ marginLeft: 6, background: C.vermelho, color: "#fff", fontSize: 9.5, fontWeight: 800, borderRadius: 4, padding: "1px 6px" }}>EMERG</span> : null}</span>
         <span style={{ background: `${C.preto}10`, color: C.preto, fontSize: 10, fontWeight: 800, borderRadius: 5, padding: "2px 8px" }}>{tipoLabel(ss.tipo)}</span>
       </div>
-      <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Solicitante: {solicitante} · necessário {ss.data_necessidade ? dataBR(ss.data_necessidade) : "—"}{mostrarHistorico || alertaAberta ? ` · aberta há ${dias}d` : ""}{alertaAberta && dias >= 60 ? <b style={{ color: C.vermelho }}> — aberta há +2 meses!</b> : ""}</div>
-      <div style={{ fontSize: 12, color: C.texto }}>{(ss.itens || []).map((it, i) => <div key={i} style={{ marginBottom: 2 }}><b>{it.eap_codigo}</b> · {it.servico} — {fmt(it.quantidade)} {it.unidade}</div>)}</div>
-      {ss.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 4, fontStyle: "italic" }}>{ss.descricao}</div>}
-      <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+      <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Solicitante: {solicitante} · necessário {ss.data_necessidade ? dataBR(ss.data_necessidade) : "—"}{mostrarHistorico || alertaAberta ? ` · aberta há ${dias}d` : ""}{alertaAberta && dias >= 60 ? <b style={{ color: C.vermelho }}> — aberta há +2 meses!</b> : ""} <span style={{ color: C.laranja, fontWeight: 700 }}>{aberto ? "▲" : "▼"}</span></div>
+      {!aberto ? (
+        <div style={{ fontSize: 12, color: C.texto }}>{(ss.itens || []).slice(0, 2).map((it, i) => <div key={i} style={{ marginBottom: 2 }}><b>{it.eap_codigo}</b> · {it.servico} — {fmt(it.quantidade)} {it.unidade}</div>)}{(ss.itens || []).length > 2 && <div style={{ color: C.dim, fontSize: 11 }}>+{ss.itens.length - 2} item(ns)… (clique para ver tudo)</div>}</div>
+      ) : (
+        <div style={{ background: "#fafafa", border: `1px solid ${C.linha}`, borderRadius: 8, padding: 10, margin: "4px 0" }}>
+          <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Obra: <b>{obra?.codigo}{obra?.nome ? " — " + obra.nome : ""}</b> · Tipo: <b>{tipoLabel(ss.tipo)}</b> · Status: <b>{ss.status}</b> · Criada em {ss.criado_em ? dataBR(ss.criado_em) : "—"}{ss.emergencial ? ` · ${ss.autorizada_emergencial ? "emergencial autorizada" : "emergencial pendente"}` : ""}</div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Item EAP", "Descrição EAP", "Serviço", "Qtde"].map((h) => <th key={h} style={{ textAlign: "left", fontSize: 10, color: C.dim, textTransform: "uppercase", padding: "3px 6px", borderBottom: `1px solid ${C.linha}` }}>{h}</th>)}</tr></thead>
+            <tbody>{(ss.itens || []).map((it, i) => <tr key={i}><td style={tdDetSs}><b>{it.eap_codigo}</b></td><td style={tdDetSs}>{String(it.descricao || "—").slice(0, 40)}</td><td style={tdDetSs}>{it.servico}</td><td style={tdDetSs}>{fmt(it.quantidade)} {it.unidade}</td></tr>)}</tbody>
+          </table>
+          {ss.descricao && <div style={{ fontSize: 12, color: C.texto, marginTop: 8 }}><b>Observações:</b> {ss.descricao}</div>}
+        </div>
+      )}
+      {!aberto && ss.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 4, fontStyle: "italic" }}>{String(ss.descricao).slice(0, 60)}{ss.descricao.length > 60 ? "…" : ""}</div>}
+      <div onClick={stop} style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
         {ss.status === "aberta" && podeAtender && <Btn small kind="ghost" onClick={() => onMover(ss, "em_atendimento")}>Atender</Btn>}
         {ss.status === "em_atendimento" && podeAtender && <Btn small kind="ghost" onClick={() => onMover(ss, "ativa")}>Marcar contratado/ativo</Btn>}
         {ss.status === "ativa" && podeBaixar && <Btn small onClick={() => onMover(ss, "baixada")}>Baixar (concluído)</Btn>}
@@ -95,6 +108,7 @@ function CardSs({ ss, obras, colaboradores, podeAtender, podeBaixar, gestor, onM
     </div>
   );
 }
+const tdDetSs = { fontSize: 11.5, padding: "3px 6px", borderBottom: `1px solid ${C.linha}` };
 
 function Coluna({ titulo, cor, lista, ...props }) {
   return (
@@ -113,11 +127,12 @@ function PainelAutorizaSs({ usuario, sss, obras, colaboradores, onMudou }) {
   if (pend.length === 0) return null;
   const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
   const autorizar = async (ss) => { try { await editar("ss_itens", ss.id, { autorizada_emergencial: true, autorizada_por: usuario.id }); onMudou(); } catch (e) { alert(e.message); } };
+  const descartar = async (ss) => { if (!confirm("Descartar esta SS-i emergencial? Ela será cancelada e não irá ao Suprimentos.")) return; try { await editar("ss_itens", ss.id, { status: "cancelada" }); onMudou(); } catch (e) { alert(e.message); } };
   return (
     <Card title={`SS-is emergenciais aguardando sua autorização (${pend.length})`}>
       {pend.map((ss) => <div key={ss.id} style={{ border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: 10, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
         <div style={{ fontSize: 13 }}><b>{nomeObra(ss.obra_id)}</b> · {tipoLabel(ss.tipo)} · necessário {ss.data_necessidade ? dataBR(ss.data_necessidade) : "—"}<div style={{ fontSize: 12, color: C.dim }}>{(ss.itens || []).map((i) => `${i.eap_codigo} ${i.servico}`).join(" · ")}</div></div>
-        <Btn small onClick={() => autorizar(ss)}>Autorizar p/ Suprimentos</Btn>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}><Btn small kind="ghost" onClick={() => descartar(ss)}>Descartar</Btn><Btn small onClick={() => autorizar(ss)}>Autorizar p/ Suprimentos</Btn></div>
       </div>)}
     </Card>
   );

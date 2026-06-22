@@ -93,24 +93,38 @@ function FormSmI({ obras, eapPorObra, usuario, onCriou }) {
 
 /* ---- cartão de SM-i para os kanbans ---- */
 function CardSm({ sm, obras, colaboradores, podeAtender, podeAutorizar, gestor, onMover, mostrarHistorico }) {
+  const [aberto, setAberto] = useState(false);
   const obra = obras.find((o) => o.id === sm.obra_id);
   const solicitante = colaboradores.find((c) => c.id === sm.solicitante_id)?.nome || "—";
   const pz = prazoSm(sm.data_necessidade);
   const vencida = pz.nivel === "vencida" || pz.nivel === "hoje";
   const podeBaixar = !vencida || podeAutorizar || gestor;
+  const stop = (e) => e.stopPropagation();
   return (
-    <div style={{ background: "#fff", border: `1px solid ${C.linha}`, borderLeft: `4px solid ${pz.cor}`, borderRadius: 8, padding: 10, marginBottom: 8, boxShadow: pz.urgente ? `0 0 0 1.5px ${pz.cor}33` : "none" }}>
+    <div onClick={() => setAberto((a) => !a)} style={{ background: "#fff", border: `1px solid ${C.linha}`, borderLeft: `4px solid ${pz.cor}`, borderRadius: 8, padding: 10, marginBottom: 8, boxShadow: pz.urgente ? `0 0 0 1.5px ${pz.cor}33` : "none", cursor: "pointer" }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
         <span style={{ fontWeight: 800, fontSize: 13, color: C.preto }}>{obra?.codigo || "—"}{sm.emergencial ? <span style={{ marginLeft: 6, background: C.vermelho, color: "#fff", fontSize: 9.5, fontWeight: 800, borderRadius: 4, padding: "1px 6px", verticalAlign: "middle" }}>EMERG</span> : null}</span>
         <span style={{ background: `${pz.cor}1a`, color: pz.cor, fontSize: 10.5, fontWeight: 800, borderRadius: 5, padding: "2px 8px" }}>{pz.label}</span>
       </div>
-      <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Solicitante: {solicitante} · necessário {sm.data_necessidade ? dataBR(sm.data_necessidade) : "—"}{mostrarHistorico ? ` · aberta há ${diasDesde(sm.criado_em)}d` : ""}</div>
-      <div style={{ fontSize: 12, color: C.texto }}>
-        {(sm.itens || []).map((it, i) => <div key={i} style={{ marginBottom: 2 }}><b>{it.eap_codigo}</b> · {it.material} — {fmt(it.quantidade)} {it.unidade}</div>)}
-      </div>
-      {sm.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 4, fontStyle: "italic" }}>{sm.descricao}</div>}
+      <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Solicitante: {solicitante} · necessário {sm.data_necessidade ? dataBR(sm.data_necessidade) : "—"}{mostrarHistorico ? ` · aberta há ${diasDesde(sm.criado_em)}d` : ""} <span style={{ color: C.laranja, fontWeight: 700 }}>{aberto ? "▲" : "▼"}</span></div>
+      {!aberto ? (
+        <div style={{ fontSize: 12, color: C.texto }}>
+          {(sm.itens || []).slice(0, 2).map((it, i) => <div key={i} style={{ marginBottom: 2 }}><b>{it.eap_codigo}</b> · {it.material} — {fmt(it.quantidade)} {it.unidade}</div>)}
+          {(sm.itens || []).length > 2 && <div style={{ color: C.dim, fontSize: 11 }}>+{sm.itens.length - 2} item(ns)… (clique para ver tudo)</div>}
+        </div>
+      ) : (
+        <div style={{ background: "#fafafa", border: `1px solid ${C.linha}`, borderRadius: 8, padding: 10, margin: "4px 0" }}>
+          <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>Obra: <b>{obra?.codigo}{obra?.nome ? " — " + obra.nome : ""}</b> · Status: <b>{sm.status}</b> · Criada em {sm.criado_em ? dataBR(sm.criado_em) : "—"}{sm.emergencial ? ` · ${sm.autorizada_emergencial ? "emergencial autorizada" : "emergencial pendente"}` : ""}</div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr>{["Item EAP", "Descrição EAP", "Material", "Qtde", "Contratado"].map((h) => <th key={h} style={{ textAlign: "left", fontSize: 10, color: C.dim, textTransform: "uppercase", padding: "3px 6px", borderBottom: `1px solid ${C.linha}` }}>{h}</th>)}</tr></thead>
+            <tbody>{(sm.itens || []).map((it, i) => <tr key={i}><td style={tdDet}><b>{it.eap_codigo}</b></td><td style={tdDet}>{String(it.descricao || "—").slice(0, 40)}</td><td style={tdDet}>{it.material}</td><td style={tdDet}>{fmt(it.quantidade)} {it.unidade}</td><td style={{ ...tdDet, color: it.qtde_contratada && Number(it.quantidade) > it.qtde_contratada ? C.vermelho : C.dim }}>{it.qtde_contratada ? `${fmt(it.qtde_contratada)} ${it.unidade_eap || ""}` : "—"}</td></tr>)}</tbody>
+          </table>
+          {sm.descricao && <div style={{ fontSize: 12, color: C.texto, marginTop: 8 }}><b>Observações:</b> {sm.descricao}</div>}
+        </div>
+      )}
+      {!aberto && sm.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 4, fontStyle: "italic" }}>{String(sm.descricao).slice(0, 60)}{sm.descricao.length > 60 ? "…" : ""}</div>}
       {(podeAtender || podeAutorizar || gestor) && (
-        <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
+        <div onClick={stop} style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
           {sm.status === "aberta" && <Btn small kind="ghost" onClick={() => onMover(sm, "em_atendimento")}>Atender</Btn>}
           {sm.status === "em_atendimento" && podeBaixar && <Btn small onClick={() => onMover(sm, "atendida")}>Concluir / baixar</Btn>}
           {sm.status === "em_atendimento" && !podeBaixar && <span style={{ fontSize: 10.5, color: C.vermelho, fontWeight: 700, alignSelf: "center" }}>Baixa vencida requer o Coord. de Suprimentos</span>}
@@ -120,6 +134,7 @@ function CardSm({ sm, obras, colaboradores, podeAtender, podeAutorizar, gestor, 
     </div>
   );
 }
+const tdDet = { fontSize: 11.5, padding: "3px 6px", borderBottom: `1px solid ${C.linha}` };
 
 /* ---- coluna do kanban ---- */
 function Coluna({ titulo, cor, lista, ...props }) {
@@ -146,6 +161,7 @@ function PainelCoordObras({ usuario, sms, obras, onMudou }) {
   const pendentes = sups.filter((u) => !confirmou(u.id) && !u.travado);
   const emergPend = sms.filter((s) => s.emergencial && !s.autorizada_emergencial && s.status !== "cancelada");
   const autorizar = async (sm) => { try { await editar("sm_itens", sm.id, { autorizada_emergencial: true, autorizada_por: usuario.id }); onMudou(); } catch (e) { alert(e.message); } };
+  const descartar = async (sm) => { if (!confirm("Descartar esta SM-i emergencial? Ela será cancelada e não irá ao Suprimentos.")) return; try { await editar("sm_itens", sm.id, { status: "cancelada" }); onMudou(); } catch (e) { alert(e.message); } };
   const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
 
   return (
@@ -156,7 +172,7 @@ function PainelCoordObras({ usuario, sms, obras, onMudou }) {
             const sol = usuarios.find((u) => u.id === sm.solicitante_id)?.nome || "—";
             return <div key={sm.id} style={{ border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: 10, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
               <div style={{ fontSize: 13 }}><b>{nomeObra(sm.obra_id)}</b> · {sol} · necessário {sm.data_necessidade ? dataBR(sm.data_necessidade) : "—"}<div style={{ fontSize: 12, color: C.dim }}>{(sm.itens || []).map((i) => `${i.eap_codigo} ${i.material} (${fmt(i.quantidade)} ${i.unidade})`).join(" · ")}</div></div>
-              <Btn small onClick={() => autorizar(sm)}>Autorizar p/ Suprimentos</Btn>
+              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}><Btn small kind="ghost" onClick={() => descartar(sm)}>Descartar</Btn><Btn small onClick={() => autorizar(sm)}>Autorizar p/ Suprimentos</Btn></div>
             </div>;
           })}
         </Card>

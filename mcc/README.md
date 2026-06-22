@@ -1,5 +1,28 @@
 # Miriad Construction Control (MCC)
 
+## v9.4 — Atendimento, alocação, meus projetos e mais
+1. **SM-i/SS-i clicáveis:** clique no cartão para expandir todos os detalhes da solicitação (itens da
+   EAP, quantidades, contratado, observações), apoiando o Suprimentos no atendimento.
+2. **Descartar emergencial:** SM-i e SS-i emergenciais agora têm botão **Descartar** (cancela) além de
+   Autorizar, no painel do Coordenador de Obras.
+3. **Alocação de Supervisor (👷):** nova tela (CEO, Diretor e Coord. de Planejamento) para alocar/editar
+   o supervisor de cada obra. Ao alocar, é enviado e-mail ao supervisor comunicando a obra.
+4. **Meus Projetos (🗂️):** tela do Supervisor com, por obra: prazo a vencer, % executado e pendências de
+   RDO, POS, PMM, SM-i e SS-i.
+5. **Atividade não descrita na EAP:** no RDO, quando a atividade não existe na EAP, o usuário descreve,
+   informa a quantidade estimada e salva; o item entra na EAP marcado como “não descrito” para consulta.
+6. **Painel Gerencial — produção por obra:** tabela com produção do dia, 7 dias, 15 dias, mês e
+   acumulada por obra, com linha de **TOTAL da empresa**.
+7. **Editar/excluir POS e PMM:** CEO, Diretor e Coord. de Planejamento podem editar ou excluir um POS/PMM
+   na gestão; ao excluir, o prazo de envio **volta a contar** para o supervisor.
+8. **Numeração automática de RDO:** o nº do RDO é sugerido a partir do maior número já existente na obra.
+
+> **Migração:** rode `supabase/migration_v9_4.sql` (adiciona `eap_itens.nao_descrito`).
+> **E-mail (item 3):** para o envio funcionar, configure na Vercel as variáveis `RESEND_API_KEY` e
+> `EMAIL_FROM` (provedor Resend). Sem isso, a alocação ocorre normalmente e o sistema avisa que o
+> e-mail não foi enviado, mostrando o endereço do supervisor.
+
+
 ## v9.3 — Permissões por cargo configuráveis + Planejamento nos entregáveis
 - **Tela "Permissões" (🔑, só CEO/Diretor):** configure, por cargo, o que cada um acessa — módulos
   gerais (Painel, Usuários, Ranking, Painel Gerencial), telas do Operacional, abas do Financeiro e as

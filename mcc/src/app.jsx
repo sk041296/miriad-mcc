@@ -9,6 +9,7 @@ import { ModuloOperacional } from "./operacional.jsx";
 import { PainelGeral } from "./painel.jsx";
 import { Ranking } from "./ranking.jsx";
 import { PainelGerencial } from "./painelger.jsx";
+import { MeusProjetos, AlocacaoSupervisor } from "./extras.jsx";
 import { LOGO_FULL, LOGO_MARK } from "./logo.js";
 
 function LogoMiriad({ size = 26 }) {
@@ -365,13 +366,18 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap }) {
   const [rankingAberto, setRankingAberto] = useState(false);
   const [gerencialAberto, setGerencialAberto] = useState(false);
   const [permsAberto, setPermsAberto] = useState(false);
+  const [meusAberto, setMeusAberto] = useState(false);
+  const [alocAberto, setAlocAberto] = useState(false);
   const ehDir = p === "ceo" || p === "diretor";
+  const ehSupObras = p === "sup_obras";
+  const podeAlocar = ehDir || p === "coord_planejamento";
   const mobile = useIsMobile();
   const [drawer, setDrawer] = useState(false);
 
-  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setDrawer(false); };
+  const fecharEspeciais = () => { setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setMeusAberto(false); setAlocAberto(false); };
+  const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } fecharEspeciais(); setDrawer(false); };
   const tabDe = (sec) => sec === "operacional" ? opTab : sec === "financeiro" ? finTab : null;
-  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && !permsAberto && secao === sec && (!tab || tabDe(sec) === tab);
+  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && !permsAberto && !meusAberto && !alocAberto && secao === sec && (!tab || tabDe(sec) === tab);
 
   const botao = (sec, tab, label, icone, nota) => (
     <button key={(tab || sec)} onClick={() => abrir(sec, tab)}
@@ -383,7 +389,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap }) {
 
   const tituloOp = OP_ITENS.find((i) => i.id === opTab);
   const tituloFin = FIN_ITENS.find((i) => i.id === finTab);
-  const titulo = permsAberto ? "Permissões por cargo" : gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
+  const titulo = meusAberto ? "Meus Projetos" : alocAberto ? "Alocação de Supervisores" : permsAberto ? "Permissões por cargo" : gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
 
   const navInterno = (
     <>
@@ -404,10 +410,12 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap }) {
       </>}
 
       <div style={{ flex: 1, minHeight: 12 }} />
-      {A.gerencial && ehDir && <button onClick={() => { setGerencialAberto(true); setRankingAberto(false); setUsuariosAberto(false); setPermsAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: gerencialAberto ? C.laranja : "transparent", color: gerencialAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>📊</span>Painel Gerencial</button>}
-      {A.ranking && ehDir && <button onClick={() => { setRankingAberto(true); setUsuariosAberto(false); setGerencialAberto(false); setPermsAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
-      {A.usuarios && pode(p, "usuarios") && <button onClick={() => { setUsuariosAberto(true); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
-      {ehDir && <button onClick={() => { setPermsAberto(true); setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: permsAberto ? C.laranja : "transparent", color: permsAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🔑</span>Permissões</button>}
+      {ehSupObras && <button onClick={() => { fecharEspeciais(); setMeusAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: meusAberto ? C.laranja : "transparent", color: meusAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🗂️</span>Meus Projetos</button>}
+      {podeAlocar && <button onClick={() => { fecharEspeciais(); setAlocAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: alocAberto ? C.laranja : "transparent", color: alocAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>👷</span>Alocação de Supervisor</button>}
+      {A.gerencial && ehDir && <button onClick={() => { fecharEspeciais(); setGerencialAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: gerencialAberto ? C.laranja : "transparent", color: gerencialAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>📊</span>Painel Gerencial</button>}
+      {A.ranking && ehDir && <button onClick={() => { fecharEspeciais(); setRankingAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
+      {A.usuarios && pode(p, "usuarios") && <button onClick={() => { fecharEspeciais(); setUsuariosAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
+      {ehDir && <button onClick={() => { fecharEspeciais(); setPermsAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: permsAberto ? C.laranja : "transparent", color: permsAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🔑</span>Permissões</button>}
       <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
         <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
         <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{PAPEIS[p] || p}</div>
@@ -417,8 +425,10 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap }) {
   );
 
   const conteudo = (
-    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}-${permsAberto}`} className="mcc-fade">
-      {permsAberto && ehDir ? <Permissoes acessoMap={acessoMap} onSaved={setAcessoMap} />
+    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}-${permsAberto}-${meusAberto}-${alocAberto}`} className="mcc-fade">
+      {meusAberto && ehSupObras ? <MeusProjetos usuario={usuario} />
+        : alocAberto && podeAlocar ? <AlocacaoSupervisor usuario={usuario} />
+        : permsAberto && ehDir ? <Permissoes acessoMap={acessoMap} onSaved={setAcessoMap} />
         : gerencialAberto && ehDir ? <PainelGerencial />
         : rankingAberto && ehDir ? <Ranking />
         : usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />

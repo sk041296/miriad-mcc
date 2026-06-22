@@ -1,5 +1,5 @@
 // /api/data — CRUD genérico do MCC com controle de acesso por papel
-import { supabase, sessao, emitirConvite } from "./_lib.js";
+import { supabase, sessao, emitirConvite, enviarEmail } from "./_lib.js";
 
 const TABELAS = {
   obras: { ordem: "criado_em", asc: false },
@@ -23,6 +23,7 @@ const VE_FINANCEIRO   = new Set(["ceo", "diretor", "financeiro"]);
 const GERENCIA_USUARIOS = new Set(["ceo", "diretor", "coord_suprimentos", "coord_planejamento", "coord_obras", "coord_orcamentos"]);
 const ADMIN_TOTAL     = new Set(["ceo", "diretor"]);
 const SUPRIMENTOS     = new Set(["op_suprimentos", "coord_suprimentos"]);
+const ALOCA_SUPERVISOR = new Set(["ceo", "diretor", "coord_planejamento"]);
 // papéis cujo acesso é restrito às obras em que foram designados
 const OBRA_SCOPED     = new Set(["sup_obras", "op_suprimentos", "op_planejamento", "op_orcamento"]);
 
@@ -117,9 +118,27 @@ export default async function handler(req, res) {
   if (req.method === "POST") {
     const { t, row, obra, itens } = req.body || {};
 
+    // alocação de supervisor numa obra + e-mail de comunicação
+    if (t === "alocar_supervisor") {
+      if (!ALOCA_SUPERVISOR.has(s.papel)) return res.status(403).json({ error: "Sem permissão para alocar supervisores." });
+      const { obra_id, supervisor_id } = req.body;
+      if (!obra_id || !supervisor_id) return res.status(400).json({ error: "Informe obra e supervisor." });
+      await supabase.from("designacoes").upsert({ usuario_id: supervisor_id, obra_id, funcao: "sup_obras" }, { onConflict: "usuario_id,obra_id" });
+      const { data: sup } = await supabase.from("usuarios").select("nome,email").eq("id", supervisor_id).maybeSingle();
+      const { data: obra } = await supabase.from("obras").select("codigo,nome").eq("id", obra_id).maybeSingle();
+      let email = { ok: false, motivo: "sem_destinatario" };
+      if (sup && sup.email) {
+        email = await enviarEmail({
+          to: sup.email,
+          subject: `Você foi alocado na obra ${obra?.codigo || ""}`.trim(),
+          html: `<div style="font-family:Arial,sans-serif"><h2 style="color:#f37335">Miriad Construction Control</h2><p>Olá, ${(sup.nome || "").split(" ")[0]}.</p><p>Você foi alocado(a) como Supervisor de Obras na obra <b>${obra?.codigo || ""}${obra?.nome ? " — " + obra.nome : ""}</b>.</p><p>Acesse o MCC para registrar o RDO diário e seus planejamentos (POS/PMM) desta obra.</p></div>`,
+        });
+      }
+      return res.status(200).json({ ok: true, email });
+    }
+
     // gravação da configuração de acesso por cargo (apenas CEO/Diretor)
-    if (t === "config") {
-      if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas CEO/Diretor podem alterar as permissões." });
+    if (t === "config") {      if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas CEO/Diretor podem alterar as permissões." });
       const { chave, valor } = req.body;
       const { error } = await supabase.from("app_config").upsert({ chave: chave || "acesso", valor, atualizado_em: new Date().toISOString() });
       if (error) return res.status(500).json({ error: error.message });

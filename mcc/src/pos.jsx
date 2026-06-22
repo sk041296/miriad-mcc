@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { C, fmt, fmtR, pct, sum, dataBR, Card, Btn, Lbl, inp, listar, criar, editar, acaoData } from "./core.jsx";
+import { C, fmt, fmtR, pct, sum, dataBR, Card, Btn, Lbl, inp, listar, criar, editar, remover, acaoData } from "./core.jsx";
 
 const mondayOf = (d) => { const x = new Date(d); const dia = (x.getDay() + 6) % 7; x.setDate(x.getDate() - dia); x.setHours(0, 0, 0, 0); return x; };
 const proximaSegunda = (off = 1) => { const m = mondayOf(new Date()); m.setDate(m.getDate() + 7 * off); return m; };
@@ -115,8 +115,12 @@ function AvisoPos({ onState }) {
 }
 
 /* ============================ Gestão do POS (Coord. Planejamento / Diretoria) ============================ */
-function GestaoPos({ posLista, obras, eapPorObra, colaboradores }) {
+function GestaoPos({ posLista, obras, eapPorObra, colaboradores, podeGerir, onMudou }) {
   const [semanaSel, setSemanaSel] = useState("todas");
+  const [edit, setEdit] = useState(null); // { id, observacao, frentes:[...] }
+  const excluir = async (p) => { if (!confirm("Excluir este POS? O prazo de envio volta a contar para o supervisor desta semana.")) return; try { await remover("pos", p.id); onMudou && onMudou(); } catch (e) { alert(e.message); } };
+  const abrirEdit = (p) => { setEdit({ id: p.id, observacao: p.observacao || "", frentes: (p.frentes || []).map((f) => ({ ...f })) }); };
+  const salvarEdit = async () => { try { await editar("pos", edit.id, { observacao: edit.observacao, frentes: edit.frentes }); setEdit(null); onMudou && onMudou(); } catch (e) { alert(e.message); } };
   const semanas = [...new Set(posLista.map((p) => String(p.semana).slice(0, 10)))].sort().reverse();
   const lista = (semanaSel === "todas" ? posLista : posLista.filter((p) => String(p.semana).slice(0, 10) === semanaSel))
     .map((p) => ({ ...p, ...resumoPos(p, eapPorObra[p.obra_id] || []) }));
@@ -143,13 +147,31 @@ function GestaoPos({ posLista, obras, eapPorObra, colaboradores }) {
             <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{(p.frentes || []).length}</td>
             <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, color: C.laranja, fontWeight: 700 }}>{pct(p.fisico)}</td>
             <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, color: C.laranja, fontWeight: 700 }}>{fmtR(p.financeiro)}</td>
-            <td style={{ padding: "7px 10px", borderBottom: `1px solid ${C.linha}` }}><button onClick={() => setAberto(aberto === p.id ? null : p.id)} style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer", color: C.dim }}>{aberto === p.id ? "▲" : "▼"}</button></td>
+            <td style={{ padding: "7px 10px", borderBottom: `1px solid ${C.linha}`, whiteSpace: "nowrap" }}>
+              <button onClick={() => setAberto(aberto === p.id ? null : p.id)} style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer", color: C.dim }}>{aberto === p.id ? "▲" : "▼"}</button>
+              {podeGerir && <>
+                <button onClick={() => abrirEdit(p)} style={{ marginLeft: 6, background: "none", border: `1px solid ${C.linha}`, borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer", color: C.azul }}>Editar</button>
+                <button onClick={() => excluir(p)} style={{ marginLeft: 6, background: "none", border: `1px solid ${C.linha}`, borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer", color: C.vermelho }}>Excluir</button>
+              </>}
+            </td>
           </tr>
-          {aberto === p.id && <tr><td colSpan={7} style={{ padding: "8px 12px", background: "#fafafa", borderBottom: `1px solid ${C.linha}` }}>
-            {p.observacao && <div style={{ fontSize: 12, color: C.dim, fontStyle: "italic", marginBottom: 6 }}>{p.observacao}</div>}
-            <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={hsub}>Item EAP</th><th style={hsub}>Equipe</th><th style={hsub}>Produção planej.</th><th style={hsub}>Avanço</th><th style={hsub}>Financeiro</th></tr></thead>
-              <tbody>{p.fr.map((f, i) => <tr key={i}><td style={tsub}><b>{f.eap_codigo}</b> {String(f.descricao || "").slice(0, 32)}</td><td style={tsub}>{f.equipe}</td><td style={tsub}>{fmt(f.producao_planejada)} {f.unidade}</td><td style={tsub}>{pct(f.pct)}</td><td style={tsub}>{fmtR(f.financeiro)}</td></tr>)}</tbody>
-            </table>
+          {(aberto === p.id || edit?.id === p.id) && <tr><td colSpan={7} style={{ padding: "8px 12px", background: "#fafafa", borderBottom: `1px solid ${C.linha}` }}>
+            {edit?.id === p.id ? (
+              <div>
+                <Lbl>Observação</Lbl><textarea rows={2} value={edit.observacao} onChange={(e) => setEdit({ ...edit, observacao: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box", resize: "vertical", marginBottom: 8 })} />
+                <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={hsub}>Item EAP</th><th style={hsub}>Equipe</th><th style={hsub}>Produção planej.</th></tr></thead>
+                  <tbody>{edit.frentes.map((f, i) => <tr key={i}><td style={tsub}><b>{f.eap_codigo}</b> {String(f.descricao || "").slice(0, 28)}</td>
+                    <td style={tsub}><input value={f.equipe || ""} onChange={(e) => setEdit({ ...edit, frentes: edit.frentes.map((x, j) => j === i ? { ...x, equipe: e.target.value } : x) })} style={inp({ width: 120, boxSizing: "border-box" })} /></td>
+                    <td style={tsub}><input type="number" step="0.01" value={f.producao_planejada || ""} onChange={(e) => setEdit({ ...edit, frentes: edit.frentes.map((x, j) => j === i ? { ...x, producao_planejada: parseFloat(e.target.value) || 0 } : x) })} style={inp({ width: 100, boxSizing: "border-box", textAlign: "right" })} /> {f.unidade}</td></tr>)}</tbody>
+                </table>
+                <div style={{ display: "flex", gap: 6, marginTop: 8 }}><Btn small onClick={salvarEdit}>Salvar alterações</Btn><Btn small kind="ghost" onClick={() => setEdit(null)}>Cancelar</Btn></div>
+              </div>
+            ) : (<>
+              {p.observacao && <div style={{ fontSize: 12, color: C.dim, fontStyle: "italic", marginBottom: 6 }}>{p.observacao}</div>}
+              <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><th style={hsub}>Item EAP</th><th style={hsub}>Equipe</th><th style={hsub}>Produção planej.</th><th style={hsub}>Avanço</th><th style={hsub}>Financeiro</th></tr></thead>
+                <tbody>{p.fr.map((f, i) => <tr key={i}><td style={tsub}><b>{f.eap_codigo}</b> {String(f.descricao || "").slice(0, 32)}</td><td style={tsub}>{f.equipe}</td><td style={tsub}>{fmt(f.producao_planejada)} {f.unidade}</td><td style={tsub}>{pct(f.pct)}</td><td style={tsub}>{fmtR(f.financeiro)}</td></tr>)}</tbody>
+              </table>
+            </>)}
           </td></tr>}
         </React.Fragment>)}
         {lista.length === 0 && <tr><td colSpan={7} style={{ padding: 12, color: C.dim, fontSize: 13 }}>Nenhum POS no período.</td></tr>}</tbody>
@@ -180,7 +202,7 @@ export function Pos({ usuario, obras, eapPorObra, colaboradores = [], acesso, on
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {ehSup && <AvisoPos onState={setComp} />}
       {podeCriar && !(ehSup && comp?.travado) && <FormPos obras={obras} eapPorObra={eapPorObra} usuario={usuario} meusPos={meusPos} onSalvou={carregar} />}
-      {gestao && <GestaoPos posLista={posLista} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} />}
+      {gestao && <GestaoPos posLista={posLista} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} podeGerir={p === "coord_planejamento" || p === "ceo" || p === "diretor"} onMudou={carregar} />}
       {!podeCriar && !gestao && <Card title="POS"><div style={{ fontSize: 13, color: C.dim }}>O POS é preenchido pelo Supervisor de Obras e acompanhado pelo Coordenador de Planejamento e Diretoria.</div></Card>}
     </div>
   );

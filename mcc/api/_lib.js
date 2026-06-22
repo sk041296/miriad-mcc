@@ -40,3 +40,18 @@ export function sessao(req) {
   const h = req.headers["authorization"] || "";
   return validarToken(h.replace(/^Bearer\s+/i, ""));
 }
+
+// Envio de e-mail (opcional) — usa Resend se RESEND_API_KEY estiver configurada na Vercel.
+export async function enviarEmail({ to, subject, html }) {
+  const key = process.env.RESEND_API_KEY;
+  const from = process.env.EMAIL_FROM || "MCC Miriad <onboarding@resend.dev>";
+  if (!key) return { ok: false, motivo: "sem_provedor" };
+  try {
+    const r = await fetch("https://api.resend.com/emails", {
+      method: "POST",
+      headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
+      body: JSON.stringify({ from, to, subject, html }),
+    });
+    return { ok: r.ok, motivo: r.ok ? null : "falha_envio" };
+  } catch { return { ok: false, motivo: "erro" }; }
+}
