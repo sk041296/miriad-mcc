@@ -1,0 +1,12 @@
+{
+  "buildCommand": "",
+  "outputDirectory": ".",
+  "functions": {
+    "api/parse-eap.js": { "maxDuration": 60 },
+    "api/upload.js": { "maxDuration": 30 },
+    "api/notificar.js": { "maxDuration": 60 }
+  },
+  "crons": [
+    { "path": "/api/notificar", "schedule": "0 11 * * *" }
+  ]
+}
