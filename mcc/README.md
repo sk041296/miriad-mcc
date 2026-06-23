@@ -1,5 +1,19 @@
 # Miriad Construction Control (MCC)
 
+## v9.5 — E-mail via Google Workspace (SMTP)
+- O envio de e-mail (alocação de supervisor) passa a usar o **SMTP do Google Workspace** via
+  nodemailer. Resend continua como fallback opcional.
+- Configure na Vercel (Settings → Environment Variables → Production) e faça **Redeploy**:
+  - `SMTP_HOST` = `smtp.gmail.com`
+  - `SMTP_PORT` = `465`
+  - `SMTP_USER` = `mcc-nao-responder@miriadsolutions.com`
+  - `SMTP_PASS` = a senha de app de 16 caracteres (sem espaços)
+  - `EMAIL_FROM` = `MCC Miriad <mcc-nao-responder@miriadsolutions.com>`
+- Sem essas variáveis, a alocação continua funcionando e a tela avisa que o e-mail não foi enviado.
+
+> Sem migração. Apenas backend (nodemailer adicionado às dependências; a Vercel instala no deploy).
+
+
 ## v9.4 — Atendimento, alocação, meus projetos e mais
 1. **SM-i/SS-i clicáveis:** clique no cartão para expandir todos os detalhes da solicitação (itens da
    EAP, quantidades, contratado, observações), apoiando o Suprimentos no atendimento.
