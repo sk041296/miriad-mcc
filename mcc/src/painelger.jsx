@@ -32,6 +32,7 @@ export function PainelGerencial() {
   const [d, setD] = useState(null);
   const [cfg, setCfg] = useState({ folha: 0, despFin: 0, outras: 0, prazoReceb: 30 });
   const [salvo, setSalvo] = useState(false);
+  const [notif, setNotif] = useState(null);
 
   useEffect(() => { (async () => {
     const [obras, usuarios, designacoes, pos, pmm, sm, ss, ocs, contratos] = await Promise.all([
@@ -50,7 +51,6 @@ export function PainelGerencial() {
   const { obras, usuarios, designacoes, eapPorObra, rdos, pos, pmm, sm, ss, ocs, contratos } = d;
 
   const salvarCfg = async () => { try { await setFin("painel_gerencial", cfg); setSalvo(true); setTimeout(() => setSalvo(false), 2000); } catch (e) { alert(e.message); } };
-  const [notif, setNotif] = useState(null);
   const notificar = async () => { setNotif("enviando"); try { const r = await dispararNotificacoes(); setNotif(`${r.notificados} supervisor(es) notificado(s) de ${r.avaliados} avaliado(s).`); } catch (e) { setNotif("Falha: " + e.message); } };
 
   // eixo de 6 meses a partir do mês atual
