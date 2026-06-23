@@ -223,3 +223,4 @@ export function mesclarAcesso(base, ov) {
 export const acessoDe = (mapa, papel) => (mapa && mapa[papel]) || acessoPadrao(papel);
 export const getConfig = (chave = "acesso") => req(`/api/data?t=config&chave=${chave}`).then((d) => d.valor);
 export const setConfig = (chave, valor) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "config", chave, valor }) });
+export const dispararNotificacoes = () => req("/api/notificar?manual=1").then((d) => d);

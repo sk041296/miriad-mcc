@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { C, fmt, fmtR, pct, sum, dataBR, Card, Btn, Kpi, Lbl, inp, NumInput, listar, getFin, setFin } from "./core.jsx";
+import { C, fmt, fmtR, pct, sum, dataBR, Card, Btn, Kpi, Lbl, inp, NumInput, listar, getFin, setFin, dispararNotificacoes } from "./core.jsx";
 import { resumoPmm } from "./pmm.jsx";
 
 const DIA = 86400000;
@@ -50,6 +50,8 @@ export function PainelGerencial() {
   const { obras, usuarios, designacoes, eapPorObra, rdos, pos, pmm, sm, ss, ocs, contratos } = d;
 
   const salvarCfg = async () => { try { await setFin("painel_gerencial", cfg); setSalvo(true); setTimeout(() => setSalvo(false), 2000); } catch (e) { alert(e.message); } };
+  const [notif, setNotif] = useState(null);
+  const notificar = async () => { setNotif("enviando"); try { const r = await dispararNotificacoes(); setNotif(`${r.notificados} supervisor(es) notificado(s) de ${r.avaliados} avaliado(s).`); } catch (e) { setNotif("Falha: " + e.message); } };
 
   // eixo de 6 meses a partir do mês atual
   const meses = []; { const dt = new Date(); dt.setDate(1); for (let i = 0; i < 6; i++) { meses.push(ymOf(dt)); dt.setMonth(dt.getMonth() + 1); } }
@@ -125,7 +127,7 @@ export function PainelGerencial() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       {/* Pendências */}
-      <Card title="Pendências de envio">
+      <Card title="Pendências de envio" right={<div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 12, color: C.dim }}>{notif && notif !== "enviando" ? notif : ""}</span><Btn small kind="ghost" disabled={notif === "enviando"} onClick={notificar}>{notif === "enviando" ? "Enviando…" : "✉ Notificar pendências"}</Btn></div>}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
           <Pend n={obrasSemRdoHoje.length} label="Obras sem RDO hoje" cor={C.vermelho} />
           <Pend n={posPend.length} label="Supervisores sem POS da próxima semana" cor={C.amareloAlerta} />

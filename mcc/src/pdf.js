@@ -151,7 +151,7 @@ export function gerarPdfMedicao(obra, linhas, periodo, usuarioNome) {
    ================================================================ */
 const EMPRESA_OC = {
   nome: "MIRIAD ENGENHARIA, CONSTRUÇÕES E SERVIÇOS LTDA",
-  endereco: "Av. Visconde de Guarapuava, 2764, Sala 1508 — Centro — Curitiba/PR — CEP 80.010-100",
+  endereco: "R. Dr. Roberto Barrozo, 528 — Centro Cívico — Curitiba/PR — CEP 80.520-092",
   cnpj: "33.863.254/0001-02",
   telefone: "(41) 98845-8401",
   email: "casa@miriadsolutions.com",

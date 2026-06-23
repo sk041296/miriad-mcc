@@ -1,5 +1,24 @@
 # Miriad Construction Control (MCC)
 
+## v9.6 — Data de início da obra, EAP colapsável, endereço e notificações por e-mail
+1. **Data de início da obra:** definida na aba Obras (no cadastro e na edição); o prazo passa a ser
+   contado a partir dela (faltam X dias / término previsto), inclusive em Meus Projetos.
+2. **EAP colapsável na aba Obras:** a EAP de cada obra fica oculta por padrão, com botão **Expandir EAP**
+   — deixa a página leve mesmo com muitas obras.
+3. **Endereço nos PDFs:** corrigido para *R. Dr. Roberto Barrozo, 528 — Centro Cívico — Curitiba/PR —
+   CEP 80.520-092*.
+4. **Notificações por e-mail de prazos vencidos:** o sistema avisa os supervisores por e-mail sobre
+   RDO, POS, PMM, envio de SM-i e SS-i em atraso, com botão **Regularizar** que abre direto a área no
+   sistema. Roda automaticamente todo dia (cron 08h BRT) e há um botão **✉ Notificar pendências** no
+   Painel Gerencial para disparar na hora.
+
+> **Sem migração de banco.** Requer, na Vercel:
+> - `APP_URL` = a URL pública do sistema (ex.: `https://incorp360.com`) — usada nos links do e-mail.
+> - `CRON_SECRET` = um texto secreto qualquer — protege o disparo automático do cron.
+> - As variáveis de SMTP da v9.5 (`SMTP_HOST/PORT/USER/PASS`, `EMAIL_FROM`) para o envio.
+> Depois de cadastrar, faça **Redeploy**.
+
+
 ## v9.5 — E-mail via Google Workspace (SMTP)
 - O envio de e-mail (alocação de supervisor) passa a usar o **SMTP do Google Workspace** via
   nodemailer. Resend continua como fallback opcional.

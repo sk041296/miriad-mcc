@@ -351,16 +351,17 @@ function Permissoes({ acessoMap, onSaved }) {
 }
 
 /* ---------------- Shell ---------------- */
-function Shell({ usuario, onSair, acessoMap, setAcessoMap }) {
+function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
   const p = usuario.papel;
   const A = acessoDe(acessoMap, p);
   const finItens = FIN_ITENS.filter((i) => A.fin && A.fin[i.id]);
   const opItens = OP_ITENS.filter((i) => A.op && A.op[i.id]);
   const temFin = finItens.length > 0;
   const temOp = opItens.length > 0;
-  const secaoInicial = A.painel ? "painel" : temOp ? "operacional" : "financeiro";
+  const irOpValido = irPara && opItens.some((i) => i.id === irPara);
+  const secaoInicial = irOpValido ? "operacional" : A.painel ? "painel" : temOp ? "operacional" : "financeiro";
   const [secao, setSecao] = useState(secaoInicial);
-  const [opTab, setOpTab] = useState(opItens[0]?.id || "rdo");
+  const [opTab, setOpTab] = useState(irOpValido ? irPara : opItens[0]?.id || "rdo");
   const [finTab, setFinTab] = useState(finItens[0]?.id || "premissas");
   const [usuariosAberto, setUsuariosAberto] = useState(false);
   const [rankingAberto, setRankingAberto] = useState(false);
@@ -471,7 +472,9 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap }) {
 }
 
 export default function App() {
-  const conviteToken = new URLSearchParams(window.location.search).get("convite");
+  const params = new URLSearchParams(window.location.search);
+  const conviteToken = params.get("convite");
+  const irPara = params.get("ir");
   const [usuario, setUsuario] = useState(() => (getToken() ? getUser() : null));
   const [acessoMap, setAcessoMap] = useState(null);
   const sair = useCallback(() => { limparSessao(); setUsuario(null); }, []);
@@ -482,5 +485,5 @@ export default function App() {
   }, [usuario]);
   if (conviteToken && !usuario) return <DefinirSenha token={conviteToken} onEntrar={setUsuario} />;
   if (!usuario) return <Login onEntrar={setUsuario} />;
-  return <Shell usuario={usuario} onSair={sair} acessoMap={acessoMap} setAcessoMap={setAcessoMap} />;
+  return <Shell usuario={usuario} onSair={sair} acessoMap={acessoMap} setAcessoMap={setAcessoMap} irPara={irPara} />;
 }

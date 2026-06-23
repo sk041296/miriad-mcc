@@ -1225,7 +1225,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
     try {
       const desc = Number(preview.desconto) || 0;
       await criarObraComEap(
-        { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, cno: preview.cno || null, prazo_dias: Number(preview.prazo_dias) || null, desconto: desc, data_inicio: hojeISO() },
+        { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, cno: preview.cno || null, prazo_dias: Number(preview.prazo_dias) || null, desconto: desc, data_inicio: preview.data_inicio || hojeISO() },
         preview.itens.map((it) => {
           const qtde = Number(it.qtde) || 1;
           // valor de venda (à faturar) = como veio na planilha; se o usuário aplicar desconto extra, multiplica
@@ -1243,9 +1243,11 @@ function Obras({ obras, eapPorObra, onMudou }) {
   };
   const toggleAmb = (i) => setPreview((p) => ({ ...p, itens: p.itens.map((it, j) => j === i ? { ...it, ambiente: it.ambiente === "externo" ? "interno" : "externo" } : it) }));
   const [editObra, setEditObra] = useState(null); // {id, codigo, nome, contratante, contrato, local, prazo_dias}
+  const [eapAberta, setEapAberta] = useState({});
+  const prazoObra = (o) => { if (!o.data_inicio || !o.prazo_dias) return null; const fim = new Date(new Date(String(o.data_inicio).slice(0, 10) + "T00:00:00").getTime() + o.prazo_dias * 86400000); const rest = Math.ceil((fim - Date.now()) / 86400000); return { fim, rest }; };
   const salvarEditObra = async () => {
     try {
-      await editar("obras", editObra.id, { codigo: editObra.codigo, nome: editObra.nome, contratante: editObra.contratante, contrato: editObra.contrato, local: editObra.local, cno: editObra.cno || null, prazo_dias: Number(editObra.prazo_dias) || null });
+      await editar("obras", editObra.id, { codigo: editObra.codigo, nome: editObra.nome, contratante: editObra.contratante, contrato: editObra.contrato, local: editObra.local, cno: editObra.cno || null, prazo_dias: Number(editObra.prazo_dias) || null, data_inicio: editObra.data_inicio || null });
       setEditObra(null); onMudou();
     } catch (e) { alert(e.message); }
   };
@@ -1280,6 +1282,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
               <div style={{ flex: 1, minWidth: 200 }}><Lbl>Nome da obra</Lbl><input value={preview.nome} onChange={(e) => setPreview({ ...preview, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
               <div><Lbl>Desconto licitação</Lbl><input type="number" step="0.001" value={preview.desconto} onChange={(e) => setPreview({ ...preview, desconto: e.target.value })} style={inp({ width: 90, textAlign: "right" })} /><span style={{ fontSize: 11, color: C.dim, marginLeft: 6 }}>(0,11=11%)</span></div>
               <div><Lbl>Prazo (dias)</Lbl><input type="number" value={preview.prazo_dias} onChange={(e) => setPreview({ ...preview, prazo_dias: e.target.value })} style={inp({ width: 90, textAlign: "right" })} /></div>
+              <div><Lbl>Data de início</Lbl><input type="date" value={preview.data_inicio || hojeISO()} onChange={(e) => setPreview({ ...preview, data_inicio: e.target.value })} style={inp({ width: 150 })} /></div>
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
               <div style={{ flex: 1, minWidth: 200 }}><Lbl>Contratante</Lbl><input value={preview.contratante} onChange={(e) => setPreview({ ...preview, contratante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
@@ -1301,7 +1304,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
       </Card>
       {obras.map((o) => (
         <Card key={o.id} title={`${o.codigo} · ${o.nome}`} right={<div style={{ display: "flex", gap: 8 }}>
-          <Btn kind="ghost" small onClick={() => setEditObra({ id: o.id, codigo: o.codigo, nome: o.nome, contratante: o.contratante || "", contrato: o.contrato || "", local: o.local || "", cno: o.cno || "", prazo_dias: o.prazo_dias || "" })}>✎ Editar</Btn>
+          <Btn kind="ghost" small onClick={() => setEditObra({ id: o.id, codigo: o.codigo, nome: o.nome, contratante: o.contratante || "", contrato: o.contrato || "", local: o.local || "", cno: o.cno || "", prazo_dias: o.prazo_dias || "", data_inicio: o.data_inicio ? String(o.data_inicio).slice(0, 10) : "" })}>✎ Editar</Btn>
           <Btn kind="danger" small onClick={async () => { if (confirm(`Excluir ${o.codigo} e todos os dados?`)) { await remover("obras", o.id); onMudou(); } }}>Excluir</Btn>
         </div>}>
           {editObra?.id === o.id && (
@@ -1310,6 +1313,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
                 <div><Lbl>Código (padrão da empresa)</Lbl><input value={editObra.codigo} onChange={(e) => setEditObra({ ...editObra, codigo: e.target.value })} style={inp({ width: 150 })} /></div>
                 <div style={{ flex: 1, minWidth: 200 }}><Lbl>Nome da obra</Lbl><input value={editObra.nome} onChange={(e) => setEditObra({ ...editObra, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
                 <div><Lbl>Prazo (dias)</Lbl><input type="number" value={editObra.prazo_dias} onChange={(e) => setEditObra({ ...editObra, prazo_dias: e.target.value })} style={inp({ width: 90, textAlign: "right" })} /></div>
+                <div><Lbl>Data de início</Lbl><input type="date" value={editObra.data_inicio} onChange={(e) => setEditObra({ ...editObra, data_inicio: e.target.value })} style={inp({ width: 150 })} /></div>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 10 }}>
                 <div style={{ flex: 1, minWidth: 180 }}><Lbl>Contratante</Lbl><input value={editObra.contratante} onChange={(e) => setEditObra({ ...editObra, contratante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
@@ -1323,9 +1327,14 @@ function Obras({ obras, eapPorObra, onMudou }) {
               </div>
             </div>
           )}
-          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{(eapPorObra[o.id] || []).length} itens de EAP · {o.contratante || "sem contratante"} · prazo {o.prazo_dias || "—"} dias{o.cno ? ` · CNO ${o.cno}` : ""}</div>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Unid.</Th><Th right>Qtde</Th><Th right>Valor c/BDI</Th><Th>Ambiente</Th></tr></thead>
-            <tbody>{(eapPorObra[o.id] || []).slice(0, 200).map((it) => <tr key={it.id}><Td>{it.codigo}</Td><Td style={{ fontSize: 12 }}>{it.descricao}</Td><Td><b style={{ color: C.laranja }}>{it.unidade}</b></Td><Td right>{fmt(it.qtde)}</Td><Td right>{fmt(it.valor_total)}</Td><Td>{it.ambiente === "externo" ? "🌦️ externo" : "interno"}</Td></tr>)}</tbody></table>
+          {(() => { const pz = prazoObra(o); return (
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{(eapPorObra[o.id] || []).length} itens de EAP · {o.contratante || "sem contratante"} · prazo {o.prazo_dias || "—"} dias{o.data_inicio ? ` · início ${dataBR(o.data_inicio)}` : ""}{pz ? <span style={{ color: pz.rest < 0 ? C.vermelho : pz.rest <= 30 ? C.amareloAlerta : C.verde, fontWeight: 700 }}> · {pz.rest < 0 ? `vencida há ${-pz.rest}d` : `faltam ${pz.rest}d`} (término {dataBR(pz.fim.toISOString())})</span> : ""}{o.cno ? ` · CNO ${o.cno}` : ""}</div>
+          ); })()}
+          <Btn small kind="ghost" onClick={() => setEapAberta((s) => ({ ...s, [o.id]: !s[o.id] }))}>{eapAberta[o.id] ? "▲ Ocultar EAP" : `▼ Expandir EAP (${(eapPorObra[o.id] || []).length} itens)`}</Btn>
+          {eapAberta[o.id] && (
+            <table style={{ width: "100%", borderCollapse: "collapse", marginTop: 10 }}><thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Unid.</Th><Th right>Qtde</Th><Th right>Valor c/BDI</Th><Th>Ambiente</Th></tr></thead>
+              <tbody>{(eapPorObra[o.id] || []).slice(0, 400).map((it) => <tr key={it.id}><Td>{it.codigo}</Td><Td style={{ fontSize: 12 }}>{it.descricao}{it.nao_descrito ? <span style={{ marginLeft: 6, background: C.amareloAlerta, color: "#fff", fontSize: 9, fontWeight: 800, borderRadius: 4, padding: "1px 5px" }}>NÃO DESCR.</span> : null}</Td><Td><b style={{ color: C.laranja }}>{it.unidade}</b></Td><Td right>{fmt(it.qtde)}</Td><Td right>{fmt(it.valor_total)}</Td><Td>{it.ambiente === "externo" ? "🌦️ externo" : "interno"}</Td></tr>)}</tbody></table>
+          )}
         </Card>
       ))}
     </div>
