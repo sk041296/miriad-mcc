@@ -15,6 +15,7 @@ const TABELAS = {
   envio_semanal: { ordem: "semana", asc: false },
   pos: { ordem: "semana", asc: false, filtro: "obra_id" },
   pmm: { ordem: "mes", asc: false, filtro: "obra_id" },
+  boletins_medicao: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   usuarios: { ordem: "nome", asc: true },
 };
 
@@ -82,7 +83,7 @@ export default async function handler(req, res) {
   }
 
   // tabelas que possuem coluna obra_id (para escopo por designação)
-  const TEM_OBRA_ID = new Set(["obras", "eap_itens", "contratos_servico", "ordens_compra", "funcionarios", "rdos", "restricoes_material", "sm_itens", "ss_itens", "pos", "pmm"]);
+  const TEM_OBRA_ID = new Set(["obras", "eap_itens", "contratos_servico", "ordens_compra", "funcionarios", "rdos", "restricoes_material", "sm_itens", "ss_itens", "pos", "pmm", "boletins_medicao"]);
 
   if (req.method === "GET") {
     const t = String(req.query.t || "");

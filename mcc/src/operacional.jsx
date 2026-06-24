@@ -115,13 +115,15 @@ function PessoaSelect({ colaboradores = [], setores, usuario, value, onChange, p
 function ComboEap({ itens, valor, onSelect, placeholder }) {
   const [busca, setBusca] = useState(""); const [aberto, setAberto] = useState(false);
   const sel = itens.find((i) => i.id === valor || i.codigo === valor);
-  const filtrados = useMemo(() => { const q = norm(busca); return itens.filter((i) => !q || norm(`${i.codigo} ${i.descricao} ${i.disciplina || ""}`).includes(q)).slice(0, 16); }, [busca, itens]);
+  const todos = useMemo(() => { const q = norm(busca); return itens.filter((i) => !q || norm(`${i.codigo} ${i.descricao} ${i.disciplina || ""}`).includes(q)); }, [busca, itens]);
+  const filtrados = todos.slice(0, 300);
   return (
     <div style={{ position: "relative" }}>
       <input value={aberto ? busca : sel ? `${sel.codigo} — ${sel.descricao}` : ""} placeholder={placeholder || "Buscar item da EAP…"}
         onFocus={() => { setAberto(true); setBusca(""); }} onBlur={() => setTimeout(() => setAberto(false), 180)} onChange={(e) => setBusca(e.target.value)}
         style={inp({ width: "100%", boxSizing: "border-box", fontWeight: sel ? 600 : 400 })} />
-      {aberto && <div style={{ position: "absolute", zIndex: 40, top: "100%", left: 0, right: 0, background: C.branco, border: `1.5px solid ${C.laranja}`, borderRadius: 8, maxHeight: 280, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.15)" }}>
+      {aberto && <div style={{ position: "absolute", zIndex: 40, top: "100%", left: 0, right: 0, background: C.branco, border: `1.5px solid ${C.laranja}`, borderRadius: 8, maxHeight: 320, overflowY: "auto", boxShadow: "0 8px 24px rgba(0,0,0,0.15)" }}>
+        <div style={{ padding: "5px 12px", fontSize: 10.5, color: C.dim, borderBottom: `1px solid ${C.linha}`, position: "sticky", top: 0, background: C.branco }}>{todos.length} item(ns){todos.length > 300 ? " · mostrando 300 — digite para filtrar" : ""}</div>
         {filtrados.map((i) => <div key={i.id} onMouseDown={() => { onSelect(i); setAberto(false); }} style={{ padding: "8px 12px", cursor: "pointer", borderBottom: `1px solid ${C.linha}` }}
           onMouseEnter={(e) => (e.currentTarget.style.background = C.laranjaClaro)} onMouseLeave={(e) => (e.currentTarget.style.background = "transparent")}>
           <div style={{ fontSize: 13, fontWeight: 600 }}>{i.codigo} — {i.descricao}</div>
@@ -484,7 +486,7 @@ function MedicaoGerador({ obras, eapPorObra, rdos, usuarioNome }) {
 
 /* ============================ OS-i (Ordem de Serviço Inteligente) ============================ */
 function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
-  const vazio = { obra_id: "", empresa: "", cnpj: "", responsavel: "", tipo: "indireto", custo_mensal: 0, meses: 1, itens_eap: [], valor: 0 };
+  const vazio = { obra_id: "", empresa: "", cnpj: "", responsavel: "", tipo: "indireto", custo_mensal: 0, meses: 1, itens_eap: [], valor: 0, cond: { modo: "valor", parcelas: [] } };
   const [ct, setCt] = useState(vazio);
   useEffect(() => {
     if (draft) {
@@ -493,21 +495,33 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
     }
   }, [draft]); // eslint-disable-line
   const [busy, setBusy] = useState(false);
+  const [editId, setEditId] = useState(null);
   const cnpjMask = (v) => v.replace(/\D/g, "").slice(0, 14).replace(/(\d{2})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1.$2").replace(/(\d{3})(\d)/, "$1/$2").replace(/(\d{4})(\d)/, "$1-$2");
   const eapItens = eapPorObra[ct.obra_id] || [];
   const valorTotal = ct.tipo === "direto" ? (Number(ct.custo_mensal) || 0) * (Number(ct.meses) || 0) : sum(ct.itens_eap.map((x) => x.valor));
   const salvar = async () => {
     setBusy(true);
     try {
-      await criar("contratos_servico", { obra_id: ct.obra_id || null, empresa: ct.empresa, cnpj: ct.cnpj, responsavel: ct.responsavel,
+      const payload = { obra_id: ct.obra_id || null, empresa: ct.empresa, cnpj: ct.cnpj, responsavel: ct.responsavel,
         tipo: ct.tipo, custo_mensal: ct.tipo === "direto" ? Number(ct.custo_mensal) || 0 : null, meses: ct.tipo === "direto" ? Number(ct.meses) || 0 : null,
-        itens_eap: ct.itens_eap, escopo_eap: ct.itens_eap.map((x) => x.eap_codigo).join(", "), valor: valorTotal });
-      setCt({ ...vazio, obra_id: ct.obra_id }); onMudou();
+        itens_eap: ct.itens_eap, escopo_eap: ct.itens_eap.map((x) => x.eap_codigo).join(", "), valor: valorTotal, condicao_pagamento: ct.cond };
+      if (editId) await editar("contratos_servico", editId, payload); else await criar("contratos_servico", payload);
+      setCt({ ...vazio, obra_id: ct.obra_id }); setEditId(null); onMudou();
     } catch (e) { alert(e.message); } finally { setBusy(false); }
   };
+  const carregarOs = (x) => {
+    setCt({ obra_id: x.obra_id || "", empresa: x.empresa || "", cnpj: x.cnpj || "", responsavel: x.responsavel || "", tipo: x.tipo || "indireto", custo_mensal: x.custo_mensal || 0, meses: x.meses || 1, itens_eap: x.itens_eap || [], valor: x.valor || 0, cond: x.condicao_pagamento || { modo: "valor", parcelas: [] } });
+    setEditId(x.id);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+  const addParcela = () => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: [...(c.cond?.parcelas || []), { descricao: `Parcela ${(c.cond?.parcelas?.length || 0) + 1}`, valor: 0, pct: 0 }] } }));
+  const upParcela = (i, patch) => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: c.cond.parcelas.map((p, j) => j === i ? { ...p, ...patch } : p) } }));
+  const delParcela = (i) => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: c.cond.parcelas.filter((_, j) => j !== i) } }));
+  const condModo = ct.cond?.modo || "valor";
+  const somaParcelas = condModo === "valor" ? sum((ct.cond?.parcelas || []).map((p) => Number(p.valor) || 0)) : sum((ct.cond?.parcelas || []).map((p) => Number(p.pct) || 0));
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card title="OS-i · Ordem de Serviço Inteligente — contratos diretos e indiretos">
+      <Card title={editId ? "OS-i · editando ordem de serviço" : "OS-i · Ordem de Serviço Inteligente — contratos diretos e indiretos"}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
           <div style={{ minWidth: 140 }}><Lbl>Obra</Lbl><select value={ct.obra_id} onChange={(e) => setCt({ ...ct, obra_id: e.target.value, itens_eap: [] })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
           <div style={{ flex: 1, minWidth: 160 }}><Lbl>Empresa</Lbl><input value={ct.empresa} onChange={(e) => setCt({ ...ct, empresa: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
@@ -527,10 +541,40 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
           {ct.obra_id ? <MultiEapPicker itens={eapItens} valor={ct.itens_eap} onChange={(v) => setCt({ ...ct, itens_eap: v })} comValor={ct.tipo === "indireto"} labelValor="Valor do item" />
             : <div style={{ fontSize: 12, color: C.dim }}>Selecione uma obra para listar a EAP.</div>}
         </div>
+        <div style={{ marginBottom: 12, borderTop: `1px solid ${C.linha}`, paddingTop: 12 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 8, flexWrap: "wrap" }}>
+            <Lbl>Condição de pagamento (parcelas)</Lbl>
+            <select value={condModo} onChange={(e) => setCt({ ...ct, cond: { ...ct.cond, modo: e.target.value } })} style={inp({ width: 200 })}>
+              <option value="valor">Por valor (R$)</option>
+              <option value="pct">Por % de avanço</option>
+            </select>
+            <Btn small kind="ghost" onClick={addParcela}>+ Adicionar parcela</Btn>
+          </div>
+          {(ct.cond?.parcelas || []).length > 0 && (
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 6 }}>
+              <thead><tr><Th>Descrição / marco</Th><Th right>{condModo === "valor" ? "Valor (R$)" : "% de avanço"}</Th><Th right>{condModo === "pct" ? "Valor estimado" : ""}</Th><Th /></tr></thead>
+              <tbody>{ct.cond.parcelas.map((p, i) => (
+                <tr key={i}>
+                  <Td><input value={p.descricao || ""} onChange={(e) => upParcela(i, { descricao: e.target.value })} placeholder="Ex.: 1ª medição / entrada / 30 dias" style={inp({ width: "100%", boxSizing: "border-box" })} /></Td>
+                  <Td right>{condModo === "valor"
+                    ? <NumInput value={p.valor || 0} onChange={(v) => upParcela(i, { valor: v })} />
+                    : <input type="number" min="0" step="0.01" value={p.pct || ""} onChange={(e) => upParcela(i, { pct: parseFloat(e.target.value) || 0 })} style={inp({ width: 90, textAlign: "right" })} />}</Td>
+                  <Td right color={C.dim}>{condModo === "pct" ? fmtR((Number(p.pct) || 0) / 100 * valorTotal) : ""}</Td>
+                  <Td><button onClick={() => delParcela(i)} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer", fontSize: 15 }}>✕</button></Td>
+                </tr>))}</tbody>
+            </table>
+          )}
+          {(ct.cond?.parcelas || []).length > 0 && (
+            <div style={{ fontSize: 12, color: condModo === "valor" ? (Math.abs(somaParcelas - valorTotal) < 0.01 ? C.verde : C.amareloAlerta) : (Math.abs(somaParcelas - 100) < 0.01 ? C.verde : C.amareloAlerta), fontWeight: 700 }}>
+              {condModo === "valor" ? `Soma das parcelas: ${fmtR(somaParcelas)} de ${fmtR(valorTotal)}${Math.abs(somaParcelas - valorTotal) < 0.01 ? " ✓" : " (difere do valor do contrato)"}` : `Soma dos percentuais: ${somaParcelas.toFixed(1)}%${Math.abs(somaParcelas - 100) < 0.01 ? " ✓" : " (deveria somar 100%)"}`}
+            </div>
+          )}
+        </div>
         <div style={{ display: "flex", alignItems: "center" }}>
           <div style={{ fontSize: 13, color: C.dim }}>Valor do contrato: <b style={{ color: C.verde, fontSize: 16 }}>{fmtR(valorTotal)}</b></div>
           <div style={{ flex: 1 }} />
-          <Btn small disabled={busy || !ct.cnpj || !ct.responsavel || ct.itens_eap.length === 0} onClick={salvar}>+ Cadastrar OS</Btn>
+          <Btn small disabled={busy || !ct.cnpj || !ct.responsavel || ct.itens_eap.length === 0} onClick={salvar}>{busy ? "Salvando…" : editId ? "Salvar alterações" : "+ Cadastrar OS"}</Btn>
+          {editId && <Btn small kind="ghost" onClick={() => { setCt({ ...vazio }); setEditId(null); }}>Cancelar edição</Btn>}
         </div>
       </Card>
       <Card title={`Ordens de serviço (${contratos.length})`}>
@@ -541,7 +585,7 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
               <Td style={{ fontSize: 12 }}>{itens.map((i) => i.eap_codigo).join(", ") || "—"}</Td>
               <Td right>{x.tipo === "direto" ? `${fmtR(x.custo_mensal)} × ${x.meses}` : "—"}</Td>
               <Td right color={C.verde} style={{ fontWeight: 700 }}>{fmtR(x.valor)}</Td>
-              <Td><button onClick={async () => { if (confirm("Excluir OS?")) { await remover("contratos_servico", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>
+              <Td><div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}><button onClick={() => carregarOs(x)} style={{ background: "none", border: `1px solid ${C.linha}`, color: C.azul, borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Editar</button><button onClick={async () => { if (confirm("Excluir OS?")) { await remover("contratos_servico", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></div></Td></tr>
           ); })}
             {contratos.length === 0 && <tr><Td colSpan={8} color={C.dim} style={{ padding: 14 }}>Nenhuma ordem de serviço.</Td></tr>}</tbody></table>
       </Card>
@@ -629,6 +673,22 @@ function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, 
   }, [draft]); // eslint-disable-line
   const [busy, setBusy] = useState(false);
   const [abrirForn, setAbrirForn] = useState(false);
+  const [editId, setEditId] = useState(null);
+  const carregarOc = (x) => {
+    const d = x.dados_oc || {};
+    const cp = x.condicao_pagamento || {};
+    setOc({
+      obra_id: x.obra_id || "", numero: x.numero || "", fornecedor: x.fornecedor || "",
+      data: String(x.data || hojeISO()).slice(0, 10), data_faturamento: String(x.data_faturamento || x.data || hojeISO()).slice(0, 10),
+      cond: { tipo: cp.tipo || "avista", entrada: cp.entrada || 0, nParcelas: cp.nParcelas || 3, primeiroDias: cp.primeiroDias || 30, intervaloDias: cp.intervaloDias || 30, diasTexto: cp.diasTexto || "" },
+      itens_eap: x.itens_eap || [], solicitante: d.solicitante || "", comprador: d.comprador || "", cliente: d.cliente || "",
+      solicitacaoNum: d.solicitacaoNum || "", cnoOverride: d.cno || "", observacao: d.observacao || "",
+      forn: d.fornecedor || { razao: "", cnpj: "", vendedor: "", contatoVendedor: "", endereco: "", contatoLoja: "" },
+      entrega: d.entrega || { data: "", endereco: "", responsavel: "", contato: "" },
+    });
+    setEditId(x.id);
+    if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
+  };
   const obra = obras.find((o) => o.id === oc.obra_id);
   const eapItens = eapPorObra[oc.obra_id] || [];
   const valorTotal = sum(oc.itens_eap.map((x) => x.valor));
@@ -644,17 +704,18 @@ function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, 
       const condicao_pagamento = { ...oc.cond, parcelas };
       const dados_oc = { solicitante: oc.solicitante, comprador: oc.comprador, cliente: oc.cliente, solicitacaoNum: oc.solicitacaoNum,
         cno: cnoEfetivo, observacao: oc.observacao, fornecedor: oc.forn, entrega: oc.entrega };
-      await criar("ordens_compra", { obra_id: oc.obra_id || null, numero: oc.numero, fornecedor: oc.fornecedor, data: oc.data,
+      const payload = { obra_id: oc.obra_id || null, numero: oc.numero, fornecedor: oc.fornecedor, data: oc.data,
         data_faturamento: oc.data_faturamento || oc.data, condicao_pagamento, dados_oc,
         itens_eap: oc.itens_eap, eap_codigo: oc.itens_eap.map((x) => x.eap_codigo).join(", "),
-        material: oc.itens_eap.map((x) => x.material || x.descricao).filter(Boolean).join("; "), valor: valorTotal });
-      setOc({ ...vazio, obra_id: oc.obra_id }); onMudou();
+        material: oc.itens_eap.map((x) => x.material || x.descricao).filter(Boolean).join("; "), valor: valorTotal };
+      if (editId) await editar("ordens_compra", editId, payload); else await criar("ordens_compra", payload);
+      setOc({ ...vazio, obra_id: oc.obra_id }); setEditId(null); onMudou();
     } catch (e) { alert(e.message); } finally { setBusy(false); }
   };
   const restAbertas = restricoes.filter((r) => !r.resolvida);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      <Card title="OC-i · Ordem de compra de materiais — gera PDF para o fornecedor">
+      <Card title={editId ? "OC-i · editando ordem de compra" : "OC-i · Ordem de compra de materiais — gera PDF para o fornecedor"}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
           <div style={{ minWidth: 140 }}><Lbl>Obra</Lbl><select value={oc.obra_id} onChange={(e) => setOc({ ...oc, obra_id: e.target.value, itens_eap: [] })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
           <div><Lbl>OC nº</Lbl><input value={oc.numero} onChange={(e) => setOc({ ...oc, numero: e.target.value })} style={inp({ width: 100 })} /></div>
@@ -741,7 +802,8 @@ function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, 
         <div style={{ display: "flex", alignItems: "center" }}>
           <div style={{ fontSize: 13, color: C.dim }}>Total da OC: <b style={{ color: C.laranja, fontSize: 16 }}>{fmtR(valorTotal)}</b></div>
           <div style={{ flex: 1 }} />
-          <Btn small disabled={busy || oc.itens_eap.length === 0} onClick={salvar}>+ Lançar OC</Btn>
+          <Btn small disabled={busy || oc.itens_eap.length === 0} onClick={salvar}>{busy ? "Salvando…" : editId ? "Salvar alterações" : "+ Lançar OC"}</Btn>
+          {editId && <Btn small kind="ghost" onClick={() => { setOc({ ...vazio }); setEditId(null); }}>Cancelar edição</Btn>}
         </div>
       </Card>
 
@@ -757,7 +819,7 @@ function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, 
         <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Faturamento</Th><Th>Fornecedor</Th><Th>Itens EAP</Th><Th>Pagamento</Th><Th right>Valor</Th><Th>PDF</Th><Th /></tr></thead>
           <tbody>{ocs.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap.map((i) => i.eap_codigo).join(", ") : (x.eap_codigo || "—"); return <tr key={x.id}><Td>{x.numero || "—"}</Td><Td>{o?.codigo || "—"}</Td><Td>{dataBR(x.data_faturamento || x.data)}</Td><Td>{x.fornecedor || "—"}</Td><Td style={{ fontSize: 12 }}>{itens}</Td><Td style={{ fontSize: 12 }}>{resumoCond(x)}</Td><Td right color={C.laranja}>{fmtR(x.valor)}</Td>
             <Td><button onClick={() => gerarPdfOC(x, o || {})} style={{ background: "none", border: `1px solid ${C.laranja}`, color: C.laranja, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>PDF</button></Td>
-            <Td><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>; })}
+            <Td><div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}><button onClick={() => carregarOc(x)} style={{ background: "none", border: `1px solid ${C.linha}`, color: C.azul, borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Editar</button><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></div></Td></tr>; })}
             {ocs.length === 0 && <tr><Td colSpan={9} color={C.dim} style={{ padding: 14 }}>Nenhuma OC lançada.</Td></tr>}</tbody></table>
       </Card>
     </div>
@@ -1225,7 +1287,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
     try {
       const desc = Number(preview.desconto) || 0;
       await criarObraComEap(
-        { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, cno: preview.cno || null, prazo_dias: Number(preview.prazo_dias) || null, desconto: desc, data_inicio: preview.data_inicio || hojeISO() },
+        { codigo: preview.codigo, nome: preview.nome, contratante: preview.contratante, contrato: preview.contrato, local: preview.local, cno: preview.cno || null, centro_custo: preview.centro_custo || null, prazo_dias: Number(preview.prazo_dias) || null, desconto: desc, data_inicio: preview.data_inicio || hojeISO() },
         preview.itens.map((it) => {
           const qtde = Number(it.qtde) || 1;
           // valor de venda (à faturar) = como veio na planilha; se o usuário aplicar desconto extra, multiplica
@@ -1247,7 +1309,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
   const prazoObra = (o) => { if (!o.data_inicio || !o.prazo_dias) return null; const fim = new Date(new Date(String(o.data_inicio).slice(0, 10) + "T00:00:00").getTime() + o.prazo_dias * 86400000); const rest = Math.ceil((fim - Date.now()) / 86400000); return { fim, rest }; };
   const salvarEditObra = async () => {
     try {
-      await editar("obras", editObra.id, { codigo: editObra.codigo, nome: editObra.nome, contratante: editObra.contratante, contrato: editObra.contrato, local: editObra.local, cno: editObra.cno || null, prazo_dias: Number(editObra.prazo_dias) || null, data_inicio: editObra.data_inicio || null });
+      await editar("obras", editObra.id, { codigo: editObra.codigo, nome: editObra.nome, contratante: editObra.contratante, contrato: editObra.contrato, local: editObra.local, cno: editObra.cno || null, centro_custo: editObra.centro_custo || null, prazo_dias: Number(editObra.prazo_dias) || null, data_inicio: editObra.data_inicio || null });
       setEditObra(null); onMudou();
     } catch (e) { alert(e.message); }
   };
@@ -1283,6 +1345,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
               <div><Lbl>Desconto licitação</Lbl><input type="number" step="0.001" value={preview.desconto} onChange={(e) => setPreview({ ...preview, desconto: e.target.value })} style={inp({ width: 90, textAlign: "right" })} /><span style={{ fontSize: 11, color: C.dim, marginLeft: 6 }}>(0,11=11%)</span></div>
               <div><Lbl>Prazo (dias)</Lbl><input type="number" value={preview.prazo_dias} onChange={(e) => setPreview({ ...preview, prazo_dias: e.target.value })} style={inp({ width: 90, textAlign: "right" })} /></div>
               <div><Lbl>Data de início</Lbl><input type="date" value={preview.data_inicio || hojeISO()} onChange={(e) => setPreview({ ...preview, data_inicio: e.target.value })} style={inp({ width: 150 })} /></div>
+              <div><Lbl>Centro de custo</Lbl><input value={preview.centro_custo || ""} onChange={(e) => setPreview({ ...preview, centro_custo: e.target.value })} placeholder="ex.: CC-IFSC" style={inp({ width: 150 })} /></div>
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
               <div style={{ flex: 1, minWidth: 200 }}><Lbl>Contratante</Lbl><input value={preview.contratante} onChange={(e) => setPreview({ ...preview, contratante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
@@ -1304,7 +1367,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
       </Card>
       {obras.map((o) => (
         <Card key={o.id} title={`${o.codigo} · ${o.nome}`} right={<div style={{ display: "flex", gap: 8 }}>
-          <Btn kind="ghost" small onClick={() => setEditObra({ id: o.id, codigo: o.codigo, nome: o.nome, contratante: o.contratante || "", contrato: o.contrato || "", local: o.local || "", cno: o.cno || "", prazo_dias: o.prazo_dias || "", data_inicio: o.data_inicio ? String(o.data_inicio).slice(0, 10) : "" })}>✎ Editar</Btn>
+          <Btn kind="ghost" small onClick={() => setEditObra({ id: o.id, codigo: o.codigo, nome: o.nome, contratante: o.contratante || "", contrato: o.contrato || "", local: o.local || "", cno: o.cno || "", centro_custo: o.centro_custo || "", prazo_dias: o.prazo_dias || "", data_inicio: o.data_inicio ? String(o.data_inicio).slice(0, 10) : "" })}>✎ Editar</Btn>
           <Btn kind="danger" small onClick={async () => { if (confirm(`Excluir ${o.codigo} e todos os dados?`)) { await remover("obras", o.id); onMudou(); } }}>Excluir</Btn>
         </div>}>
           {editObra?.id === o.id && (
@@ -1314,6 +1377,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
                 <div style={{ flex: 1, minWidth: 200 }}><Lbl>Nome da obra</Lbl><input value={editObra.nome} onChange={(e) => setEditObra({ ...editObra, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
                 <div><Lbl>Prazo (dias)</Lbl><input type="number" value={editObra.prazo_dias} onChange={(e) => setEditObra({ ...editObra, prazo_dias: e.target.value })} style={inp({ width: 90, textAlign: "right" })} /></div>
                 <div><Lbl>Data de início</Lbl><input type="date" value={editObra.data_inicio} onChange={(e) => setEditObra({ ...editObra, data_inicio: e.target.value })} style={inp({ width: 150 })} /></div>
+                <div><Lbl>Centro de custo</Lbl><input value={editObra.centro_custo} onChange={(e) => setEditObra({ ...editObra, centro_custo: e.target.value })} placeholder="ex.: CC-IFSC" style={inp({ width: 150 })} /></div>
               </div>
               <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 10 }}>
                 <div style={{ flex: 1, minWidth: 180 }}><Lbl>Contratante</Lbl><input value={editObra.contratante} onChange={(e) => setEditObra({ ...editObra, contratante: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>

@@ -1,5 +1,57 @@
 # Miriad Construction Control (MCC)
 
+## v10.1 — BMP: kanban de OS-is e geração de medição (2ª etapa da V10)
+- Nova tela **Medições (BMP)** (📐) para Supervisor, Coord. de Planejamento e Diretoria: kanban com as
+  OS-is (contratos de serviço), mostrando valor do contrato, já medido, saldo e itens.
+- Botão **Gerar medição** abre o boletim pré-preenchido com os itens da EAP da OS-i. Por item: quantidade
+  avançada (na unidade do contrato), comentário de pendência, foto com legenda e retenção técnica (%).
+  O sistema calcula avanço, valor medido, retenção e líquido por item e no total.
+- **Confirmar medição** mostra o quadro resumo; **Gerar medição** cria o BMP com status
+  *aguardando aprovação*. O card da OS-i passa a refletir o já medido e o saldo (total e por item).
+- **Centro de custo** adicionado ao cadastro/edição da obra.
+
+> **Migração:** rode `supabase/migration_v10_1.sql` (centro de custo + tabela `boletins_medicao`).
+> Fotos usam o mesmo bucket do RDO (`rdo-fotos`).
+
+### Próximo (v10.2): aprovação do BMP (Coord. Obras/Planejamento/Diretor de Engenharia) + e-mail ao
+prestador autorizando a NF. (v10.3): OP e kanbans do financeiro.
+
+
+## v10.0 — OS-i com condição de pagamento (1ª etapa da V10)
+- A OS-i ganhou **condição de pagamento** com tabela aberta de parcelas, preenchida manualmente.
+  Dois modos: **por valor (R$)** ou **por % de avanço** (mostra o valor estimado de cada parcela e
+  confere se soma 100% / o valor do contrato).
+- Adicionar/remover parcelas livremente; salvo junto da OS-i e recuperado na edição.
+
+> **Migração:** rode `supabase/migration_v10_0.sql` (adiciona `condicao_pagamento` em
+> `contratos_servico`).
+
+### V10 — em etapas (próximas)
+O Boletim de Medição de Prestadores (BMP), o kanban de OS-is por contrato, as aprovações
+(planejamento/obras/diretor de engenharia), o e-mail/comunicação ao prestador, a geração de OP e os
+kanbans de OP no financeiro serão entregues nas versões v10.1+ (precisam de definições de cargo,
+SMS e centro de custo — ver perguntas).
+
+
+## v9.8 — Edição de OC-i e OS-i
+- Cada Ordem de Compra (OC-i) e Ordem de Serviço (OS-i) na lista agora tem botão **Editar**: ele
+  carrega todos os dados de volta no formulário, você ajusta e clica em **Salvar alterações**
+  (atualiza o registro existente em vez de criar um novo). Há também **Cancelar edição**.
+- Na OC-i, o editar recupera fornecedor, itens, condição de pagamento, entrega e observações; na OS-i,
+  empresa, tipo, itens e valores. O PDF da OC-i reflete as alterações após salvar.
+
+> Sem migração. Apenas frontend.
+
+
+## v9.7 — Correção: dropdown da EAP mostrava só 16 itens
+- O seletor de item da EAP (usado em RDO-i, OC-i e OS-i) limitava a lista a 16 itens, então obras com
+  EAP grande (ex.: IFSC com 160 itens) só exibiam parte deles no dropdown.
+- Agora o dropdown lista até 300 itens (com rolagem) e mostra a contagem total; acima disso, basta
+  digitar para filtrar. Todos os itens continuam pesquisáveis por código, descrição ou disciplina.
+
+> Sem migração. Apenas frontend.
+
+
 ## v9.6 — Data de início da obra, EAP colapsável, endereço e notificações por e-mail
 1. **Data de início da obra:** definida na aba Obras (no cadastro e na edição); o prazo passa a ser
    contado a partir dela (faltam X dias / término previsto), inclusive em Meus Projetos.

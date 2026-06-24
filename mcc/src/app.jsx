@@ -10,6 +10,7 @@ import { PainelGeral } from "./painel.jsx";
 import { Ranking } from "./ranking.jsx";
 import { PainelGerencial } from "./painelger.jsx";
 import { MeusProjetos, AlocacaoSupervisor } from "./extras.jsx";
+import { BMPMedicoes } from "./bmp.jsx";
 import { LOGO_FULL, LOGO_MARK } from "./logo.js";
 
 function LogoMiriad({ size = 26 }) {
@@ -369,16 +370,18 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
   const [permsAberto, setPermsAberto] = useState(false);
   const [meusAberto, setMeusAberto] = useState(false);
   const [alocAberto, setAlocAberto] = useState(false);
+  const [bmpAberto, setBmpAberto] = useState(false);
   const ehDir = p === "ceo" || p === "diretor";
   const ehSupObras = p === "sup_obras";
   const podeAlocar = ehDir || p === "coord_planejamento";
+  const podeBmp = ehSupObras || p === "coord_planejamento" || ehDir;
   const mobile = useIsMobile();
   const [drawer, setDrawer] = useState(false);
 
-  const fecharEspeciais = () => { setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setMeusAberto(false); setAlocAberto(false); };
+  const fecharEspeciais = () => { setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setMeusAberto(false); setAlocAberto(false); setBmpAberto(false); };
   const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } fecharEspeciais(); setDrawer(false); };
   const tabDe = (sec) => sec === "operacional" ? opTab : sec === "financeiro" ? finTab : null;
-  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && !permsAberto && !meusAberto && !alocAberto && secao === sec && (!tab || tabDe(sec) === tab);
+  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && !permsAberto && !meusAberto && !alocAberto && !bmpAberto && secao === sec && (!tab || tabDe(sec) === tab);
 
   const botao = (sec, tab, label, icone, nota) => (
     <button key={(tab || sec)} onClick={() => abrir(sec, tab)}
@@ -390,7 +393,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
 
   const tituloOp = OP_ITENS.find((i) => i.id === opTab);
   const tituloFin = FIN_ITENS.find((i) => i.id === finTab);
-  const titulo = meusAberto ? "Meus Projetos" : alocAberto ? "Alocação de Supervisores" : permsAberto ? "Permissões por cargo" : gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
+  const titulo = bmpAberto ? "Medições de prestadores (BMP)" : meusAberto ? "Meus Projetos" : alocAberto ? "Alocação de Supervisores" : permsAberto ? "Permissões por cargo" : gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
 
   const navInterno = (
     <>
@@ -411,6 +414,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
       </>}
 
       <div style={{ flex: 1, minHeight: 12 }} />
+      {podeBmp && <button onClick={() => { fecharEspeciais(); setBmpAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: bmpAberto ? C.laranja : "transparent", color: bmpAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>📐</span>Medições (BMP)</button>}
       {ehSupObras && <button onClick={() => { fecharEspeciais(); setMeusAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: meusAberto ? C.laranja : "transparent", color: meusAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🗂️</span>Meus Projetos</button>}
       {podeAlocar && <button onClick={() => { fecharEspeciais(); setAlocAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: alocAberto ? C.laranja : "transparent", color: alocAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>👷</span>Alocação de Supervisor</button>}
       {A.gerencial && ehDir && <button onClick={() => { fecharEspeciais(); setGerencialAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: gerencialAberto ? C.laranja : "transparent", color: gerencialAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>📊</span>Painel Gerencial</button>}
@@ -426,8 +430,9 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
   );
 
   const conteudo = (
-    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}-${permsAberto}-${meusAberto}-${alocAberto}`} className="mcc-fade">
-      {meusAberto && ehSupObras ? <MeusProjetos usuario={usuario} />
+    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}-${permsAberto}-${meusAberto}-${alocAberto}-${bmpAberto}`} className="mcc-fade">
+      {bmpAberto && podeBmp ? <BMPMedicoes usuario={usuario} />
+        : meusAberto && ehSupObras ? <MeusProjetos usuario={usuario} />
         : alocAberto && podeAlocar ? <AlocacaoSupervisor usuario={usuario} />
         : permsAberto && ehDir ? <Permissoes acessoMap={acessoMap} onSaved={setAcessoMap} />
         : gerencialAberto && ehDir ? <PainelGerencial />
