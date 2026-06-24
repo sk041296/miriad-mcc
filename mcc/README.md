@@ -1,5 +1,16 @@
 # Miriad Construction Control (MCC)
 
+## v10.3 — Desempenho do carregamento operacional
+- O módulo Operacional carregava EAP, RDOs e restrições **uma obra por vez** (3 requisições por obra).
+  Com o crescimento (mais obras, EAP do IFSC com 160 itens), isso virava dezenas de requisições a cada
+  abertura/salvamento — causando o "lag" da tela "Carregando dados operacionais…".
+- Agora o sistema busca **em massa**: 1 requisição para EAP, 1 para RDOs e 1 para restrições (agrupadas
+  no cliente). Passou de ~3×N para 3 requisições no total, reduzindo bastante a espera.
+- Teto de linhas por consulta ampliado para acompanhar o crescimento.
+
+> Sem migração de banco.
+
+
 ## v10.2 — Assinatura no RDO, destravar em Permissões, kanban de RDOs e medições na OS-i
 1. **Assinatura digital no PDF do RDO:** rodapé com nome do emissor, função e a frase "Emitido por",
    além de carimbo "Assinatura digital gerada pelo MCC" com nº e data do RDO.

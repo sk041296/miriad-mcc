@@ -55,13 +55,12 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, a
     const [ob, ct, oc, fu] = await Promise.all([listar("obras"), listar("contratos_servico"), listar("ordens_compra"), listar("funcionarios")]);
     setObras(ob); setContratos(ct); setOcs(oc); setFuncionarios(fu);
     listar("colaboradores").then(setColaboradores).catch(() => {});
-    const eaps = {}, rd = [], rt = [];
-    await Promise.all(ob.map(async (o) => {
-      eaps[o.id] = await listar("eap_itens", { obra_id: o.id });
-      (await listar("rdos", { obra_id: o.id })).forEach((r) => rd.push(r));
-      (await listar("restricoes_material", { obra_id: o.id })).forEach((x) => rt.push(x));
-    }));
-    setEapPorObra(eaps); setRdos(rd); setRestricoes(rt); setPronto(true);
+    // Cargas em massa: 1 requisição por tabela (em vez de 3 por obra) — agrupadas no cliente.
+    const [eapAll, rdAll, rtAll] = await Promise.all([listar("eap_itens"), listar("rdos"), listar("restricoes_material")]);
+    const eaps = {};
+    ob.forEach((o) => { eaps[o.id] = []; });
+    eapAll.forEach((e) => { (eaps[e.obra_id] = eaps[e.obra_id] || []).push(e); });
+    setEapPorObra(eaps); setRdos(rdAll); setRestricoes(rtAll); setPronto(true);
   };
   useEffect(() => { carregar(); }, []);
   if (!pronto) return <div style={{ color: C.dim, padding: 20 }}>Carregando dados operacionais…</div>;
