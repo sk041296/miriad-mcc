@@ -71,6 +71,7 @@ async function req(path, opts = {}) {
 }
 export const apiAuth = (body) => fetch("/api/auth", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
 export const listar = (t, params = {}) => req(`/api/data?t=${t}&` + new URLSearchParams(params)).then((d) => d.rows || []);
+export const resumoRdo = (obraId) => req(`/api/data?t=rdo_resumo&obra_id=${obraId}`).then((d) => d);
 export const criar = (t, row) => req("/api/data", { method: "POST", body: JSON.stringify({ t, row }) }).then((d) => d.row);
 export const criarUsuario = (row) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "usuarios", row }) }).then((d) => d);
 export const acaoData = (body) => req("/api/data", { method: "POST", body: JSON.stringify(body) }).then((d) => d);

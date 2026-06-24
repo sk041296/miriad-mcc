@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 import {
   C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, addDiasISO, CLIMAS, ATRIBUICOES, VINCULOS, SETOR_DE_PAPEL,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
-  listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap,
+  listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap, resumoRdo,
   aplicarDesconto, definirMeta, uploadFoto,
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
@@ -55,13 +55,19 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, a
     const [ob, ct, oc, fu] = await Promise.all([listar("obras"), listar("contratos_servico"), listar("ordens_compra"), listar("funcionarios")]);
     setObras(ob); setContratos(ct); setOcs(oc); setFuncionarios(fu);
     listar("colaboradores").then(setColaboradores).catch(() => {});
-    // Cargas em massa: 1 requisição por tabela (em vez de 3 por obra) — agrupadas no cliente.
+    // Cargas em massa, 1 requisição por tabela. RDOs completos (telas EAP & Custos e Medição somam o
+    // histórico inteiro). O acumulado/numeração do RDO-i vem do agregado rdo_resumo no servidor.
     const [eapAll, rdAll, rtAll] = await Promise.all([listar("eap_itens"), listar("rdos"), listar("restricoes_material")]);
     const eaps = {};
     ob.forEach((o) => { eaps[o.id] = []; });
     eapAll.forEach((e) => { (eaps[e.obra_id] = eaps[e.obra_id] || []).push(e); });
     setEapPorObra(eaps); setRdos(rdAll); setRestricoes(rtAll); setPronto(true);
   };
+  // recargas granulares (evitam recarregar EAP/RDOs de todas as obras a cada salvamento)
+  const recargaLeve = () => { listar("obras").then(setObras).catch(() => {}); };
+  const recargaOcs = () => listar("ordens_compra").then(setOcs).catch(() => {});
+  const recargaContratos = () => listar("contratos_servico").then(setContratos).catch(() => {});
+  const recargaRdos = () => listar("rdos").then(setRdos).catch(() => {});
   useEffect(() => { carregar(); }, []);
   if (!pronto) return <div style={{ color: C.dim, padding: 20 }}>Carregando dados operacionais…</div>;
 
@@ -80,13 +86,13 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, a
           ))}
         </div>
       )}
-      {sub === "rdo" && <RdoI usuario={usuario} colaboradores={colaboradores} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} restricoes={restricoes} onMudou={carregar} />}
-      {sub === "smi" && <SmI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onGerarOc={gerarOcDeSm} onMudou={carregar} />}
-      {sub === "ssi" && <SsI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onGerarOs={gerarOsDeSs} onMudou={carregar} />}
-      {sub === "pos" && <Pos usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onMudou={carregar} />}
-      {sub === "pmm" && <Pmm usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onMudou={carregar} />}
-      {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} draft={draftOs} onConsumeDraft={() => setDraftOs(null)} usuario={usuario} onMudou={carregar} />}
-      {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} draft={draftOc} onConsumeDraft={() => setDraftOc(null)} onMudou={carregar} />}
+      {sub === "rdo" && <RdoI usuario={usuario} colaboradores={colaboradores} obras={obras} eapPorObra={eapPorObra} rdos={rdos} funcionarios={funcionarios} contratos={contratos} restricoes={restricoes} onMudou={recargaRdos} />}
+      {sub === "smi" && <SmI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onGerarOc={gerarOcDeSm} onMudou={recargaLeve} />}
+      {sub === "ssi" && <SsI usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onGerarOs={gerarOsDeSs} onMudou={recargaLeve} />}
+      {sub === "pos" && <Pos usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onMudou={recargaLeve} />}
+      {sub === "pmm" && <Pmm usuario={usuario} obras={obras} eapPorObra={eapPorObra} colaboradores={colaboradores} acesso={acesso} onMudou={recargaLeve} />}
+      {sub === "os" && <OsI obras={obras} eapPorObra={eapPorObra} contratos={contratos} draft={draftOs} onConsumeDraft={() => setDraftOs(null)} usuario={usuario} onMudou={recargaContratos} />}
+      {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} draft={draftOc} onConsumeDraft={() => setDraftOc(null)} onMudou={recargaOcs} />}
       {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
       {sub === "eap" && <EapCustos obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} onMudou={carregar} />}
       {sub === "obras" && <Obras obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
@@ -163,6 +169,7 @@ function MultiEapPicker({ itens, valor = [], onChange, comValor = true, labelVal
 const DRAFT = "mcc_rdo_draft_v1";
 function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restricoes = [], onMudou }) {
   const novaAtv = () => ({ k: uid(), eapId: "", qtde: 0, comentarios: "", funcionarioIds: [] });
+  const [resumoObra, setResumoObra] = useState({ acum: {}, maxNumero: 0 });
   const novaRestr = () => ({ k: uid(), eapId: "", material: "", dataSolicitacao: hojeISO() });
   const vazio = (obraId) => ({ obraId: obraId || obras[0]?.id || "", numero: "", data: hojeISO(), clima: CLIMAS[0], efetivo: 0, ocorrencias: "", comentarios: "", atividades: [novaAtv()], equipe: [], restricoes: [], fotos: [] });
   const [form, setForm] = useState(() => { try { const d = JSON.parse(localStorage.getItem(DRAFT)); if (d?.atividades) return { fotos: [], ...d }; } catch {} return vazio(); });
@@ -170,7 +177,6 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
   const [enviandoFoto, setEnviandoFoto] = useState(false);
   const [editandoId, setEditandoId] = useState(null);
   const [ndForm, setNdForm] = useState(null); // atividade não descrita: { k, descricao, qtde, unidade }
-  const proxNumero = (obraId) => { const ns = rdos.filter((r) => r.obra_id === obraId).map((r) => parseInt(String(r.numero || "").replace(/\D/g, ""), 10)).filter((n) => !isNaN(n)); return ns.length ? String(Math.max(...ns) + 1) : "1"; };
   const fotoRef = useRef(null);
   const topoRef = useRef(null);
 
@@ -211,14 +217,15 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
   const upFoto = (i, patch) => setForm((f) => ({ ...f, fotos: f.fotos.map((x, j) => (j === i ? { ...x, ...patch } : x)) }));
   const delFoto = (i) => setForm((f) => ({ ...f, fotos: f.fotos.filter((_, j) => j !== i) }));
 
-  const execAcum = useMemo(() => { const m = {}; rdos.filter((r) => r.obra_id === form.obraId).forEach((r) => (r.atividades || []).forEach((a) => { m[a.eap] = (m[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); })); return m; }, [rdos, form.obraId]);
+  const execAcum = resumoObra.acum || {};
   const upAtv = (k, patch) => setForm((f) => ({ ...f, atividades: f.atividades.map((a) => a.k === k ? { ...a, ...patch } : a) }));
   const upRestr = (k, patch) => setForm((f) => ({ ...f, restricoes: f.restricoes.map((x) => x.k === k ? { ...x, ...patch } : x) }));
 
   const valorUnit = (it) => (Number(it.valor_total) || 0) / (Number(it.qtde) || 1);
   const medicaoRdo = sum(form.atividades.map((a) => { const it = eapItens.find((i) => i.id === a.eapId); return it ? (Number(a.qtde) || 0) * valorUnit(it) : 0; }));
   // auto-numeração: sugere o próximo nº quando a obra muda e o campo está vazio (não em edição)
-  useEffect(() => { if (!editandoId && form.obraId && !String(form.numero || "").trim()) setForm((f) => ({ ...f, numero: proxNumero(form.obraId) })); }, [form.obraId, editandoId]); // eslint-disable-line
+  useEffect(() => { if (!form.obraId) return; resumoRdo(form.obraId).then(setResumoObra).catch(() => setResumoObra({ acum: {}, maxNumero: 0 })); }, [form.obraId]);
+  useEffect(() => { if (!editandoId && form.obraId && !String(form.numero || "").trim()) setForm((f) => ({ ...f, numero: String((resumoObra.maxNumero || 0) + 1) })); }, [resumoObra, editandoId]); // eslint-disable-line
   const criarNaoDescrito = async () => {
     const f = ndForm; if (!f || !f.descricao.trim()) { alert("Descreva a atividade."); return; }
     const codigo = `ND-${eapItens.filter((i) => i.nao_descrito).length + 1}`;
@@ -255,6 +262,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
       await criarRdoCompleto(rdo, restricoes, editandoId || undefined);
       localStorage.removeItem(DRAFT); setForm(vazio(form.obraId));
       setMsg({ tipo: "ok", txt: editandoId ? "RDO atualizado." : "RDO registrado no banco." }); setEditandoId(null); onMudou();
+      resumoRdo(form.obraId).then(setResumoObra).catch(() => {});
     } catch (e) { setMsg({ tipo: "erro", txt: `Falha ao salvar: ${e.message}. Rascunho preservado neste aparelho.` }); }
     finally { setSalvando(false); }
   };
@@ -279,7 +287,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
         {msg && <span style={{ color: msg.tipo === "ok" ? C.verde : C.vermelho, fontSize: 13, fontWeight: 700 }}>{msg.txt}</span>}
       </div>}>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12, marginBottom: 16 }}>
-          <div><Lbl>Obra</Lbl><select value={form.obraId} onChange={(e) => setForm({ ...form, obraId: e.target.value, numero: proxNumero(e.target.value), atividades: [novaAtv()], restricoes: [] })} style={inp({ width: "100%" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
+          <div><Lbl>Obra</Lbl><select value={form.obraId} onChange={(e) => setForm({ ...form, obraId: e.target.value, numero: "", atividades: [novaAtv()], restricoes: [] })} style={inp({ width: "100%" })}>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
           <div><Lbl>Relatório nº (automático)</Lbl><input value={form.numero} onChange={(e) => setForm({ ...form, numero: e.target.value })} placeholder="00371" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
           <div><Lbl>Data</Lbl><input type="date" value={form.data} onChange={(e) => setForm({ ...form, data: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
           <div><Lbl>Clima predominante</Lbl><select value={form.clima} onChange={(e) => setForm({ ...form, clima: e.target.value })} style={inp({ width: "100%" })}>{CLIMAS.map((c) => <option key={c}>{c}</option>)}</select></div>

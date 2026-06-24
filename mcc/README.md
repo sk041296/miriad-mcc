@@ -1,5 +1,19 @@
 # Miriad Construction Control (MCC)
 
+## v10.4 — Escala: recarga granular, agregado de RDO e índices
+Preparação para ~25 obras e ~30 usuários simultâneos.
+- **Recarga granular:** salvar SM-i/SS-i/POS/PMM não recarrega mais EAP/RDOs de todas as obras
+  (essas telas já atualizam a própria lista). Reduz muito o tráfego com muitos usuários ativos.
+- **Agregado de RDO no servidor (`rdo_resumo`):** o acumulado por item da EAP e o próximo nº do RDO-i
+  vêm de um cálculo enxuto no servidor por obra, em vez de processar todo o histórico no navegador.
+- **Índices de banco** em obra_id/data nas tabelas grandes (EAP, RDO, restrições, OC, contratos, SM, SS,
+  POS, PMM, designações) — consultas filtradas ficam mais rápidas sob concorrência.
+- RDOs continuam carregados por completo onde as somas exigem histórico (EAP & Custos, Medição), para
+  não comprometer a exatidão dos números.
+
+> **Migração:** rode `supabase/migration_v10_4.sql` (somente índices — seguro e idempotente).
+> Recomendado também: Vercel Pro (cold start/concorrência) — Supabase já está no Pro.
+
 ## v10.3 — Desempenho do carregamento operacional
 - O módulo Operacional carregava EAP, RDOs e restrições **uma obra por vez** (3 requisições por obra).
   Com o crescimento (mais obras, EAP do IFSC com 160 itens), isso virava dezenas de requisições a cada

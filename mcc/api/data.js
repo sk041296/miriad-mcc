@@ -102,11 +102,27 @@ export default async function handler(req, res) {
       return res.status(200).json({ rows: data });
     }
 
+    // resumo enxuto de RDOs de uma obra: acumulado por item de EAP + maior nº (para o RDO-i)
+    if (t === "rdo_resumo") {
+      const obra_id = req.query.obra_id;
+      if (!obra_id) return res.status(400).json({ error: "obra_id obrigatório" });
+      if (obrasPermitidas && !obrasPermitidas.includes(obra_id)) return res.status(200).json({ acum: {}, maxNumero: 0 });
+      const { data, error } = await supabase.from("rdos").select("numero,atividades").eq("obra_id", obra_id).limit(20000);
+      if (error) return res.status(500).json({ error: error.message });
+      const acum = {}; let maxNumero = 0;
+      (data || []).forEach((r) => {
+        const n = parseInt(String(r.numero || "").replace(/\D/g, ""), 10); if (!isNaN(n) && n > maxNumero) maxNumero = n;
+        (r.atividades || []).forEach((a) => { if (a && a.eap != null) acum[a.eap] = (acum[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); });
+      });
+      return res.status(200).json({ acum, maxNumero });
+    }
+
     const cfg = TABELAS[t];
     if (!cfg) return res.status(400).json({ error: "Recurso não permitido" });
     if (t === "usuarios" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     let q = supabase.from(t).select(t === "usuarios" ? "id,nome,email,papel,ativo,criado_em,obra_id,senha_definida,travado" : "*").order(cfg.ordem, { ascending: cfg.asc });
     if (cfg.filtro && req.query[cfg.filtro]) q = q.eq(cfg.filtro, req.query[cfg.filtro]);
+    if (t === "rdos" && req.query.desde) q = q.gte("data", req.query.desde);
     if (obrasPermitidas && TEM_OBRA_ID.has(t)) q = q.in(t === "obras" ? "id" : "obra_id", obrasPermitidas);
     // emergenciais só aparecem para Suprimentos depois de autorizadas pelo Coord. de Obras
     if (t === "sm_itens" && SUPRIMENTOS.has(s.papel)) q = q.or("emergencial.eq.false,autorizada_emergencial.eq.true");
