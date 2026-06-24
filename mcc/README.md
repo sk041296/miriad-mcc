@@ -1,5 +1,19 @@
 # Miriad Construction Control (MCC)
 
+## v10.2 — Assinatura no RDO, destravar em Permissões, kanban de RDOs e medições na OS-i
+1. **Assinatura digital no PDF do RDO:** rodapé com nome do emissor, função e a frase "Emitido por",
+   além de carimbo "Assinatura digital gerada pelo MCC" com nº e data do RDO.
+2. **Destravar em Permissões:** CEO e Diretor agora destravam usuários bloqueados por perda de prazo
+   diretamente na tela Permissões (card "Usuários bloqueados por perda de prazo"), além dos coordenadores.
+3. **RDO-i em kanban:** a lista de RDOs virou um navegador — selecione a obra (cartões) e veja os últimos
+   10 RDOs, com "Mostrar mais 10". Cada cartão tem Editar/PDF/excluir. Busca por data, atividade da EAP
+   ou prestador: lista todos os RDOs correspondentes e destaca a atividade/prestador encontrado.
+4. **OS-i — condição de pagamento por medições:** botões "+ Entrada" e "+ Adicionar medição" (1ª, 2ª, 3ª…),
+   permitindo estruturar Entrada + medições conforme a duração do serviço (por valor ou % de avanço).
+
+> Sem migração de banco nesta versão.
+
+
 ## v10.1 — BMP: kanban de OS-is e geração de medição (2ª etapa da V10)
 - Nova tela **Medições (BMP)** (📐) para Supervisor, Coord. de Planejamento e Diretoria: kanban com as
   OS-is (contratos de serviço), mostrando valor do contrato, já medido, saldo e itens.

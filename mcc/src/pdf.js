@@ -4,7 +4,7 @@ import { LOGO_FULL } from "./logo.js";
 
 /* Geração do PDF do RDO no papel timbrado da Miriad (via janela de impressão do navegador).
    IMPORTANTE: as restrições de material NÃO entram aqui — são internas, não vão ao cliente. */
-export function gerarPdfRdo(rdo, obra, usuarioNome) {
+export function gerarPdfRdo(rdo, obra, usuarioNome, funcao) {
   const climaLinha = rdo.clima || "—";
   const atividades = (rdo.atividades || []).map((a) => `
     <tr>
@@ -60,6 +60,13 @@ export function gerarPdfRdo(rdo, obra, usuarioNome) {
           ${!f.legenda && !f.eap_codigo ? "&nbsp;" : ""}
         </div>
       </div>`).join("")}</div>` : ""}
+    <div style="margin-top:22px;text-align:center;page-break-inside:avoid">
+      <div style="font-family:'Segoe Script','Brush Script MT',cursive;font-size:23px;color:#141414;line-height:1">${(usuarioNome || rdo.responsavel_nome || "").replace(/</g, "&lt;")}</div>
+      <div style="border-top:1px solid #141414;width:280px;margin:3px auto 0;padding-top:4px;font-size:10px;color:#333">
+        <b>Emitido por:</b> ${(usuarioNome || rdo.responsavel_nome || "").replace(/</g, "&lt;")} — ${(funcao || "Supervisor de Obras").replace(/</g, "&lt;")}
+      </div>
+      <div style="font-size:8.5px;color:#888;margin-top:2px">Assinatura digital gerada pelo MCC${rdo.numero ? ` — RDO nº ${rdo.numero}` : ""}${rdo.data ? ` — ${String(rdo.data).slice(0,10).split("-").reverse().join("/")}` : ""}</div>
+    </div>
     <div class="assin"><div>Responsável MIRIAD<br>${usuarioNome || rdo.responsavel_nome || ""}</div><div>Responsável CONTRATANTE<br>&nbsp;</div></div>
     <script>window.onload=()=>{setTimeout(()=>window.print(),350)}</script>
   </body></html>`;

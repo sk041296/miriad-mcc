@@ -307,6 +307,10 @@ function Permissoes({ acessoMap, onSaved }) {
   const [mapa, setMapa] = useState(() => JSON.parse(JSON.stringify(acessoMap || mapaAcessoPadrao())));
   const [papel, setPapel] = useState("coord_planejamento");
   const [busy, setBusy] = useState(false); const [msg, setMsg] = useState(null);
+  const [travados, setTravados] = useState([]);
+  const carregarTravados = () => listar("usuarios").then((us) => setTravados(us.filter((u) => u.travado))).catch(() => {});
+  useEffect(() => { carregarTravados(); }, []);
+  const destravar = async (u) => { try { await editar("usuarios", u.id, { travado: false, travado_em: null }); carregarTravados(); } catch (e) { alert(e.message); } };
   const a = mapa[papel] || mapaAcessoPadrao()[papel];
 
   const setTop = (k, v) => setMapa((m) => ({ ...m, [papel]: { ...m[papel], [k]: v } }));
@@ -323,6 +327,7 @@ function Permissoes({ acessoMap, onSaved }) {
   const grade = { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 8, marginBottom: 6 };
 
   return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
     <Card title="Permissões por cargo" right={<span style={{ fontSize: 12, color: msg ? C.verde : C.dim, fontWeight: 700 }}>{msg}</span>}>
       <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 12 }}>Defina o que cada cargo enxerga e pode fazer. Itens sensíveis (dados financeiros, gestão de usuários) continuam protegidos no servidor independentemente desta tela.</div>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 16 }}>
@@ -348,6 +353,17 @@ function Permissoes({ acessoMap, onSaved }) {
       <div style={{ fontSize: 11, fontWeight: 800, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", margin: "14px 0 6px" }}>Capacidades dos entregáveis</div>
       <div style={grade}>{CAP_LABELS.map(([k, label]) => <Check key={k} on={!!a.cap[k]} onClick={() => setGrupo("cap", k, !a.cap[k])} label={label} />)}</div>
     </Card>
+
+    <Card title="Usuários bloqueados por perda de prazo">
+      <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 10 }}>Usuários travados por não enviar RDO/SM-i/POS/PMM no prazo. Como CEO/Diretor, você pode destravar diretamente aqui (além dos coordenadores nas telas de cada documento).</div>
+      {travados.length === 0 ? <div style={{ fontSize: 13, color: C.verde, fontWeight: 600 }}>✓ Nenhum usuário bloqueado no momento.</div> : travados.map((u) => (
+        <div key={u.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", border: `1px solid ${C.vermelho}44`, borderRadius: 8, marginBottom: 6 }}>
+          <div style={{ fontSize: 13 }}><b>{u.nome}</b> <span style={{ color: C.dim }}>· {PAPEIS[u.papel] || u.papel}{u.travado_em ? ` · bloqueado em ${new Date(u.travado_em).toLocaleDateString("pt-BR")}` : ""}</span></div>
+          <Btn small onClick={() => destravar(u)}>Destravar</Btn>
+        </div>
+      ))}
+    </Card>
+    </div>
   );
 }
 

@@ -400,24 +400,105 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
         <div style={{ fontSize: 11, color: C.dim, marginTop: 10 }}>Rascunho salvo automaticamente neste aparelho; ao registrar, o snapshot completo vai ao banco para recuperação.</div>
       </Card>
 
-      <Card title="RDOs registrados">
-        <table style={{ width: "100%", borderCollapse: "collapse" }}>
-          <thead><tr><Th>Nº</Th><Th>Obra</Th><Th>Data</Th><Th>Clima</Th><Th right>Efetivo</Th><Th right>Atividades</Th><Th right>Medição</Th><Th>Ações</Th><Th /></tr></thead>
-          <tbody>{rdos.slice().sort((a, b) => (a.data < b.data ? 1 : -1)).map((r) => { const o = obras.find((x) => x.id === r.obra_id); return (
-            <tr key={r.id} style={editandoId === r.id ? { background: C.laranjaClaro } : {}}><Td>{r.numero || "—"}</Td><Td>{o?.codigo}</Td><Td>{dataBR(r.data)}</Td><Td>{r.clima}</Td><Td right>{r.efetivo || 0}</Td><Td right>{(r.atividades || []).length}</Td>
-              <Td right color={C.verde} style={{ fontWeight: 700 }}>{fmtR(sum((r.atividades || []).map((a) => a.medicao)))}</Td>
-              <Td><div style={{ display: "flex", gap: 6 }}>
-                <button onClick={() => editarRdo(r)} style={{ background: "none", border: `1px solid ${C.preto}`, color: C.preto, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Editar</button>
-                <button onClick={() => gerarPdfRdo(r, o || {}, r.responsavel_nome)} style={{ background: "none", border: `1px solid ${C.laranja}`, color: C.laranja, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>PDF</button>
-              </div></Td>
-              <Td><button onClick={async () => { if (confirm("Excluir RDO?")) { await remover("rdos", r.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>
-          ); })}
-          {rdos.length === 0 && <tr><Td colSpan={9} color={C.dim} style={{ padding: 14 }}>Nenhum RDO registrado.</Td></tr>}</tbody>
-        </table>
-      </Card>
+      <RdosKanban rdos={rdos} obras={obras} eapPorObra={eapPorObra} editandoId={editandoId}
+        onEditar={editarRdo} onPdf={(r, o) => gerarPdfRdo(r, o, r.responsavel_nome)}
+        onExcluir={async (r) => { if (confirm("Excluir RDO?")) { await remover("rdos", r.id); onMudou(); } }} />
 
       <MedicaoGerador obras={obras} eapPorObra={eapPorObra} rdos={rdos} usuarioNome={usuario.nome} />
     </div>
+  );
+}
+
+/* ============================ Navegador de RDOs (kanban por obra + busca) ============================ */
+function RdosKanban({ rdos, obras, eapPorObra, editandoId, onEditar, onPdf, onExcluir }) {
+  const [obraSel, setObraSel] = useState(null);
+  const [limite, setLimite] = useState(10);
+  const [busca, setBusca] = useState("");
+  const nrm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const eapDesc = (oid, codigo) => { const e = (eapPorObra[oid] || []).find((x) => x.codigo === codigo); return e ? e.descricao : ""; };
+  const medRdo = (r) => sum((r.atividades || []).map((a) => Number(a.medicao) || 0));
+  const obraDe = (id) => obras.find((o) => o.id === id);
+
+  const atvMatch = (r, a, nq) => nq && (nrm(a.eap).includes(nq) || nrm(eapDesc(r.obra_id, a.eap)).includes(nq) || nrm(a.descricao).includes(nq));
+  const equipeMatch = (r, nq) => nq && nrm(JSON.stringify(r.equipe || [])).includes(nq);
+  const matchRdo = (r, nq) => {
+    if (!nq) return true;
+    return nrm(dataBR(r.data)).includes(nq) || nrm(r.data).includes(nq) || nrm(r.numero).includes(nq)
+      || (r.atividades || []).some((a) => atvMatch(r, a, nq)) || equipeMatch(r, nq) || nrm(r.responsavel_nome).includes(nq);
+  };
+
+  const card = (r) => {
+    const o = obraDe(r.obra_id); const nq = nrm(busca);
+    return (
+      <div key={r.id} style={{ border: `1px solid ${editandoId === r.id ? C.laranja : C.linha}`, background: editandoId === r.id ? C.laranjaClaro : "#fff", borderRadius: 10, padding: 12, marginBottom: 10 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+          <div><b style={{ fontSize: 13 }}>RDO nº {r.numero || "—"}</b> <span style={{ color: C.dim, fontSize: 12 }}>· {o?.codigo} · {dataBR(r.data)} · {r.clima}</span>
+            {equipeMatch(r, nq) ? <span style={{ marginLeft: 6, background: C.azul, color: "#fff", fontSize: 9.5, fontWeight: 800, borderRadius: 4, padding: "1px 6px" }}>PRESTADOR</span> : null}</div>
+          <span style={{ fontSize: 12, color: C.verde, fontWeight: 800 }}>{fmtR(medRdo(r))}</span>
+        </div>
+        <div style={{ fontSize: 11.5, color: C.dim, margin: "4px 0 6px" }}>Efetivo {r.efetivo || 0} · {(r.atividades || []).length} atividade(s)</div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 2, marginBottom: 8 }}>
+          {(r.atividades || []).slice(0, 6).map((a, i) => { const hit = atvMatch(r, a, nq); return (
+            <div key={i} style={{ fontSize: 11.5, padding: "2px 6px", borderRadius: 5, background: hit ? C.laranja : "transparent", color: hit ? "#fff" : C.texto, fontWeight: hit ? 700 : 400 }}>
+              <b>{a.eap}</b> {String(eapDesc(r.obra_id, a.eap) || a.descricao || "").slice(0, 40)} <span style={{ opacity: .7 }}>· {fmt(Number(a.qtde_dia ?? a.avanco) || 0)}</span>
+            </div>
+          ); })}
+          {(r.atividades || []).length > 6 && <div style={{ fontSize: 11, color: C.dim }}>+{r.atividades.length - 6} atividade(s)…</div>}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => onEditar(r)} style={{ background: "none", border: `1px solid ${C.preto}`, color: C.preto, borderRadius: 6, padding: "3px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>Editar</button>
+          <button onClick={() => onPdf(r, o || {})} style={{ background: "none", border: `1px solid ${C.laranja}`, color: C.laranja, borderRadius: 6, padding: "3px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>PDF</button>
+          <button onClick={() => onExcluir(r)} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer", marginLeft: "auto" }}>✕</button>
+        </div>
+      </div>
+    );
+  };
+
+  const nq = nrm(busca);
+  const buscando = nq.length > 0;
+  const resultados = buscando ? rdos.filter((r) => matchRdo(r, nq)).sort((a, b) => (a.data < b.data ? 1 : -1)) : [];
+  const daObra = obraSel ? rdos.filter((r) => r.obra_id === obraSel).sort((a, b) => (a.data < b.data ? 1 : -1)) : [];
+
+  return (
+    <Card title="RDOs registrados">
+      <div style={{ marginBottom: 12 }}>
+        <Lbl>Buscar por data, atividade da EAP ou prestador</Lbl>
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="ex.: 20/06/2026 · concretagem · 03.01.02 · nome do prestador" style={inp({ width: "100%", boxSizing: "border-box" })} />
+      </div>
+
+      {buscando ? (
+        <>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>{resultados.length} RDO(s) encontrado(s) — atividade/prestador correspondente em destaque.</div>
+          {resultados.map(card)}
+          {resultados.length === 0 && <div style={{ fontSize: 13, color: C.dim }}>Nenhum RDO corresponde à busca.</div>}
+        </>
+      ) : !obraSel ? (
+        <>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>Selecione uma obra para ver seus RDOs.</div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 10 }}>
+            {obras.map((o) => { const n = rdos.filter((r) => r.obra_id === o.id).length; return (
+              <button key={o.id} onClick={() => { setObraSel(o.id); setLimite(10); }} style={{ textAlign: "left", border: `1px solid ${C.linha}`, borderRadius: 10, padding: 12, background: "#fff", cursor: "pointer" }}>
+                <div style={{ fontWeight: 800, fontSize: 13 }}>{o.codigo}</div>
+                <div style={{ fontSize: 11.5, color: C.dim }}>{String(o.nome || "").slice(0, 30)}</div>
+                <div style={{ fontSize: 12, color: C.laranja, fontWeight: 700, marginTop: 4 }}>{n} RDO(s)</div>
+              </button>
+            ); })}
+            {obras.length === 0 && <div style={{ fontSize: 13, color: C.dim }}>Nenhuma obra.</div>}
+          </div>
+        </>
+      ) : (
+        <>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+            <Btn small kind="ghost" onClick={() => setObraSel(null)}>← Obras</Btn>
+            <b style={{ fontSize: 14 }}>{obraDe(obraSel)?.codigo}</b>
+            <span style={{ fontSize: 12, color: C.dim }}>{daObra.length} RDO(s)</span>
+          </div>
+          {daObra.slice(0, limite).map(card)}
+          {daObra.length === 0 && <div style={{ fontSize: 13, color: C.dim }}>Esta obra ainda não tem RDOs.</div>}
+          {daObra.length > limite && <div style={{ textAlign: "center", marginTop: 6 }}><Btn small kind="ghost" onClick={() => setLimite((l) => l + 10)}>Mostrar mais 10</Btn></div>}
+        </>
+      )}
+    </Card>
   );
 }
 
@@ -514,7 +595,8 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
     setEditId(x.id);
     if (typeof window !== "undefined") window.scrollTo({ top: 0, behavior: "smooth" });
   };
-  const addParcela = () => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: [...(c.cond?.parcelas || []), { descricao: `Parcela ${(c.cond?.parcelas?.length || 0) + 1}`, valor: 0, pct: 0 }] } }));
+  const addEntrada = () => setCt((c) => { const ps = c.cond?.parcelas || []; if (ps.some((p) => /entrada/i.test(p.descricao || ""))) return c; return { ...c, cond: { ...c.cond, parcelas: [{ descricao: "Entrada", valor: 0, pct: 0 }, ...ps] } }; });
+  const addMedicao = () => setCt((c) => { const ps = c.cond?.parcelas || []; const n = ps.filter((p) => /medi[çc][aã]o/i.test(p.descricao || "")).length + 1; return { ...c, cond: { ...c.cond, parcelas: [...ps, { descricao: `${n}ª medição`, valor: 0, pct: 0 }] } }; });
   const upParcela = (i, patch) => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: c.cond.parcelas.map((p, j) => j === i ? { ...p, ...patch } : p) } }));
   const delParcela = (i) => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: c.cond.parcelas.filter((_, j) => j !== i) } }));
   const condModo = ct.cond?.modo || "valor";
@@ -548,7 +630,8 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
               <option value="valor">Por valor (R$)</option>
               <option value="pct">Por % de avanço</option>
             </select>
-            <Btn small kind="ghost" onClick={addParcela}>+ Adicionar parcela</Btn>
+            <Btn small kind="ghost" onClick={addEntrada}>+ Entrada</Btn>
+            <Btn small kind="ghost" onClick={addMedicao}>+ Adicionar medição</Btn>
           </div>
           {(ct.cond?.parcelas || []).length > 0 && (
             <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 6 }}>
