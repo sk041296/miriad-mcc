@@ -6,7 +6,11 @@ export default async function handler(req, res) {
   const { acao, email, senha, nome, token } = req.body || {};
 
   if (acao === "login") {
-    const { data: u } = await supabase.from("usuarios").select("*").eq("email", String(email || "").toLowerCase()).eq("ativo", true).maybeSingle();
+    const emailNorm = String(email || "").trim().toLowerCase();
+    const { data: rows } = await supabase.from("usuarios").select("*").ilike("email", emailNorm).eq("ativo", true);
+    // tolera espaço/maiúscula e múltiplos registros: prioriza o que já tem senha definida
+    const lista = (rows || []).filter((r) => String(r.email || "").trim().toLowerCase() === emailNorm);
+    const u = lista.find((r) => r.senha_definida && r.senha_hash) || lista[0];
     if (!u) return res.status(401).json({ error: "E-mail ou senha inválidos" });
     if (!u.senha_definida || !u.senha_hash) return res.status(403).json({ error: "Acesso ainda não ativado. Use o link de convite para criar sua senha." });
     if (u.travado) return res.status(423).json({ error: "Seu acesso está temporariamente bloqueado. Fale com seu coordenador." });

@@ -1,5 +1,20 @@
 # Miriad Construction Control (MCC)
 
+## v10.5 — Import de planilha na SS-i, dia sem atividades no RDO e blindagem de login
+1. **SS-i — importar planilha modelo (.xlsx):** no formulário da SS-i, botão "Importar planilha modelo"
+   lê uma planilha (ex.: a PLANILHA_SINTÉTICA do escopo) e preenche os itens automaticamente —
+   identifica as colunas ITEM, CÓDIGO, DESCRIÇÃO DO SERVIÇO, UNIDADE e QUANTIDADE e ignora linhas de
+   seção/observação. Ideal para contratos com muitos itens de EAP.
+2. **RDO-i — "Dia sem atividades":** checkbox para registrar dias sem produção (chuva, feriado, sem
+   frente). Exige informar o motivo em Ocorrências; o RDO é salvo sem atividades e aparece com o selo
+   "SEM ATIVIDADES" no kanban.
+3. **Blindagem de login:** o login passou a comparar e-mail com trim + sem diferenciar maiúsculas e a
+   tolerar registros duplicados (escolhe o que tem senha definida). Cadastro/edição salvam o e-mail já
+   normalizado. Corrige de vez o problema que impediu acessos (e-mail com espaço).
+
+> **Migração:** rode `supabase/migration_v10_5.sql` (adiciona `rdos.sem_atividades` e normaliza e-mails
+> existentes).
+
 ## v10.4 — Escala: recarga granular, agregado de RDO e índices
 Preparação para ~25 obras e ~30 usuários simultâneos.
 - **Recarga granular:** salvar SM-i/SS-i/POS/PMM não recarrega mais EAP/RDOs de todas as obras

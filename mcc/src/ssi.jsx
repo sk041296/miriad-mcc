@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from "react";
+import * as XLSX from "xlsx";
 import { C, fmt, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar } from "./core.jsx";
 import { prazoSm, ehEmergencial, ModalGerar } from "./smi.jsx";
 
@@ -17,6 +18,47 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
   const upItem = (i, patch) => setSs((s) => ({ ...s, itens: s.itens.map((x, j) => j === i ? { ...x, ...patch } : x) }));
   const delItem = (i) => setSs((s) => ({ ...s, itens: s.itens.filter((_, j) => j !== i) }));
   const escolherEap = (i, codigo) => { const it = eapItens.find((e) => e.codigo === codigo); upItem(i, { eap_codigo: codigo, descricao: it?.descricao || "" }); };
+  const [importando, setImportando] = useState(false);
+  const importarPlanilha = async (file) => {
+    if (!file) return;
+    setImportando(true);
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      let melhores = [];
+      wb.SheetNames.forEach((sn) => {
+        const grade = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
+        let hdr = -1, cols = null;
+        for (let r = 0; r < Math.min(grade.length, 40); r++) {
+          const linha = (grade[r] || []).map((c) => String(c == null ? "" : c).toUpperCase());
+          const desc = linha.findIndex((c) => c.includes("DESCRI") && (c.includes("SERVI") || c.includes("ITEM") || c.includes("INSUMO")));
+          const qtd = linha.findIndex((c) => c.includes("QUANTI"));
+          const uni = linha.findIndex((c) => c.includes("UNIDADE") || c === "UN" || c === "UN ");
+          if (desc >= 0 && qtd >= 0 && uni >= 0) {
+            hdr = r;
+            cols = { item: linha.findIndex((c) => c === "ITEM"), cod: linha.findIndex((c) => c.includes("CÓDIGO") || c.includes("CODIGO")), desc, uni, qtd };
+            break;
+          }
+        }
+        if (hdr < 0) return;
+        const itens = [];
+        for (let r = hdr + 1; r < grade.length; r++) {
+          const row = grade[r] || [];
+          const descricao = String(row[cols.desc] == null ? "" : row[cols.desc]).trim();
+          const unidade = String(row[cols.uni] == null ? "" : row[cols.uni]).trim();
+          const qtde = parseFloat(String(row[cols.qtd] == null ? "" : row[cols.qtd]).replace(",", "."));
+          if (!descricao || !unidade || isNaN(qtde) || qtde <= 0) continue; // ignora seções/observações
+          const item = cols.item >= 0 ? String(row[cols.item] == null ? "" : row[cols.item]).trim() : "";
+          const cod = cols.cod >= 0 ? String(row[cols.cod] == null ? "" : row[cols.cod]).trim() : "";
+          itens.push({ eap_codigo: item || cod || `IMP-${itens.length + 1}`, descricao, servico: descricao, quantidade: qtde, unidade });
+        }
+        if (itens.length > melhores.length) melhores = itens;
+      });
+      if (melhores.length === 0) { alert("Não encontrei itens na planilha. Verifique se há colunas DESCRIÇÃO DO SERVIÇO, UNIDADE DE MEDIDA e QUANTIDADE."); return; }
+      setSs((s) => ({ ...s, itens: [...s.itens, ...melhores] }));
+      alert(`${melhores.length} item(ns) importado(s) para a SS-i.`);
+    } catch (e) { alert("Falha ao ler a planilha: " + e.message); }
+    finally { setImportando(false); }
+  };
   const salvar = async () => {
     setBusy(true); setErro(null);
     try {
@@ -53,7 +95,13 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
               </div>
             </div>
           ))}
-          <Btn small kind="ghost" onClick={addItem}>+ Adicionar serviço/locação</Btn>
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <Btn small kind="ghost" onClick={addItem}>+ Adicionar serviço/locação</Btn>
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: C.laranja, cursor: "pointer", border: `1px solid ${C.laranja}`, borderRadius: 8, padding: "6px 12px" }}>
+              {importando ? "Importando…" : "📄 Importar planilha modelo (.xlsx)"}
+              <input type="file" accept=".xlsx,.xls" disabled={importando} onChange={(e) => { importarPlanilha(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
+            </label>
+          </div>
         </>}
       </div>
 

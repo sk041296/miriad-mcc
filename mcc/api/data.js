@@ -307,7 +307,7 @@ export default async function handler(req, res) {
       if (!podeCriarPapel(s.papel, row.papel)) return res.status(403).json({ error: "Você não tem permissão para criar este papel de usuário." });
       const { hashSenha } = await import("./_lib.js");
       const temSenha = !!row.senha;
-      const payload = { nome: row.nome, email: String(row.email).toLowerCase(), papel: row.papel,
+      const payload = { nome: row.nome, email: String(row.email).trim().toLowerCase(), papel: row.papel,
         senha_hash: temSenha ? hashSenha(row.senha) : null, senha_definida: temSenha };
       const { data, error } = await supabase.from("usuarios").insert(payload).select("id,nome,email,papel,ativo,senha_definida").single();
       if (error) return res.status(500).json({ error: error.message.includes("duplicate") ? "E-mail já cadastrado" : error.message });
@@ -348,7 +348,7 @@ export default async function handler(req, res) {
       }
       const { data: alvo } = await supabase.from("usuarios").select("papel").eq("id", id).maybeSingle();
       if (alvo && alvo.papel === "ceo" && s.papel !== "ceo") return res.status(403).json({ error: "Apenas o CEO pode alterar um CEO." });
-      if (patch && patch.email) patch.email = String(patch.email).toLowerCase();
+      if (patch && patch.email) patch.email = String(patch.email).trim().toLowerCase();
     }
     if (t === "financeiro_estado" && !VE_FINANCEIRO.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     if (t === "designacoes" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });

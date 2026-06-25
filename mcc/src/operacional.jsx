@@ -171,7 +171,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
   const novaAtv = () => ({ k: uid(), eapId: "", qtde: 0, comentarios: "", funcionarioIds: [] });
   const [resumoObra, setResumoObra] = useState({ acum: {}, maxNumero: 0 });
   const novaRestr = () => ({ k: uid(), eapId: "", material: "", dataSolicitacao: hojeISO() });
-  const vazio = (obraId) => ({ obraId: obraId || obras[0]?.id || "", numero: "", data: hojeISO(), clima: CLIMAS[0], efetivo: 0, ocorrencias: "", comentarios: "", atividades: [novaAtv()], equipe: [], restricoes: [], fotos: [] });
+  const vazio = (obraId) => ({ obraId: obraId || obras[0]?.id || "", numero: "", data: hojeISO(), clima: CLIMAS[0], efetivo: 0, ocorrencias: "", comentarios: "", atividades: [novaAtv()], equipe: [], restricoes: [], fotos: [], semAtividades: false });
   const [form, setForm] = useState(() => { try { const d = JSON.parse(localStorage.getItem(DRAFT)); if (d?.atividades) return { fotos: [], ...d }; } catch {} return vazio(); });
   const [salvando, setSalvando] = useState(false); const [msg, setMsg] = useState(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
@@ -242,7 +242,10 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
   const salvar = async () => {
     if (semEap) return;
     const atvs = form.atividades.filter((a) => a.eapId && Number(a.qtde) > 0);
-    if (!form.obraId || atvs.length === 0) { setMsg({ tipo: "erro", txt: "Selecione a obra e informe ao menos uma atividade com avanço." }); return; }
+    if (!form.obraId) { setMsg({ tipo: "erro", txt: "Selecione a obra." }); return; }
+    if (form.semAtividades) {
+      if (!String(form.ocorrencias || "").trim()) { setMsg({ tipo: "erro", txt: "Informe o motivo do dia sem atividades em “Ocorrências” (ex.: chuva, feriado)." }); return; }
+    } else if (atvs.length === 0) { setMsg({ tipo: "erro", txt: "Informe ao menos uma atividade com avanço — ou marque “Dia sem atividades”." }); return; }
     setSalvando(true); setMsg(null);
     try {
       const atividades = atvs.map((a) => {
@@ -255,7 +258,8 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
       });
       const equipe = [...new Set(form.atividades.flatMap((a) => a.funcionarioIds))].map((id) => { const f = funcionarios.find((x) => x.id === id); return f ? { ocupacao: f.atribuicao, nome: f.nome } : null; }).filter(Boolean);
       const rdo = { obra_id: form.obraId, numero: form.numero || null, data: form.data, usuario_id: usuario.id, responsavel_nome: usuario.nome,
-        clima: form.clima, efetivo: efetivoCalc, ocorrencias: form.ocorrencias, comentarios: form.comentarios, atividades, equipe,
+        clima: form.clima, efetivo: form.semAtividades ? 0 : efetivoCalc, ocorrencias: form.ocorrencias, comentarios: form.comentarios,
+        atividades: form.semAtividades ? [] : atividades, equipe: form.semAtividades ? [] : equipe, sem_atividades: !!form.semAtividades,
         fotos: (form.fotos || []).map((f) => ({ url: f.url, path: f.path, eap_codigo: f.eap_codigo, legenda: f.legenda })),
         payload: { ...form, salvoEm: new Date().toISOString() } };
       const restricoes = form.restricoes.filter((x) => x.eapId && x.material).map((x) => { const it = eapItens.find((i) => i.id === x.eapId); return { eap_codigo: it?.codigo || "", material: x.material, data_solicitacao: x.dataSolicitacao || null }; });
@@ -293,6 +297,12 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
           <div><Lbl>Clima predominante</Lbl><select value={form.clima} onChange={(e) => setForm({ ...form, clima: e.target.value })} style={inp({ width: "100%" })}>{CLIMAS.map((c) => <option key={c}>{c}</option>)}</select></div>
           <div><Lbl>Responsável</Lbl><input value={usuario.nome} disabled style={inp({ width: "100%", boxSizing: "border-box", background: C.cinza })} /></div>
         </div>
+
+        <label style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "pointer", marginBottom: 12, padding: "8px 12px", borderRadius: 8, border: `1px solid ${form.semAtividades ? C.amareloAlerta : C.linha}`, background: form.semAtividades ? "#fff8e6" : "#fafafa" }}>
+          <input type="checkbox" checked={!!form.semAtividades} onChange={(e) => setForm({ ...form, semAtividades: e.target.checked })} />
+          <span style={{ fontSize: 13, fontWeight: 700, color: form.semAtividades ? "#8a6d00" : C.texto }}>Dia sem atividades</span>
+          <span style={{ fontSize: 11.5, color: C.dim }}>(chuva, feriado, sem frente de trabalho — informe o motivo em Ocorrências)</span>
+        </label>
 
         {semEap && <div style={{ background: `${C.vermelho}12`, border: `1.5px solid ${C.vermelho}`, borderRadius: 8, padding: "14px 16px", color: C.vermelho, fontWeight: 700, fontSize: 14 }}>
           ⚠ Faça o upload da EAP para responder a este RDO. Vá em <b>EAP & Custos</b> ou <b>Obras</b> e carregue a planilha analítica desta obra antes de preencher.
@@ -440,6 +450,7 @@ function RdosKanban({ rdos, obras, eapPorObra, editandoId, onEditar, onPdf, onEx
       <div key={r.id} style={{ border: `1px solid ${editandoId === r.id ? C.laranja : C.linha}`, background: editandoId === r.id ? C.laranjaClaro : "#fff", borderRadius: 10, padding: 12, marginBottom: 10 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
           <div><b style={{ fontSize: 13 }}>RDO nº {r.numero || "—"}</b> <span style={{ color: C.dim, fontSize: 12 }}>· {o?.codigo} · {dataBR(r.data)} · {r.clima}</span>
+            {r.sem_atividades ? <span style={{ marginLeft: 6, background: C.amareloAlerta, color: "#fff", fontSize: 9.5, fontWeight: 800, borderRadius: 4, padding: "1px 6px" }}>SEM ATIVIDADES</span> : null}
             {equipeMatch(r, nq) ? <span style={{ marginLeft: 6, background: C.azul, color: "#fff", fontSize: 9.5, fontWeight: 800, borderRadius: 4, padding: "1px 6px" }}>PRESTADOR</span> : null}</div>
           <span style={{ fontSize: 12, color: C.verde, fontWeight: 800 }}>{fmtR(medRdo(r))}</span>
         </div>
