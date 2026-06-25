@@ -5,7 +5,7 @@ import {
   C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, addDiasISO, CLIMAS, ATRIBUICOES, VINCULOS, SETOR_DE_PAPEL,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap, resumoRdo,
-  aplicarDesconto, definirMeta, uploadFoto,
+  aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig,
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
@@ -617,6 +617,49 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
   const addMedicao = () => setCt((c) => { const ps = c.cond?.parcelas || []; const n = ps.filter((p) => /medi[çc][aã]o/i.test(p.descricao || "")).length + 1; return { ...c, cond: { ...c.cond, parcelas: [...ps, { descricao: `${n}ª medição`, valor: 0, pct: 0 }] } }; });
   const upParcela = (i, patch) => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: c.cond.parcelas.map((p, j) => j === i ? { ...p, ...patch } : p) } }));
   const delParcela = (i) => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: c.cond.parcelas.filter((_, j) => j !== i) } }));
+  const [importandoOs, setImportandoOs] = useState(false);
+  const importarPlanilhaOs = async (file) => {
+    if (!file) return;
+    setImportandoOs(true);
+    try {
+      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
+      let melhores = [];
+      wb.SheetNames.forEach((sn) => {
+        const grade = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
+        let hdr = -1, cols = null;
+        for (let r = 0; r < Math.min(grade.length, 40); r++) {
+          const linha = (grade[r] || []).map((c) => String(c == null ? "" : c).toUpperCase());
+          const desc = linha.findIndex((c) => c.includes("DESCRI") && (c.includes("SERVI") || c.includes("ITEM") || c.includes("INSUMO")));
+          const qtd = linha.findIndex((c) => c.includes("QUANTI"));
+          const uni = linha.findIndex((c) => c.includes("UNIDADE") || c === "UN" || c === "UN ");
+          if (desc >= 0 && qtd >= 0 && uni >= 0) {
+            hdr = r;
+            cols = { item: linha.findIndex((c) => c === "ITEM"), cod: linha.findIndex((c) => c.includes("CÓDIGO") || c.includes("CODIGO")),
+              desc, uni, qtd, val: linha.findIndex((c) => c.includes("VALOR") || c.includes("PREÇO") || c.includes("PRECO") || (c.includes("TOTAL") && c.includes("R$"))) };
+            break;
+          }
+        }
+        if (hdr < 0) return;
+        const itens = [];
+        for (let r = hdr + 1; r < grade.length; r++) {
+          const row = grade[r] || [];
+          const descricao = String(row[cols.desc] == null ? "" : row[cols.desc]).trim();
+          const unidade = String(row[cols.uni] == null ? "" : row[cols.uni]).trim();
+          const qtde = parseFloat(String(row[cols.qtd] == null ? "" : row[cols.qtd]).replace(",", "."));
+          if (!descricao || !unidade || isNaN(qtde) || qtde <= 0) continue;
+          const item = cols.item >= 0 ? String(row[cols.item] == null ? "" : row[cols.item]).trim() : "";
+          const cod = cols.cod >= 0 ? String(row[cols.cod] == null ? "" : row[cols.cod]).trim() : "";
+          const valor = cols.val >= 0 ? (parseFloat(String(row[cols.val] == null ? "" : row[cols.val]).replace(/[^\d,.-]/g, "").replace(",", ".")) || 0) : 0;
+          itens.push({ eap_codigo: item || cod || `IMP-${itens.length + 1}`, descricao, valor });
+        }
+        if (itens.length > melhores.length) melhores = itens;
+      });
+      if (melhores.length === 0) { alert("Não encontrei itens na planilha. Verifique as colunas DESCRIÇÃO, UNIDADE e QUANTIDADE (e VALOR, se houver)."); return; }
+      setCt((c) => ({ ...c, itens_eap: [...(c.itens_eap || []), ...melhores.filter((m) => !(c.itens_eap || []).some((x) => x.eap_codigo === m.eap_codigo))] }));
+      alert(`${melhores.length} item(ns) importado(s) para a OS-i.`);
+    } catch (e) { alert("Falha ao ler a planilha: " + e.message); }
+    finally { setImportandoOs(false); }
+  };
   const condModo = ct.cond?.modo || "valor";
   const somaParcelas = condModo === "valor" ? sum((ct.cond?.parcelas || []).map((p) => Number(p.valor) || 0)) : sum((ct.cond?.parcelas || []).map((p) => Number(p.pct) || 0));
   return (
@@ -638,7 +681,13 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
         )}
         <div style={{ marginBottom: 12 }}>
           <Lbl>Itens da EAP cobertos por este contrato (um ou mais)</Lbl>
-          {ct.obra_id ? <MultiEapPicker itens={eapItens} valor={ct.itens_eap} onChange={(v) => setCt({ ...ct, itens_eap: v })} comValor={ct.tipo === "indireto"} labelValor="Valor do item" />
+          {ct.obra_id ? <>
+            <MultiEapPicker itens={eapItens} valor={ct.itens_eap} onChange={(v) => setCt({ ...ct, itens_eap: v })} comValor={ct.tipo === "indireto"} labelValor="Valor do item" />
+            <label style={{ display: "inline-flex", alignItems: "center", gap: 6, fontSize: 12.5, fontWeight: 700, color: C.laranja, cursor: "pointer", border: `1px solid ${C.laranja}`, borderRadius: 8, padding: "6px 12px", marginTop: 8 }}>
+              {importandoOs ? "Importando…" : "📄 Importar planilha modelo (.xlsx)"}
+              <input type="file" accept=".xlsx,.xls" disabled={importandoOs} onChange={(e) => { importarPlanilhaOs(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
+            </label>
+          </>
             : <div style={{ fontSize: 12, color: C.dim }}>Selecione uma obra para listar a EAP.</div>}
         </div>
         <div style={{ marginBottom: 12, borderTop: `1px solid ${C.linha}`, paddingTop: 12 }}>
@@ -933,6 +982,16 @@ function Prestadores({ obras, funcionarios, contratos, onMudou }) {
   const [f, setF] = useState(vazio);
   const [filtro, setFiltro] = useState("todos");
   const [busy, setBusy] = useState(false);
+  const [customAtribs, setCustomAtribs] = useState([]);
+  useEffect(() => { getConfig("atribuicoes").then((v) => setCustomAtribs(Array.isArray(v) ? v : [])).catch(() => {}); }, []);
+  const todasAtribs = [...ATRIBUICOES, ...customAtribs.filter((x) => x && !ATRIBUICOES.includes(x))];
+  const onAtrib = async (val) => {
+    if (val !== "__nova__") { setF((s) => ({ ...s, atribuicao: val })); return; }
+    const nova = (prompt("Nome da nova atribuição:") || "").trim();
+    if (!nova) return;
+    if (!todasAtribs.includes(nova)) { const novas = [...customAtribs, nova]; try { await setConfig("atribuicoes", novas); setCustomAtribs(novas); } catch (e) { alert(e.message); return; } }
+    setF((s) => ({ ...s, atribuicao: nova }));
+  };
   const salvar = async () => { setBusy(true); try { await criar("funcionarios", { ...f, obra_id: f.obra_id || null, contrato_id: f.contrato_id || null, custo_mensal: Number(f.custo_mensal) || null }); setF({ ...vazio, vinculo: f.vinculo, obra_id: f.obra_id }); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
   const lista = funcionarios.filter((x) => filtro === "todos" || (x.vinculo || "direto") === filtro);
   const diretos = funcionarios.filter((x) => (x.vinculo || "direto") === "direto");
@@ -948,7 +1007,7 @@ function Prestadores({ obras, funcionarios, contratos, onMudou }) {
       <Card title="Cadastro de prestadores em obra">
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end" }}>
           <div style={{ flex: 1, minWidth: 170 }}><Lbl>Nome completo</Lbl><input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-          <div><Lbl>Atribuição</Lbl><select value={f.atribuicao} onChange={(e) => setF({ ...f, atribuicao: e.target.value })} style={inp({ maxWidth: 230 })}>{ATRIBUICOES.map((x) => <option key={x}>{x}</option>)}</select></div>
+          <div><Lbl>Atribuição</Lbl><select value={f.atribuicao} onChange={(e) => onAtrib(e.target.value)} style={inp({ maxWidth: 230 })}>{todasAtribs.map((x) => <option key={x} value={x}>{x}</option>)}<option value="__nova__">+ Criar nova atribuição…</option></select></div>
           <div><Lbl>Vínculo</Lbl><select value={f.vinculo} onChange={(e) => setF({ ...f, vinculo: e.target.value })} style={inp()}><option value="direto">Direto</option><option value="indireto">Indireto</option></select></div>
           <div style={{ minWidth: 130 }}><Lbl>Obra</Lbl><select value={f.obra_id} onChange={(e) => setF({ ...f, obra_id: e.target.value })} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
           {f.vinculo === "direto" && <div><Lbl>Custo mensal</Lbl><NumInput value={f.custo_mensal} onChange={(v) => setF({ ...f, custo_mensal: v })} /></div>}

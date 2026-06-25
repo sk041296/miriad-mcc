@@ -118,7 +118,7 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
 }
 
 /* ---- cartão de SS-i ---- */
-function CardSs({ ss, obras, colaboradores, podeAtender, podeBaixar, gestor, onMover, mostrarHistorico, alertaAberta }) {
+function CardSs({ ss, obras, colaboradores, podeAtender, podeBaixar, gestor, onMover, mostrarHistorico, alertaAberta, onGerarOs }) {
   const [aberto, setAberto] = useState(false);
   const obra = obras.find((o) => o.id === ss.obra_id);
   const solicitante = colaboradores.find((c) => c.id === ss.solicitante_id)?.nome || "—";
@@ -151,6 +151,7 @@ function CardSs({ ss, obras, colaboradores, podeAtender, podeBaixar, gestor, onM
         {ss.status === "em_atendimento" && podeAtender && <Btn small kind="ghost" onClick={() => onMover(ss, "ativa")}>Marcar contratado/ativo</Btn>}
         {ss.status === "ativa" && podeBaixar && <Btn small onClick={() => onMover(ss, "baixada")}>Baixar (concluído)</Btn>}
         {ss.status === "ativa" && !podeBaixar && <span style={{ fontSize: 10.5, color: C.dim, alignSelf: "center" }}>Baixa pelo Supervisor ao concluir</span>}
+        {(ss.status === "ativa" || ss.status === "baixada") && onGerarOs && <Btn small kind="ghost" onClick={() => onGerarOs(ss)}>→ Gerar OS-i</Btn>}
         {ss.status !== "baixada" && gestor && <Btn small kind="ghost" onClick={() => onMover(ss, "cancelada")}>Cancelar</Btn>}
       </div>
     </div>
@@ -199,6 +200,7 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], acesso, on
   const gestor = p === "ceo" || p === "diretor";
   const podeCriar = acesso?.ssi_criar ?? ehSup;
   const podeVer = (acesso?.ssi_gestao ?? (ehOperador || ehCoord || ehCoordPlan || gestor)) || podeCriar;
+  const podeKanban = acesso?.ssi_kanban ?? (ehOperador || ehCoord || ehCoordObras || ehCoordPlan || p === "coord_orcamentos" || p === "op_planejamento" || p === "op_orcamento" || gestor);
 
   const carregar = () => listar("ss_itens").then((r) => { setSss(r); setPronto(true); }).catch(() => setPronto(true));
   useEffect(() => { carregar(); }, []);
@@ -216,14 +218,15 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], acesso, on
   if (!pronto) return <div style={{ color: C.dim, padding: 20 }}>Carregando solicitações de serviço…</div>;
 
   const ativasTodas = sss.filter((s) => s.status !== "cancelada");
-  const abertas = ativasTodas.filter((s) => s.status === "aberta");
-  const emAtend = ativasTodas.filter((s) => s.status === "em_atendimento");
-  const ativas = ativasTodas.filter((s) => s.status === "ativa");
-  const baixadas = ativasTodas.filter((s) => s.status === "baixada");
+  const cron = (a, b) => { const da = a.data_necessidade || a.criado_em || "", db = b.data_necessidade || b.criado_em || ""; return da < db ? -1 : da > db ? 1 : 0; };
+  const abertas = ativasTodas.filter((s) => s.status === "aberta").sort(cron);
+  const emAtend = ativasTodas.filter((s) => s.status === "em_atendimento").sort(cron);
+  const ativas = ativasTodas.filter((s) => s.status === "ativa").sort(cron);
+  const baixadas = ativasTodas.filter((s) => s.status === "baixada").sort(cron);
   const abertasAntigas = [...emAtend, ...ativas].filter((s) => diasDesde(s.criado_em) >= 60);
   const minhasAbertas = sss.filter((s) => s.solicitante_id === usuario.id && ["aberta", "em_atendimento", "ativa"].includes(s.status));
 
-  const propsCard = { obras, colaboradores, podeAtender: ehOperador || ehCoord || gestor, podeBaixar: ehSup || ehCoord || gestor, gestor, onMover: mover, mostrarHistorico: ehCoord || gestor };
+  const propsCard = { obras, colaboradores, podeAtender: ehOperador || ehCoord || gestor, podeBaixar: ehSup || ehCoord || gestor, gestor, onMover: mover, mostrarHistorico: ehCoord || gestor, onGerarOs: ((ehOperador || ehCoord || gestor) && onGerarOs) ? onGerarOs : null };
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
@@ -243,8 +246,9 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], acesso, on
         </div>
       )}
 
-      {podeVer && (
-        <Card title={ehSup ? "Minhas solicitações de serviço" : ehCoord ? "Gestão de SS-is (todas as obras)" : ehOperador ? "Atendimento de SS-is (suas obras)" : "SS-is (todas as obras)"}>
+      {(podeVer || podeKanban) && (
+        <Card title={ehSup ? "Minhas solicitações de serviço" : ehCoord ? "Gestão de SS-is (todas as obras)" : ehOperador ? "Atendimento de SS-is (suas obras)" : "Kanban de SS-is (todas as obras)"}>
+          <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 8 }}>Cartões em ordem cronológica pela data necessária; a borda colorida indica o vencimento (verde no prazo, amarelo próximo, vermelho vencido).</div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
             <Coluna titulo="Aberta" cor={C.preto} lista={abertas} {...propsCard} />
             <Coluna titulo="Em atendimento" cor={C.laranja} lista={emAtend} {...propsCard} />

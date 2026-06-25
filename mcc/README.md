@@ -1,5 +1,18 @@
 # Miriad Construction Control (MCC)
 
+## v10.6 — Import na OS-i, SS-i → OS-i, kanban da SS-i e atribuições editáveis
+1. **OS-i — importar planilha modelo (.xlsx):** mesmo recurso da SS-i agora na OS-i. Lê ITEM, CÓDIGO,
+   DESCRIÇÃO, UNIDADE, QUANTIDADE e também VALOR/PREÇO (se houver), e anexa os itens ao contrato.
+2. **SS-i → OS-i:** botão "→ Gerar OS-i" no card da SS-i quando ela está *ativa* ou *baixada* (atendida),
+   pré-preenchendo a OS-i com os itens. Continua valendo o atalho ao marcar como ativa.
+3. **Kanban da SS-i:** visão em colunas (Aberta/Em atendimento/Ativa/Baixada) com cartões em ordem
+   cronológica pela data necessária e borda de vencimento (igual ao painel das SM-is). Visível a todos os
+   coordenadores, CEO, diretores e operadores; liberável na tela **Permissões** (novo "Ver kanban SS-i").
+4. **Prestadores — atribuição editável:** no cadastro, opção "+ Criar nova atribuição…" que salva a nova
+   atribuição no banco (app_config) e passa a aparecer nas próximas seleções.
+
+> Sem migração de banco nesta versão.
+
 ## v10.5 — Import de planilha na SS-i, dia sem atividades no RDO e blindagem de login
 1. **SS-i — importar planilha modelo (.xlsx):** no formulário da SS-i, botão "Importar planilha modelo"
    lê uma planilha (ex.: a PLANILHA_SINTÉTICA do escopo) e preenche os itens automaticamente —

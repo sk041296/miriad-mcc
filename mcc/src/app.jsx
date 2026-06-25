@@ -298,7 +298,7 @@ const finItensDe = (papel) => {
 
 const CAP_LABELS = [
   ["smi_criar", "Criar SM-i"], ["smi_gestao", "Ver / gerir SM-i"],
-  ["ssi_criar", "Criar SS-i"], ["ssi_gestao", "Ver / gerir SS-i"],
+  ["ssi_criar", "Criar SS-i"], ["ssi_gestao", "Ver / gerir SS-i"], ["ssi_kanban", "Ver kanban SS-i"],
   ["pos_criar", "Criar POS"], ["pos_gestao", "Gerir POS"],
   ["pmm_criar", "Criar PMM"], ["pmm_gestao", "Gerir PMM"],
 ];
