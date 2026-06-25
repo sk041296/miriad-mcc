@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { C, fmt, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar } from "./core.jsx";
+import { C, fmt, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar, casarEapImport, verificarImport, VerifBanner } from "./core.jsx";
 import { prazoSm, ehEmergencial, ModalGerar } from "./smi.jsx";
 
 const TIPOS = [["empreitada", "Empreitada"], ["locacao", "Locação de equipamentos"], ["outros", "Outros serviços"]];
@@ -19,9 +19,10 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
   const delItem = (i) => setSs((s) => ({ ...s, itens: s.itens.filter((_, j) => j !== i) }));
   const escolherEap = (i, codigo) => { const it = eapItens.find((e) => e.codigo === codigo); upItem(i, { eap_codigo: codigo, descricao: it?.descricao || "" }); };
   const [importando, setImportando] = useState(false);
+  const [verif, setVerif] = useState(null);
   const importarPlanilha = async (file) => {
     if (!file) return;
-    setImportando(true);
+    setImportando(true); setVerif(null);
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
       let melhores = [];
@@ -41,6 +42,7 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
         }
         if (hdr < 0) return;
         const itens = [];
+        let casados = 0;
         for (let r = hdr + 1; r < grade.length; r++) {
           const row = grade[r] || [];
           const descricao = String(row[cols.desc] == null ? "" : row[cols.desc]).trim();
@@ -49,13 +51,20 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
           if (!descricao || !unidade || isNaN(qtde) || qtde <= 0) continue; // ignora seções/observações
           const item = cols.item >= 0 ? String(row[cols.item] == null ? "" : row[cols.item]).trim() : "";
           const cod = cols.cod >= 0 ? String(row[cols.cod] == null ? "" : row[cols.cod]).trim() : "";
-          itens.push({ eap_codigo: item || cod || `IMP-${itens.length + 1}`, descricao, servico: descricao, quantidade: qtde, unidade });
+          const casado = casarEapImport(eapItens, { item, cod, descricao }); // reconhece a EAP da obra (v10.7)
+          if (casado) casados++;
+          itens.push({ eap_codigo: casado || item || cod || `IMP-${itens.length + 1}`, descricao, servico: descricao, quantidade: qtde, unidade });
         }
+        itens._casados = casados;
         if (itens.length > melhores.length) melhores = itens;
       });
       if (melhores.length === 0) { alert("Não encontrei itens na planilha. Verifique se há colunas DESCRIÇÃO DO SERVIÇO, UNIDADE DE MEDIDA e QUANTIDADE."); return; }
       setSs((s) => ({ ...s, itens: [...s.itens, ...melhores] }));
-      alert(`${melhores.length} item(ns) importado(s) para a SS-i.`);
+      const rec = melhores._casados || 0;
+      alert(`${melhores.length} item(ns) importado(s) para a SS-i.` + (eapItens.length ? `\n${rec} reconhecido(s) automaticamente na EAP da obra` + (rec < melhores.length ? ` — os demais ficaram com o código da planilha; ajuste manualmente se necessário.` : `.`) : ``));
+      // conferência rápida por IA (não bloqueia; máx. 5s no servidor)
+      setVerif({ loading: true });
+      verificarImport("ssi", melhores, eapItens.map((e) => ({ codigo: e.codigo, descricao: e.descricao })), obras.find((o) => o.id === ss.obra_id)?.codigo || "").then(setVerif).catch(() => setVerif(null));
     } catch (e) { alert("Falha ao ler a planilha: " + e.message); }
     finally { setImportando(false); }
   };
@@ -102,6 +111,7 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
               <input type="file" accept=".xlsx,.xls" disabled={importando} onChange={(e) => { importarPlanilha(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
             </label>
           </div>
+          <VerifBanner verif={verif} />
         </>}
       </div>
 

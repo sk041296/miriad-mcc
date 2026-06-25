@@ -1,5 +1,14 @@
 # Miriad Construction Control (MCC)
 
+## v10.7 — Reconhecimento de EAP no import + PMM sobre a EAP inteira
+- **Importação SS-i/OS-i agora reconhece a EAP da obra automaticamente.** Ao importar a planilha modelo, cada item é cruzado com a EAP cadastrada (por código e, como reforço, por descrição) e recebe o código real da EAP. O aviso informa quantos itens foram reconhecidos.
+- **PMM reformulado — obra primeiro.** O supervisor escolhe a obra (entre as que tem acesso) e o mês; só então a EAP daquela obra é carregada (sob demanda, sem puxar a EAP de todas as obras de uma vez).
+- **Preenchimento do PMM sobre a EAP inteira.** A EAP completa aparece em tabela e o avanço previsto pode ser lançado por quantidade (na unidade da EAP) ou por % do contratado — os dois campos se convertem entre si. Filtro de busca, total de itens preenchidos, avanço físico e medição prevista em tempo real.
+- **O que já foi declarado "à medir" vem carregado e é editável** ao reabrir/atualizar o PMM do mês.
+- **Conferência da importação por IA (SS-i/OS-i).** Após o parse, uma verificação rápida (Anthropic, no máx. 5s) confere se a extração está coerente — sinaliza linhas de cabeçalho/total capturadas como item, unidades/quantidades implausíveis e códigos incoerentes. É um apoio: aparece um aviso (✓ conferida / ⚠ pontos a revisar / indisponível) e **nunca bloqueia** o import. Endpoint `api/verificar-import.js`.
+
+> **Migração:** nenhuma. Mudanças client-side + 1 endpoint novo. A `ANTHROPIC_API_KEY` (já usada no parse-eap) atende a conferência; opcionalmente defina `ANTHROPIC_MODEL_VERIFICACAO` na Vercel para fixar o modelo (padrão: Haiku, mais rápido).
+
 ## v10.6 — Import na OS-i, SS-i → OS-i, kanban da SS-i e atribuições editáveis
 1. **OS-i — importar planilha modelo (.xlsx):** mesmo recurso da SS-i agora na OS-i. Lê ITEM, CÓDIGO,
    DESCRIÇÃO, UNIDADE, QUANTIDADE e também VALOR/PREÇO (se houver), e anexa os itens ao contrato.

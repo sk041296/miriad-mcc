@@ -3,6 +3,7 @@
   "outputDirectory": ".",
   "functions": {
     "api/parse-eap.js": { "maxDuration": 60 },
+    "api/verificar-import.js": { "maxDuration": 15 },
     "api/upload.js": { "maxDuration": 30 },
     "api/notificar.js": { "maxDuration": 60 }
   },

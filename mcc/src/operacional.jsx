@@ -5,7 +5,7 @@ import {
   C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, addDiasISO, CLIMAS, ATRIBUICOES, VINCULOS, SETOR_DE_PAPEL,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap, resumoRdo,
-  aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig,
+  aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner,
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
@@ -618,9 +618,10 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
   const upParcela = (i, patch) => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: c.cond.parcelas.map((p, j) => j === i ? { ...p, ...patch } : p) } }));
   const delParcela = (i) => setCt((c) => ({ ...c, cond: { ...c.cond, parcelas: c.cond.parcelas.filter((_, j) => j !== i) } }));
   const [importandoOs, setImportandoOs] = useState(false);
+  const [verifOs, setVerifOs] = useState(null);
   const importarPlanilhaOs = async (file) => {
     if (!file) return;
-    setImportandoOs(true);
+    setImportandoOs(true); setVerifOs(null);
     try {
       const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
       let melhores = [];
@@ -641,6 +642,7 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
         }
         if (hdr < 0) return;
         const itens = [];
+        let casados = 0;
         for (let r = hdr + 1; r < grade.length; r++) {
           const row = grade[r] || [];
           const descricao = String(row[cols.desc] == null ? "" : row[cols.desc]).trim();
@@ -650,13 +652,20 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
           const item = cols.item >= 0 ? String(row[cols.item] == null ? "" : row[cols.item]).trim() : "";
           const cod = cols.cod >= 0 ? String(row[cols.cod] == null ? "" : row[cols.cod]).trim() : "";
           const valor = cols.val >= 0 ? (parseFloat(String(row[cols.val] == null ? "" : row[cols.val]).replace(/[^\d,.-]/g, "").replace(",", ".")) || 0) : 0;
-          itens.push({ eap_codigo: item || cod || `IMP-${itens.length + 1}`, descricao, valor });
+          const casado = casarEapImport(eapItens, { item, cod, descricao }); // reconhece a EAP da obra (v10.7)
+          if (casado) casados++;
+          itens.push({ eap_codigo: casado || item || cod || `IMP-${itens.length + 1}`, descricao, valor });
         }
+        itens._casados = casados;
         if (itens.length > melhores.length) melhores = itens;
       });
       if (melhores.length === 0) { alert("Não encontrei itens na planilha. Verifique as colunas DESCRIÇÃO, UNIDADE e QUANTIDADE (e VALOR, se houver)."); return; }
       setCt((c) => ({ ...c, itens_eap: [...(c.itens_eap || []), ...melhores.filter((m) => !(c.itens_eap || []).some((x) => x.eap_codigo === m.eap_codigo))] }));
-      alert(`${melhores.length} item(ns) importado(s) para a OS-i.`);
+      const rec = melhores._casados || 0;
+      alert(`${melhores.length} item(ns) importado(s) para a OS-i.` + (eapItens.length ? `\n${rec} reconhecido(s) automaticamente na EAP da obra` + (rec < melhores.length ? ` — os demais ficaram com o código da planilha.` : `.`) : ``));
+      // conferência rápida por IA (não bloqueia; máx. 5s no servidor)
+      setVerifOs({ loading: true });
+      verificarImport("osi", melhores, eapItens.map((e) => ({ codigo: e.codigo, descricao: e.descricao })), obras.find((o) => o.id === ct.obra_id)?.codigo || "").then(setVerifOs).catch(() => setVerifOs(null));
     } catch (e) { alert("Falha ao ler a planilha: " + e.message); }
     finally { setImportandoOs(false); }
   };
@@ -687,6 +696,7 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
               {importandoOs ? "Importando…" : "📄 Importar planilha modelo (.xlsx)"}
               <input type="file" accept=".xlsx,.xls" disabled={importandoOs} onChange={(e) => { importarPlanilhaOs(e.target.files?.[0]); e.target.value = ""; }} style={{ display: "none" }} />
             </label>
+            <VerifBanner verif={verifOs} />
           </>
             : <div style={{ fontSize: 12, color: C.dim }}>Selecione uma obra para listar a EAP.</div>}
         </div>

@@ -87,7 +87,55 @@ export const setFin = (chave, valor) => req("/api/data", { method: "POST", body:
 export const aplicarDesconto = (obra_id, desconto) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "eap_aplicar_desconto", obra_id, desconto }) });
 export const definirMeta = (obra_id, meta_pct, ids) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "eap_definir_meta", obra_id, meta_pct, ids }) });
 export const uploadFoto = (dataUrl, nome, obraCodigo) => req("/api/upload", { method: "POST", body: JSON.stringify({ dataUrl, nome, obraCodigo }) });
+
+/* Conferência rápida (IA) do parse de planilha — nunca lança e nunca bloqueia o import (v10.7).
+   Timeout do lado do cliente em 8s (o servidor já corta a IA em 5s). Retorna sempre um objeto:
+   {ok:true|false|null, resumo, alertas:[...], indisponivel?, motivo?}. */
+export const verificarImport = async (tipo, itens, eapResumo, nomeObra) => {
+  const ctrl = new AbortController();
+  const timer = setTimeout(() => ctrl.abort(), 8000);
+  try {
+    const r = await fetch("/api/verificar-import", {
+      method: "POST",
+      headers: { "Content-Type": "application/json", Authorization: `Bearer ${getToken()}` },
+      body: JSON.stringify({ tipo, itens, eapResumo, nomeObra }),
+      signal: ctrl.signal,
+    });
+    const d = await r.json().catch(() => ({}));
+    if (!r.ok) return { ok: null, indisponivel: true, motivo: `http_${r.status}` };
+    return d;
+  } catch (e) {
+    return { ok: null, indisponivel: true, motivo: e?.name === "AbortError" ? "timeout" : "rede" };
+  } finally { clearTimeout(timer); }
+};
 export const VINCULOS = ["direto", "indireto"];
+
+/* ---------- casamento de itens importados de planilha com a EAP da obra (v10.7) ----------
+   Ao importar a planilha modelo na SS-i / OS-i, o código do item nem sempre bate com o
+   `codigo` real da EAP cadastrada. Aqui tentamos reconhecer o item da EAP a partir do
+   ITEM/CÓDIGO da planilha e, como reforço, pela descrição. Retorna o `codigo` real da EAP
+   ou null se não houver casamento confiável. */
+const _normTxt = (s) => String(s == null ? "" : s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+const _normCod = (s) => _normTxt(s).replace(/[^0-9A-Z.]/g, "").replace(/(^|\.)0+(\d)/g, "$1$2"); // tira acentos/espaços e zeros à esquerda de cada nível
+export function casarEapImport(eapItens, { item, cod, descricao }) {
+  if (!Array.isArray(eapItens) || eapItens.length === 0) return null;
+  const codigosImport = [item, cod].map(_normCod).filter(Boolean);
+  // 1) código idêntico (normalizado, ignorando zeros à esquerda)
+  for (const c of codigosImport) {
+    const hit = eapItens.find((e) => _normCod(e.codigo) === c);
+    if (hit) return hit.codigo;
+  }
+  const d = _normTxt(descricao);
+  if (d) {
+    // 2) descrição idêntica
+    const exato = eapItens.find((e) => _normTxt(e.descricao) === d);
+    if (exato) return exato.codigo;
+    // 3) contenção sem ambiguidade (uma única EAP contém/está contida na descrição importada)
+    const contidos = eapItens.filter((e) => { const ed = _normTxt(e.descricao); return ed.length >= 6 && d.length >= 6 && (ed.includes(d) || d.includes(ed)); });
+    if (contidos.length === 1) return contidos[0].codigo;
+  }
+  return null;
+}
 
 /* ---------------- UI primitives ---------------- */
 export const Card = ({ title, right, children, style }) => (
@@ -113,6 +161,24 @@ export const Btn = ({ children, onClick, kind = "primary", small, disabled, type
 };
 export const inp = (extra = {}) => ({ background: C.branco, border: `1.5px solid ${C.linha}`, color: C.texto, borderRadius: 8, padding: "8px 10px", fontSize: 14, outline: "none", ...extra });
 export const Lbl = ({ children }) => <div style={{ fontSize: 11, fontWeight: 700, color: C.dim, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 4 }}>{children}</div>;
+
+/* Banner de conferência por IA do import (v10.7). `verif`: null=oculto; {loading:true};
+   ou o objeto retornado por verificarImport ({ok, resumo, alertas, indisponivel, motivo}). */
+export const VerifBanner = ({ verif }) => {
+  if (!verif) return null;
+  const base = { borderRadius: 8, padding: "8px 12px", fontSize: 12.5, marginTop: 8 };
+  if (verif.loading) return <div style={{ ...base, background: C.cinza, border: `1px solid ${C.linha}`, color: C.dim }}>🔎 Conferindo a importação com IA…</div>;
+  if (verif.indisponivel) return <div style={{ ...base, background: C.cinza, border: `1px solid ${C.linha}`, color: C.dim }}>Conferência por IA indisponível{verif.motivo === "timeout" ? " (excedeu 5s)" : ""} — itens importados normalmente.</div>;
+  if (verif.ok) return <div style={{ ...base, background: `${C.verde}12`, border: `1px solid ${C.verde}55`, color: C.verde, fontWeight: 700 }}>✓ Importação conferida{verif.resumo ? ` — ${verif.resumo}` : "."}</div>;
+  const alertas = verif.alertas || [];
+  return (
+    <div style={{ ...base, background: `${C.amareloAlerta}12`, border: `1px solid ${C.amareloAlerta}66`, color: C.texto }}>
+      <div style={{ fontWeight: 800, color: C.amareloAlerta, marginBottom: 4 }}>⚠ A IA encontrou {alertas.length} ponto(s) a revisar{verif.resumo ? `: ${verif.resumo}` : ""}</div>
+      {alertas.map((a, i) => <div key={i} style={{ fontSize: 12, marginTop: 2 }}>• <b>{a.item || "—"}</b>: {a.problema}</div>)}
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4 }}>Revise os itens marcados antes de salvar. A conferência é um apoio — você decide.</div>
+    </div>
+  );
+};
 export const Th = ({ children, right }) => <th style={{ padding: "8px 10px", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.05em", color: C.branco, background: C.preto, textAlign: right ? "right" : "left", whiteSpace: "nowrap" }}>{children}</th>;
 export const Td = ({ children, right, color, style, colSpan, onClick }) => <td colSpan={colSpan} onClick={onClick} style={{ padding: "7px 10px", fontSize: 13, color: color || C.texto, textAlign: right ? "right" : "left", borderBottom: `1px solid ${C.linha}`, ...(right ? { fontVariantNumeric: "tabular-nums", whiteSpace: "nowrap" } : {}), ...style }}>{children}</td>;
 export const Kpi = ({ label, value, sub, dark, accent }) => (

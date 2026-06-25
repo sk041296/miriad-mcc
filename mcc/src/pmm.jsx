@@ -23,73 +23,130 @@ export function resumoPmm(pm, eapItens) {
   return { it, financeiro, fisico };
 }
 
-/* ============================ Formulário do PMM (Supervisor) ============================ */
+/* ============================ Formulário do PMM (Supervisor) ============================
+   v10.7 — fluxo "obra primeiro": o supervisor escolhe a obra (entre as que tem acesso) e o mês;
+   só então a EAP daquela obra é carregada sob demanda (evita puxar a EAP de todas as obras de
+   uma vez para quem tem várias alocadas). A EAP inteira aparece numa tabela e o avanço previsto
+   pode ser lançado por QUANTIDADE (na unidade da EAP) OU por PORCENTAGEM do contratado — os dois
+   campos se convertem entre si. O que já foi declarado "à medir" vem carregado e é editável. */
 function FormPmm({ obras, eapPorObra, usuario, meusPmm, onSalvou }) {
-  const [obra_id, setObra] = useState(obras[0]?.id || "");
+  const [obra_id, setObra] = useState("");
   const [mes, setMes] = useState(isoDate(primeiroDiaMes(1)));
-  const [itens, setItens] = useState([]);
+  const [med, setMed] = useState({});          // { [eap_codigo]: quantidade prevista a medir }
   const [observacao, setObs] = useState("");
+  const [eapItens, setEapItens] = useState([]);
+  const [carregandoEap, setCarregandoEap] = useState(false);
+  const [busca, setBusca] = useState("");
   const [busy, setBusy] = useState(false); const [erro, setErro] = useState(null); const [msg, setMsg] = useState(null);
-  const eapItens = eapPorObra[obra_id] || [];
   const opcoesMes = [0, 1, 2].map((o) => isoDate(primeiroDiaMes(o)));
   const existente = meusPmm.find((p) => p.obra_id === obra_id && String(p.mes).slice(0, 10) === mes);
 
-  useEffect(() => { if (existente) { setItens(existente.itens || []); setObs(existente.observacao || ""); } else { setItens([]); setObs(""); } }, [obra_id, mes]); // eslint-disable-line
+  // carrega a EAP da obra escolhida sob demanda (usa o cache do módulo se já estiver presente)
+  useEffect(() => {
+    setMsg(null); setErro(null);
+    if (!obra_id) { setEapItens([]); return; }
+    const cache = eapPorObra[obra_id];
+    if (cache && cache.length) { setEapItens(cache); return; }
+    let vivo = true; setCarregandoEap(true);
+    listar("eap_itens", { obra_id }).then((r) => { if (vivo) setEapItens(r); }).catch(() => { if (vivo) setEapItens([]); }).finally(() => { if (vivo) setCarregandoEap(false); });
+    return () => { vivo = false; };
+  }, [obra_id]); // eslint-disable-line
 
-  const add = () => setItens((f) => [...f, { eap_codigo: "", descricao: "", producao_prevista: 0, unidade: "" }]);
-  const up = (i, patch) => setItens((f) => f.map((x, j) => j === i ? { ...x, ...patch } : x));
-  const del = (i) => setItens((f) => f.filter((_, j) => j !== i));
-  const escolherEap = (i, codigo) => { const it = eapItens.find((e) => e.codigo === codigo); up(i, { eap_codigo: codigo, descricao: it?.descricao || "", unidade: it?.unidade || "" }); };
+  // pré-carrega o que já foi declarado para a obra+mês (editável)
+  useEffect(() => {
+    if (existente) { const m = {}; (existente.itens || []).forEach((x) => { if (x.eap_codigo) m[x.eap_codigo] = Number(x.producao_prevista) || 0; }); setMed(m); setObs(existente.observacao || ""); }
+    else { setMed({}); setObs(""); }
+  }, [obra_id, mes]); // eslint-disable-line
+
+  const setQtd = (codigo, v) => setMed((m) => { const n = { ...m }; const q = parseFloat(v); if (!q || q <= 0) delete n[codigo]; else n[codigo] = q; return n; });
+  const setPctItem = (codigo, qc, v) => setMed((m) => { const n = { ...m }; const p = parseFloat(v); if (!p || p <= 0 || !(qc > 0)) delete n[codigo]; else n[codigo] = (p / 100) * qc; return n; });
+
+  // itens efetivamente preenchidos, no formato persistido (compatível com resumoPmm/Gestão)
+  const itensPreenchidos = Object.keys(med).map((codigo) => { const e = eapItens.find((x) => x.codigo === codigo); return { eap_codigo: codigo, descricao: e?.descricao || "", unidade: e?.unidade || "", producao_prevista: med[codigo] }; });
+  const res = resumoPmm({ itens: itensPreenchidos }, eapItens);
+  const nPreenchidos = itensPreenchidos.length;
 
   const salvar = async () => {
     setBusy(true); setErro(null); setMsg(null);
     try {
-      if (existente) await editar("pmm", existente.id, { itens, observacao, atualizado_em: new Date().toISOString() });
-      else await criar("pmm", { obra_id, supervisor_id: usuario.id, mes, itens, observacao });
+      if (existente) await editar("pmm", existente.id, { itens: itensPreenchidos, observacao, atualizado_em: new Date().toISOString() });
+      else await criar("pmm", { obra_id, supervisor_id: usuario.id, mes, itens: itensPreenchidos, observacao });
       setMsg("PMM salvo."); onSalvou();
     } catch (e) { setErro(e.message); } finally { setBusy(false); }
   };
-  const podeSalvar = obra_id && mes && itens.length > 0 && itens.every((x) => x.eap_codigo && Number(x.producao_prevista) > 0);
-  const res = resumoPmm({ itens }, eapItens);
+  const podeSalvar = obra_id && mes && nPreenchidos > 0;
+
+  const termo = busca.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+  const eapFiltrada = !termo ? eapItens : eapItens.filter((e) => `${e.codigo} ${e.descricao}`.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().includes(termo));
 
   return (
     <Card title={`PMM · Plano de Medição Mensal${existente ? " (editando)" : ""}`}>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
-        <div style={{ minWidth: 160 }}><Lbl>Obra</Lbl><select value={obra_id} onChange={(e) => setObra(e.target.value)} style={inp({ width: "100%" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
+        <div style={{ minWidth: 200 }}><Lbl>Obra</Lbl>
+          <select value={obra_id} onChange={(e) => { setObra(e.target.value); setBusca(""); }} style={inp({ width: "100%" })}>
+            <option value="">— selecione a obra —</option>
+            {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}{o.nome ? ` — ${o.nome}` : ""}</option>)}
+          </select>
+        </div>
         <div style={{ minWidth: 150 }}><Lbl>Mês de medição</Lbl><select value={mes} onChange={(e) => setMes(e.target.value)} style={inp({ width: "100%" })}>{opcoesMes.map((s) => <option key={s} value={s}>{labelMes(s)}</option>)}</select></div>
       </div>
 
-      <div style={{ marginBottom: 8 }}>
-        <Lbl>Itens da EAP com medição prevista para o mês</Lbl>
-        {!obra_id ? <div style={{ fontSize: 12, color: C.dim }}>Selecione a obra.</div> : <>
-          {itens.map((f, i) => {
-            const av = medItem(f, eapItens);
-            const it = eapItens.find((e) => e.codigo === f.eap_codigo);
-            return (
-              <div key={i} style={{ border: `1px solid ${C.linha}`, borderRadius: 8, padding: 10, marginBottom: 8, background: "#fafafa" }}>
-                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-                  <div style={{ flex: 1, minWidth: 220 }}><Lbl>Item da EAP</Lbl>
-                    <select value={f.eap_codigo} onChange={(e) => escolherEap(i, e.target.value)} style={inp({ width: "100%" })}>
-                      <option value="">— selecione —</option>
-                      {eapItens.map((e) => <option key={e.id} value={e.codigo}>{e.codigo} — {String(e.descricao || "").slice(0, 45)}</option>)}
-                    </select>
-                  </div>
-                  <div style={{ width: 120 }}><Lbl>Medição prevista</Lbl><input type="number" min="0" step="0.01" value={f.producao_prevista} onChange={(e) => up(i, { producao_prevista: parseFloat(e.target.value) || 0 })} style={inp({ width: "100%", textAlign: "right", boxSizing: "border-box" })} /></div>
-                  <div style={{ width: 60 }}><Lbl>Unid.</Lbl><input value={f.unidade} onChange={(e) => up(i, { unidade: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-                  <button onClick={() => del(i)} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer", fontSize: 16, paddingBottom: 6 }}>✕</button>
-                </div>
-                {f.eap_codigo && <div style={{ fontSize: 11, marginTop: 6, color: C.dim }}>Contratado: <b>{fmt(it?.qtde)} {it?.unidade}</b> · avanço do mês: <b style={{ color: C.laranja }}>{pct(av.pct)}</b> · medição c/BDI: <b style={{ color: C.laranja }}>{fmtR(av.financeiro)}</b></div>}
-              </div>
-            );
-          })}
-          <Btn small kind="ghost" onClick={add}>+ Adicionar item</Btn>
-        </>}
-      </div>
+      {!obra_id ? (
+        <div style={{ fontSize: 13, color: C.dim, background: C.cinza, border: `1px solid ${C.linha}`, borderRadius: 8, padding: "12px 14px" }}>
+          Selecione uma das suas obras acima para abrir a EAP e lançar a medição prevista do mês. A EAP é carregada apenas para a obra escolhida.
+          {obras.length > 1 && <div style={{ marginTop: 6, fontSize: 12 }}>Você tem acesso a <b>{obras.length}</b> obras.</div>}
+        </div>
+      ) : carregandoEap ? (
+        <div style={{ fontSize: 13, color: C.dim, padding: 12 }}>Carregando a EAP da obra…</div>
+      ) : eapItens.length === 0 ? (
+        <div style={{ fontSize: 13, color: C.dim, padding: 12 }}>Esta obra não tem itens de EAP cadastrados.</div>
+      ) : (<>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 8 }}>
+          <Lbl>EAP da obra — lance o avanço previsto por quantidade ou por %</Lbl>
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔎 filtrar item da EAP…" style={inp({ width: 240 })} />
+        </div>
+        <div style={{ border: `1px solid ${C.linha}`, borderRadius: 8, overflow: "hidden" }}>
+          <div style={{ maxHeight: 460, overflowY: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr style={{ background: C.preto, position: "sticky", top: 0, zIndex: 1 }}>
+                {["Item da EAP", "Contratado", "À medir (qtde)", "% do contrato", "Medição c/BDI"].map((h, k) => <th key={h} style={{ padding: "7px 9px", fontSize: 10.5, color: "#fff", textAlign: k === 0 ? "left" : "right", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>)}
+              </tr></thead>
+              <tbody>{eapFiltrada.map((e) => {
+                const qc = Number(e.qtde) || 0;
+                const q = med[e.codigo];
+                const temValor = q > 0;
+                const pctItem = temValor && qc > 0 ? (q / qc) * 100 : "";
+                const fin = temValor ? (Number(e.valor_total) || 0) * (qc > 0 ? Math.min(q / qc, 1) : 0) : 0;
+                return (
+                  <tr key={e.id} style={{ background: temValor ? C.laranjaClaro : "#fff" }}>
+                    <td style={{ padding: "5px 9px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>
+                      <b style={{ color: C.preto }}>{e.codigo}</b> <span style={{ color: C.texto }}>{String(e.descricao || "").slice(0, 60)}</span>
+                      {e.nao_descrito ? <span style={{ marginLeft: 5, background: C.amareloAlerta, color: "#fff", fontSize: 8.5, fontWeight: 800, borderRadius: 4, padding: "1px 4px" }}>ND</span> : null}
+                    </td>
+                    <td style={{ padding: "5px 9px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right", whiteSpace: "nowrap", color: C.dim }}>{fmt(qc)} {e.unidade}</td>
+                    <td style={{ padding: "5px 9px", borderBottom: `1px solid ${C.linha}`, textAlign: "right", whiteSpace: "nowrap" }}>
+                      <input type="number" min="0" step="0.01" value={temValor ? q : ""} onChange={(ev) => setQtd(e.codigo, ev.target.value)} placeholder="0" style={inp({ width: 92, textAlign: "right", boxSizing: "border-box", ...(temValor ? { borderColor: C.laranja, background: "#fff" } : {}) })} /> <span style={{ fontSize: 11, color: C.dim }}>{e.unidade}</span>
+                    </td>
+                    <td style={{ padding: "5px 9px", borderBottom: `1px solid ${C.linha}`, textAlign: "right", whiteSpace: "nowrap" }}>
+                      <input type="number" min="0" max="100" step="0.1" value={pctItem === "" ? "" : Math.round(pctItem * 100) / 100} onChange={(ev) => setPctItem(e.codigo, qc, ev.target.value)} disabled={!(qc > 0)} placeholder={qc > 0 ? "0" : "—"} style={inp({ width: 74, textAlign: "right", boxSizing: "border-box", ...(temValor ? { borderColor: C.laranja, background: "#fff" } : {}) })} /> <span style={{ fontSize: 11, color: C.dim }}>%</span>
+                    </td>
+                    <td style={{ padding: "5px 9px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right", whiteSpace: "nowrap", color: temValor ? C.laranja : C.dim, fontWeight: temValor ? 700 : 400 }}>{temValor ? fmtR(fin) : "—"}</td>
+                  </tr>
+                );
+              })}
+              {eapFiltrada.length === 0 && <tr><td colSpan={5} style={{ padding: 12, fontSize: 12, color: C.dim }}>Nenhum item da EAP corresponde ao filtro.</td></tr>}
+              </tbody>
+            </table>
+          </div>
+        </div>
 
-      {itens.length > 0 && <div style={{ display: "flex", gap: 16, margin: "10px 0", fontSize: 13 }}>
-        <div>Avanço físico previsto no mês: <b style={{ color: C.laranja }}>{pct(res.fisico)}</b></div>
-        <div>Medição prevista (c/ BDI): <b style={{ color: C.laranja }}>{fmtR(res.financeiro)}</b></div>
-      </div>}
+        <div style={{ display: "flex", gap: 16, margin: "10px 0", fontSize: 13, flexWrap: "wrap" }}>
+          <div><b>{nPreenchidos}</b> de {eapItens.length} itens com medição prevista</div>
+          <div>Avanço físico previsto no mês: <b style={{ color: C.laranja }}>{pct(res.fisico)}</b></div>
+          <div>Medição prevista (c/ BDI): <b style={{ color: C.laranja }}>{fmtR(res.financeiro)}</b></div>
+        </div>
+      </>)}
+
       <div style={{ marginBottom: 12 }}><Lbl>Observações</Lbl><textarea value={observacao} onChange={(e) => setObs(e.target.value)} rows={2} style={inp({ width: "100%", boxSizing: "border-box", resize: "vertical" })} /></div>
       {erro && <div style={{ color: C.vermelho, fontSize: 12, marginBottom: 8 }}>{erro}</div>}
       {msg && <div style={{ color: C.verde, fontSize: 12, marginBottom: 8, fontWeight: 700 }}>{msg}</div>}
