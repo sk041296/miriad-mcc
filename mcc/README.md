@@ -1,5 +1,21 @@
 # Miriad Construction Control (MCC)
 
+## v10.8 — Login com Google (e-mail da empresa) + login por senha
+- **Entrar com o Google** na tela de login, usando o e-mail corporativo (Workspace). O botão oficial do Google aparece acima do formulário, com divisor "ou com senha".
+- **Login por senha continua igual** — nada muda para quem já usa e-mail + senha.
+- **Como funciona:** o Google devolve um ID token ao navegador; o back-end valida esse token no próprio Google (`tokeninfo`), confere `aud` (Client ID), `email_verified`, emissor e, se configurado, o domínio corporativo. Só então procura o e-mail em `usuarios` (precisa existir e estar ativo) e emite o mesmo token de sessão de 12h. O Google **não cria conta** — apenas autentica quem já está cadastrado.
+- **Ações novas no `api/auth.js`:** `config` (expõe o Client ID público ao front) e `google` (valida o ID token e loga). Sem dependência nova — validação via `fetch` ao Google.
+
+### Configuração necessária (uma vez, no Google Cloud + Vercel)
+1. Google Cloud Console → APIs e Serviços → **Tela de consentimento OAuth** (tipo "Interno" para restringir ao Workspace `miriadsolutions.com`).
+2. **Credenciais → Criar → ID do cliente OAuth → Aplicativo da Web.** Em *Origens JavaScript autorizadas*, adicione a URL do app (ex.: `https://miriadcontrol.com` e o domínio `.vercel.app`). Não precisa de "URI de redirecionamento" (o GIS usa o fluxo de ID token).
+3. Copie o **Client ID** e configure no Vercel:
+   - `GOOGLE_CLIENT_ID` = o Client ID (`...apps.googleusercontent.com`).
+   - `GOOGLE_ALLOWED_DOMAIN` = `miriadsolutions.com` (opcional, mas recomendado — restringe ao domínio).
+4. Redeploy. Sem a variável `GOOGLE_CLIENT_ID`, o botão simplesmente não aparece e o login por senha segue normal.
+
+> **Migração:** nenhuma. Apenas variáveis de ambiente.
+
 ## v10.7 — Reconhecimento de EAP no import + PMM sobre a EAP inteira
 - **Importação SS-i/OS-i agora reconhece a EAP da obra automaticamente.** Ao importar a planilha modelo, cada item é cruzado com a EAP cadastrada (por código e, como reforço, por descrição) e recebe o código real da EAP. O aviso informa quantos itens foram reconhecidos.
 - **PMM reformulado — obra primeiro.** O supervisor escolhe a obra (entre as que tem acesso) e o mês; só então a EAP daquela obra é carregada (sob demanda, sem puxar a EAP de todas as obras de uma vez).

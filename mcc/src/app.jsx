@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   C, Btn, Card, inp, Lbl, listar, criar, criarUsuario, editar, remover, acaoData, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError,
   PAPEIS, PERMS, pode, ehDirecao, papeisQuePodeCriar, PRECISA_DESIGNACAO, SETOR_DE_PAPEL,
@@ -61,11 +61,58 @@ function DefinirSenha({ token, onEntrar }) {
 }
 
 /* ---------------- Login / bootstrap ---------------- */
+// Carrega o script do Google Identity Services uma única vez; resolve quem está pronto p/ usar.
+let _gisPromise = null;
+function carregarGIS() {
+  if (window.google?.accounts?.id) return Promise.resolve(window.google);
+  if (_gisPromise) return _gisPromise;
+  _gisPromise = new Promise((resolve, reject) => {
+    const s = document.createElement("script");
+    s.src = "https://accounts.google.com/gsi/client";
+    s.async = true; s.defer = true;
+    s.onload = () => resolve(window.google);
+    s.onerror = () => { _gisPromise = null; reject(new Error("Falha ao carregar o Google.")); };
+    document.head.appendChild(s);
+  });
+  return _gisPromise;
+}
+
 function Login({ onEntrar }) {
   const [modo, setModo] = useState("login");
   const [email, setEmail] = useState(""); const [senha, setSenha] = useState(""); const [nome, setNome] = useState("");
   const [erro, setErro] = useState(null); const [busy, setBusy] = useState(false);
+  const [googleClientId, setGoogleClientId] = useState(null);
+  const [googleBusy, setGoogleBusy] = useState(false);
+  const gbtnRef = useRef(null);
+
   useEffect(() => { apiAuth({ acao: "precisa_bootstrap" }).then((d) => { if (d.bootstrap) setModo("bootstrap"); }).catch(() => {}); }, []);
+  useEffect(() => { apiAuth({ acao: "config" }).then((d) => { if (d.googleClientId) setGoogleClientId(d.googleClientId); }).catch(() => {}); }, []);
+
+  const entrarGoogle = useCallback(async (resp) => {
+    const credential = resp?.credential;
+    if (!credential) return;
+    setGoogleBusy(true); setErro(null);
+    try {
+      const d = await apiAuth({ acao: "google", credential });
+      if (d.token) { setSessao(d.token, d.usuario); onEntrar(d.usuario); }
+      else setErro(d.error || "Falha no login com Google.");
+    } catch { setErro("Falha no login com Google."); }
+    finally { setGoogleBusy(false); }
+  }, [onEntrar]);
+
+  // inicializa e desenha o botão do Google quando há Client ID e estamos no modo login
+  useEffect(() => {
+    if (!googleClientId || modo !== "login") return;
+    let vivo = true;
+    carregarGIS().then((google) => {
+      if (!vivo || !google?.accounts?.id || !gbtnRef.current) return;
+      google.accounts.id.initialize({ client_id: googleClientId, callback: entrarGoogle, auto_select: false });
+      gbtnRef.current.innerHTML = "";
+      google.accounts.id.renderButton(gbtnRef.current, { theme: "outline", size: "large", width: 328, text: "signin_with", shape: "rectangular", locale: "pt-BR" });
+    }).catch(() => {});
+    return () => { vivo = false; };
+  }, [googleClientId, modo, entrarGoogle]);
+
   const enviar = async () => {
     setBusy(true); setErro(null);
     const d = await apiAuth(modo === "bootstrap" ? { acao: "bootstrap", nome, email, senha } : { acao: "login", email, senha });
@@ -79,7 +126,20 @@ function Login({ onEntrar }) {
           <img src={LOGO_FULL} alt="Miriad Construtora" style={{ width: 230, maxWidth: "100%", display: "block" }} />
           <div style={{ fontSize: 14, fontWeight: 800, color: C.laranja, marginTop: 6, letterSpacing: ".02em" }}>Construction Control</div>
         </div>
-        <div style={{ fontSize: 13, color: C.dim, margin: "8px 0 22px" }}>{modo === "bootstrap" ? "Cadastre o primeiro acesso (CEO)." : "Acesse com seu e-mail e senha."}</div>
+        <div style={{ fontSize: 13, color: C.dim, margin: "8px 0 22px" }}>{modo === "bootstrap" ? "Cadastre o primeiro acesso (CEO)." : "Acesse com o e-mail da empresa ou com sua senha."}</div>
+
+        {googleClientId && modo === "login" && (
+          <div style={{ marginBottom: 18 }}>
+            <div ref={gbtnRef} style={{ display: "flex", justifyContent: "center", minHeight: 40, opacity: googleBusy ? 0.5 : 1, pointerEvents: googleBusy ? "none" : "auto" }} />
+            {googleBusy && <div style={{ fontSize: 12, color: C.dim, textAlign: "center", marginTop: 6 }}>Entrando com o Google…</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: 10, margin: "16px 0 4px" }}>
+              <div style={{ flex: 1, height: 1, background: C.linha }} />
+              <span style={{ fontSize: 11, color: C.dim, textTransform: "uppercase", letterSpacing: ".06em" }}>ou com senha</span>
+              <div style={{ flex: 1, height: 1, background: C.linha }} />
+            </div>
+          </div>
+        )}
+
         {modo === "bootstrap" && <div style={{ marginBottom: 10 }}><Lbl>Nome completo</Lbl><input value={nome} onChange={(e) => setNome(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>}
         <div style={{ marginBottom: 10 }}><Lbl>E-mail</Lbl><input type="email" value={email} onChange={(e) => setEmail(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
         <div style={{ marginBottom: 14 }}><Lbl>Senha</Lbl><input type="password" value={senha} onChange={(e) => setSenha(e.target.value)} onKeyDown={(e) => e.key === "Enter" && enviar()} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
