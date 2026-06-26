@@ -1,5 +1,20 @@
 # Miriad Construction Control (MCC)
 
+## v10.10 — Import de SS-i/OS-i com a lógica validada da EAP
+Reescrevi o reconhecimento de itens no import de planilha (SS-i e OS-i) para usar a MESMA lógica do
+upload de EAP da aba Obras, que já funciona bem:
+- O código do item passa a ser o **ITEM pontilhado** da planilha (ex.: 3.20, 5.2), via a regra `ehCod`.
+  Códigos SINAPI avulsos (88417, 99861…) deixam de ser usados como código — eram a causa dos conflitos
+  e dos "códigos não cadastrados na EAP".
+- Detecção de colunas robusta (ITEM/EAP, DESCRIÇÃO, UNIDADE, QUANTIDADE) e coluna de valor que aceita
+  "MÃO DE OBRA TOTAL"/"VALOR TOTAL"/"CUSTO TOTAL"; parser numérico BR ("1.606,21" → 1606,21).
+- Itens importados carregam descrição, unidade, quantidade e valor; o casamento com a EAP da obra usa o
+  ITEM (que é como a EAP da obra é cadastrada), aumentando muito o reconhecimento automático.
+- Helper único `extrairItensPlanilha` no core, compartilhado por SS-i e OS-i.
+
+> Sem migração de banco. Itens cujo ITEM pontilhado não existir na EAP da obra continuam sinalizados
+> pela conferência (isso é esperado e é apoio à revisão).
+
 ## v10.9 — Correção do import de planilha (SS-i e OS-i)
 Corrige o reconhecimento dos dados ao importar a planilha modelo:
 - **Valor total:** a coluna de valor agora é detectada mesmo quando o cabeçalho é "MÃO DE OBRA TOTAL"

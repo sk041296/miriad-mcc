@@ -120,6 +120,53 @@ const _normCod = (s) => _normTxt(s).replace(/[^0-9A-Z.]/g, "").replace(/(^|\.)0+
 // Converte texto numérico em formato BR ("R$ 1.606,21", "198,04") para Number. NaN se vazio/inválido.
 export const numBR = (v) => { let s = String(v == null ? "" : v).replace(/[^\d.,-]/g, ""); if (!s) return NaN; if (s.includes(",")) s = s.replace(/\./g, "").replace(",", "."); return parseFloat(s); };
 
+// Extrai itens de uma planilha de escopo/orçamento usando a MESMA regra validada do upload de EAP (aba Obras):
+// só linhas cujo ITEM é um código pontilhado (ehCod: "3.20", "5.2"), usando esse ITEM como código.
+// Ignora linhas de seção/observação e códigos SINAPI avulsos. Retorna [{codigo, descricao, unidade, qtde, valorTotal}].
+const _ehCodPlan = (c0) => /^\d+(\.\d+)+\.?$/.test(String(c0 == null ? "" : c0).replace(",", ".").trim());
+export function extrairItensPlanilha(arrayBuffer) {
+  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const NORM = (s) => String(s == null ? "" : s).trim().toUpperCase();
+  const ehItemHdr = (c) => c === "ITEM" || c === "ÍTEM" || c === "EAP" || (c.includes("EAP") && c.length <= 6);
+  let melhores = [];
+  for (const sn of wb.SheetNames) {
+    const grade = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
+    let hdr = -1, col = {};
+    for (let i = 0; i < Math.min(grade.length, 30); i++) {
+      const cs = (grade[i] || []).map(NORM);
+      const temItem = cs.some(ehItemHdr);
+      const temDesc = cs.some((c) => c.includes("DESCRI") || c.includes("ESPECIFICA"));
+      if (!temItem || !temDesc) continue;
+      hdr = i; col = {};
+      cs.forEach((c, j) => {
+        if (ehItemHdr(c) && col.item == null) col.item = j;
+        else if ((c.includes("DESCRI") || c.includes("ESPECIFICA")) && col.desc == null) col.desc = j;
+        else if (c.includes("UNID") && col.unid == null) col.unid = j;
+        else if ((c.includes("QUANT") || c === "QTD") && col.qtde == null) col.qtde = j;
+      });
+      // valor à faturar: prioriza qualquer coluna "...TOTAL" que não seja unitária (ex.: "MÃO DE OBRA TOTAL",
+      // "VALOR TOTAL", "CUSTO TOTAL"); senão VALOR/PREÇO/CUSTO não-unitário.
+      cs.forEach((c, j) => { if (c.includes("TOTAL") && !c.includes("UNIT") && col.vt == null) col.vt = j; });
+      if (col.vt == null) cs.forEach((c, j) => { if ((c.includes("VALOR") || c.includes("PREÇO") || c.includes("PRECO") || c.includes("CUSTO")) && !c.includes("UNIT") && col.vt == null) col.vt = j; });
+      break;
+    }
+    if (hdr < 0 || col.item == null || col.desc == null || col.unid == null || col.qtde == null) continue;
+    const itens = [];
+    for (let i = hdr + 1; i < grade.length; i++) {
+      const r = grade[i] || []; const c0 = String(r[col.item] == null ? "" : r[col.item]).trim();
+      if (!_ehCodPlan(c0)) continue;                                   // só itens com código pontilhado (ITEM da EAP)
+      const desc = String(r[col.desc] == null ? "" : r[col.desc]).trim();
+      const unid = String(r[col.unid] == null ? "" : r[col.unid]).trim();
+      const qt = numBR(r[col.qtde]);
+      if (!desc || !unid || isNaN(qt) || qt <= 0) continue;            // ignora seções/observações
+      const vt = col.vt != null ? (numBR(r[col.vt]) || 0) : 0;
+      itens.push({ codigo: c0.replace(/\.$/, ""), descricao: desc, unidade: unid, qtde: qt, valorTotal: vt });
+    }
+    if (itens.length > melhores.length) melhores = itens;
+  }
+  return melhores;
+}
+
 export function casarEapImport(eapItens, { item, cod, descricao }) {
   if (!Array.isArray(eapItens) || eapItens.length === 0) return null;
   const codigosImport = [item, cod].map(_normCod).filter(Boolean);

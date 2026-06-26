@@ -5,7 +5,7 @@ import {
   C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, addDiasISO, CLIMAS, ATRIBUICOES, VINCULOS, SETOR_DE_PAPEL,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap, resumoRdo,
-  aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner, numBR,
+  aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner, numBR, extrairItensPlanilha,
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
@@ -623,45 +623,15 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
     if (!file) return;
     setImportandoOs(true); setVerifOs(null);
     try {
-      const wb = XLSX.read(await file.arrayBuffer(), { type: "array" });
-      let melhores = [];
-      wb.SheetNames.forEach((sn) => {
-        const grade = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, raw: true, defval: "" });
-        let hdr = -1, cols = null;
-        for (let r = 0; r < Math.min(grade.length, 40); r++) {
-          const linha = (grade[r] || []).map((c) => String(c == null ? "" : c).toUpperCase());
-          const desc = linha.findIndex((c) => c.includes("DESCRI") && (c.includes("SERVI") || c.includes("ITEM") || c.includes("INSUMO")));
-          const qtd = linha.findIndex((c) => c.includes("QUANTI"));
-          const uni = linha.findIndex((c) => c.includes("UNIDADE") || c === "UN" || c === "UN ");
-          if (desc >= 0 && qtd >= 0 && uni >= 0) {
-            hdr = r;
-            let val = linha.findIndex((c) => c.includes("TOTAL") && !c.includes("UNIT"));
-            if (val < 0) val = linha.findIndex((c) => (c.includes("VALOR") || c.includes("PREÇO") || c.includes("PRECO")) && !c.includes("UNIT"));
-            cols = { item: linha.findIndex((c) => c === "ITEM" || c === "EAP" || (c.includes("EAP") && c.length <= 6)), cod: linha.findIndex((c) => c.includes("CÓDIGO") || c.includes("CODIGO")),
-              desc, uni, qtd, val };
-            break;
-          }
-        }
-        if (hdr < 0) return;
-        const itens = [];
-        let casados = 0;
-        for (let r = hdr + 1; r < grade.length; r++) {
-          const row = grade[r] || [];
-          const descricao = String(row[cols.desc] == null ? "" : row[cols.desc]).trim();
-          const unidade = String(row[cols.uni] == null ? "" : row[cols.uni]).trim();
-          const qtde = numBR(row[cols.qtd]);
-          if (!descricao || !unidade || isNaN(qtde) || qtde <= 0) continue;
-          const item = cols.item >= 0 ? String(row[cols.item] == null ? "" : row[cols.item]).trim() : "";
-          const cod = cols.cod >= 0 ? String(row[cols.cod] == null ? "" : row[cols.cod]).trim() : "";
-          const valor = cols.val >= 0 ? (numBR(row[cols.val]) || 0) : 0;
-          const casado = casarEapImport(eapItens, { item, cod, descricao }); // reconhece a EAP da obra (v10.7)
-          if (casado) casados++;
-          itens.push({ eap_codigo: casado || item || cod || `IMP-${itens.length + 1}`, descricao, valor, unidade, quantidade: qtde });
-        }
-        itens._casados = casados;
-        if (itens.length > melhores.length) melhores = itens;
+      const itensP = extrairItensPlanilha(await file.arrayBuffer());
+      if (itensP.length === 0) { alert("Não encontrei itens com código (ITEM 3.20, 5.2…) e colunas DESCRIÇÃO/UNIDADE/QUANTIDADE. Confirme que é a planilha de escopo/sintética."); return; }
+      let casados = 0;
+      const melhores = itensP.map((it) => {
+        const c = casarEapImport(eapItens, { item: it.codigo, cod: "", descricao: it.descricao });
+        if (c) casados++;
+        return { eap_codigo: c || it.codigo, descricao: it.descricao, valor: it.valorTotal, unidade: it.unidade, quantidade: it.qtde };
       });
-      if (melhores.length === 0) { alert("Não encontrei itens na planilha. Verifique as colunas DESCRIÇÃO, UNIDADE e QUANTIDADE (e VALOR, se houver)."); return; }
+      melhores._casados = casados;
       setCt((c) => ({ ...c, itens_eap: [...(c.itens_eap || []), ...melhores.filter((m) => !(c.itens_eap || []).some((x) => x.eap_codigo === m.eap_codigo))] }));
       const rec = melhores._casados || 0;
       alert(`${melhores.length} item(ns) importado(s) para a OS-i.` + (eapItens.length ? `\n${rec} reconhecido(s) automaticamente na EAP da obra` + (rec < melhores.length ? ` — os demais ficaram com o código da planilha.` : `.`) : ``));
