@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v10.11 — fix: medição projetada no Painel Gerencial
+- Corrige o empilhamento de meses na linha "Entradas (medições projetadas)": o deslocamento pelo prazo de recebimento agora é por **mês cheio** (não mais por dias corridos a partir do dia 01, que fazia jun+jul colidirem em julho).
+- PMM de cada mês passa a cair limpo no mês seguinte conforme o prazo (ex.: junho→julho, julho→agosto). Campo "Prazo de recebimento (dias)" mantido; convertido para meses via round(dias/30).
+
+> Sem migração de banco nesta versão.
+
+
 ## v10.10 — Import de SS-i/OS-i com a lógica validada da EAP
 Reescrevi o reconhecimento de itens no import de planilha (SS-i e OS-i) para usar a MESMA lógica do
 upload de EAP da aba Obras, que já funciona bem:

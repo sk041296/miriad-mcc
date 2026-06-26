@@ -7,6 +7,7 @@ const MES_ABBR = ["jan", "fev", "mar", "abr", "mai", "jun", "jul", "ago", "set",
 const ymOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 const ymLabel = (ym) => { const [y, m] = ym.split("-"); return `${MES_ABBR[Number(m) - 1]}/${String(y).slice(2)}`; };
 const addDias = (d, n) => { const x = new Date(d); x.setDate(x.getDate() + n); return x; };
+const addMeses = (d, n) => { const x = new Date(d); x.setMonth(x.getMonth() + n); return x; };
 const mondayOf = (d) => { const x = new Date(d); const w = (x.getDay() + 6) % 7; x.setDate(x.getDate() - w); x.setHours(0, 0, 0, 0); return x; };
 const valorUnit = (e) => { const q = Number(e?.qtde) || 0; return q > 0 ? (Number(e?.valor_total) || 0) / q : 0; };
 const diasDesde = (iso) => iso ? Math.floor((Date.now() - new Date(iso).getTime()) / DIA) : null;
@@ -90,7 +91,7 @@ export function PainelGerencial() {
     else { const ym = ymOf(ini); if (ym in osCaixa) osCaixa[ym] += Number(c.valor) || 0; }
   });
   const entradas = {}; meses.forEach((m) => entradas[m] = 0);
-  pmm.forEach((pm) => { const fin = resumoPmm(pm, eapPorObra[pm.obra_id] || []).financeiro; if (!fin) return; const base = new Date(String(pm.mes).slice(0, 10) + "T00:00:00"); const ym = ymOf(addDias(base, Number(cfg.prazoReceb) || 0)); if (ym in entradas) entradas[ym] += fin; });
+  pmm.forEach((pm) => { const fin = resumoPmm(pm, eapPorObra[pm.obra_id] || []).financeiro; if (!fin) return; const base = new Date(String(pm.mes).slice(0, 10) + "T00:00:00"); const mesesReceb = Math.round((Number(cfg.prazoReceb) || 0) / 30); const ym = ymOf(addMeses(base, mesesReceb)); if (ym in entradas) entradas[ym] += fin; });
   const saidaMes = (m) => ocCaixa[m] + osCaixa[m] + (Number(cfg.folha) || 0) + (Number(cfg.despFin) || 0) + (Number(cfg.outras) || 0);
   let acum = 0; const fluxo = meses.map((m) => { const ent = entradas[m]; const sai = saidaMes(m); const saldo = ent - sai; acum += saldo; return { m, ent, oc: ocCaixa[m], os: osCaixa[m], sai, saldo, acum }; });
 
