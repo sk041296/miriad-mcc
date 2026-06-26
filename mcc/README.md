@@ -1,5 +1,19 @@
 # Miriad Construction Control (MCC)
 
+## v10.9 — Correção do import de planilha (SS-i e OS-i)
+Corrige o reconhecimento dos dados ao importar a planilha modelo:
+- **Valor total:** a coluna de valor agora é detectada mesmo quando o cabeçalho é "MÃO DE OBRA TOTAL"
+  (sem a palavra "VALOR"/"R$"). Antes ficava R$ 0,00 na OS-i.
+- **Números em formato BR:** parser corrigido — "R$ 1.606,21" passa a ser lido como 1606,21 (antes o
+  ponto de milhar quebrava o valor). Vale para valor e quantidade.
+- **Unidade de medida:** os itens da OS-i passam a guardar a unidade (e a quantidade) lidas da planilha —
+  some o alerta de "unidades ausentes".
+- **Coluna de código "EAP":** além de "ITEM"/"CÓDIGO", o cabeçalho "EAP" também é reconhecido como o
+  código do item, melhorando o casamento automático com a EAP da obra.
+
+> Sem migração de banco. Observação: códigos que realmente não existem na EAP da obra (ex.: SINAPI
+> avulsos) continuam sendo sinalizados para revisão — isso é esperado.
+
 ## v10.8 — Login com Google (e-mail da empresa) + login por senha
 - **Entrar com o Google** na tela de login, usando o e-mail corporativo (Workspace). O botão oficial do Google aparece acima do formulário, com divisor "ou com senha".
 - **Login por senha continua igual** — nada muda para quem já usa e-mail + senha.

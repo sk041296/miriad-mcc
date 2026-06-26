@@ -5,7 +5,7 @@ import {
   C, fmt, fmtR, fmtK, pct, sum, uid, norm, hojeISO, dataBR, addDiasISO, CLIMAS, ATRIBUICOES, VINCULOS, SETOR_DE_PAPEL,
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap, resumoRdo,
-  aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner,
+  aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner, numBR,
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
@@ -635,8 +635,10 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
           const uni = linha.findIndex((c) => c.includes("UNIDADE") || c === "UN" || c === "UN ");
           if (desc >= 0 && qtd >= 0 && uni >= 0) {
             hdr = r;
-            cols = { item: linha.findIndex((c) => c === "ITEM"), cod: linha.findIndex((c) => c.includes("CÓDIGO") || c.includes("CODIGO")),
-              desc, uni, qtd, val: linha.findIndex((c) => c.includes("VALOR") || c.includes("PREÇO") || c.includes("PRECO") || (c.includes("TOTAL") && c.includes("R$"))) };
+            let val = linha.findIndex((c) => c.includes("TOTAL") && !c.includes("UNIT"));
+            if (val < 0) val = linha.findIndex((c) => (c.includes("VALOR") || c.includes("PREÇO") || c.includes("PRECO")) && !c.includes("UNIT"));
+            cols = { item: linha.findIndex((c) => c === "ITEM" || c === "EAP" || (c.includes("EAP") && c.length <= 6)), cod: linha.findIndex((c) => c.includes("CÓDIGO") || c.includes("CODIGO")),
+              desc, uni, qtd, val };
             break;
           }
         }
@@ -647,14 +649,14 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
           const row = grade[r] || [];
           const descricao = String(row[cols.desc] == null ? "" : row[cols.desc]).trim();
           const unidade = String(row[cols.uni] == null ? "" : row[cols.uni]).trim();
-          const qtde = parseFloat(String(row[cols.qtd] == null ? "" : row[cols.qtd]).replace(",", "."));
+          const qtde = numBR(row[cols.qtd]);
           if (!descricao || !unidade || isNaN(qtde) || qtde <= 0) continue;
           const item = cols.item >= 0 ? String(row[cols.item] == null ? "" : row[cols.item]).trim() : "";
           const cod = cols.cod >= 0 ? String(row[cols.cod] == null ? "" : row[cols.cod]).trim() : "";
-          const valor = cols.val >= 0 ? (parseFloat(String(row[cols.val] == null ? "" : row[cols.val]).replace(/[^\d,.-]/g, "").replace(",", ".")) || 0) : 0;
+          const valor = cols.val >= 0 ? (numBR(row[cols.val]) || 0) : 0;
           const casado = casarEapImport(eapItens, { item, cod, descricao }); // reconhece a EAP da obra (v10.7)
           if (casado) casados++;
-          itens.push({ eap_codigo: casado || item || cod || `IMP-${itens.length + 1}`, descricao, valor });
+          itens.push({ eap_codigo: casado || item || cod || `IMP-${itens.length + 1}`, descricao, valor, unidade, quantidade: qtde });
         }
         itens._casados = casados;
         if (itens.length > melhores.length) melhores = itens;

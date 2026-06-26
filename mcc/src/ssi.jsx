@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from "react";
 import * as XLSX from "xlsx";
-import { C, fmt, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar, casarEapImport, verificarImport, VerifBanner } from "./core.jsx";
+import { C, fmt, hojeISO, dataBR, Card, Btn, Lbl, inp, listar, criar, editar, casarEapImport, verificarImport, VerifBanner, numBR } from "./core.jsx";
 import { prazoSm, ehEmergencial, ModalGerar } from "./smi.jsx";
 
 const TIPOS = [["empreitada", "Empreitada"], ["locacao", "Locação de equipamentos"], ["outros", "Outros serviços"]];
@@ -36,7 +36,7 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
           const uni = linha.findIndex((c) => c.includes("UNIDADE") || c === "UN" || c === "UN ");
           if (desc >= 0 && qtd >= 0 && uni >= 0) {
             hdr = r;
-            cols = { item: linha.findIndex((c) => c === "ITEM"), cod: linha.findIndex((c) => c.includes("CÓDIGO") || c.includes("CODIGO")), desc, uni, qtd };
+            cols = { item: linha.findIndex((c) => c === "ITEM" || c === "EAP" || (c.includes("EAP") && c.length <= 6)), cod: linha.findIndex((c) => c.includes("CÓDIGO") || c.includes("CODIGO")), desc, uni, qtd };
             break;
           }
         }
@@ -47,7 +47,7 @@ function FormSsI({ obras, eapPorObra, usuario, onCriou }) {
           const row = grade[r] || [];
           const descricao = String(row[cols.desc] == null ? "" : row[cols.desc]).trim();
           const unidade = String(row[cols.uni] == null ? "" : row[cols.uni]).trim();
-          const qtde = parseFloat(String(row[cols.qtd] == null ? "" : row[cols.qtd]).replace(",", "."));
+          const qtde = numBR(row[cols.qtd]);
           if (!descricao || !unidade || isNaN(qtde) || qtde <= 0) continue; // ignora seções/observações
           const item = cols.item >= 0 ? String(row[cols.item] == null ? "" : row[cols.item]).trim() : "";
           const cod = cols.cod >= 0 ? String(row[cols.cod] == null ? "" : row[cols.cod]).trim() : "";

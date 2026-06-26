@@ -117,6 +117,9 @@ export const VINCULOS = ["direto", "indireto"];
    ou null se não houver casamento confiável. */
 const _normTxt = (s) => String(s == null ? "" : s).normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
 const _normCod = (s) => _normTxt(s).replace(/[^0-9A-Z.]/g, "").replace(/(^|\.)0+(\d)/g, "$1$2"); // tira acentos/espaços e zeros à esquerda de cada nível
+// Converte texto numérico em formato BR ("R$ 1.606,21", "198,04") para Number. NaN se vazio/inválido.
+export const numBR = (v) => { let s = String(v == null ? "" : v).replace(/[^\d.,-]/g, ""); if (!s) return NaN; if (s.includes(",")) s = s.replace(/\./g, "").replace(",", "."); return parseFloat(s); };
+
 export function casarEapImport(eapItens, { item, cod, descricao }) {
   if (!Array.isArray(eapItens) || eapItens.length === 0) return null;
   const codigosImport = [item, cod].map(_normCod).filter(Boolean);
