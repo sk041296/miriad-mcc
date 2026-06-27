@@ -1,5 +1,16 @@
 # Miriad Construction Control (MCC)
 
+## v10.13 — Ordens de Pagamento (Kanban do Financeiro)
+- Nova aba "Ordens de Pagamento" no módulo Financeiro (papéis CEO, Diretor, Financeiro).
+- Kanban com 3 colunas: Pendente NF -> Liberada -> Paga.
+- Cards mostram fornecedor, valor, vencimento, obra e centro de custo; OPs vencidas destacadas em laranja.
+- Conferência de NF (número + valor) ao liberar, com aviso se o valor da NF divergir do valor da OP.
+- Marcar como paga registra a data de pagamento.
+- Filtro por obra e KPIs (total em aberto, já pago, nº de OPs).
+- Inclui as correções anteriores: realizado por item (eap_codigo da OC) e medição projetada (deslocamento por mês cheio).
+
+> **Migração:** rode `supabase/migration_ordens_pagamento.sql` (cria a tabela) e depois `supabase/gerar_OPs_de_OCs.sql` (gera as OPs a partir das OC-i existentes). Ambos idempotentes.
+
 ## v10.11 — fix: medição projetada no Painel Gerencial
 - Corrige o empilhamento de meses na linha "Entradas (medições projetadas)": o deslocamento pelo prazo de recebimento agora é por **mês cheio** (não mais por dias corridos a partir do dia 01, que fazia jun+jul colidirem em julho).
 - PMM de cada mês passa a cair limpo no mês seguinte conforme o prazo (ex.: junho→julho, julho→agosto). Campo "Prazo de recebimento (dias)" mantido; convertido para meses via round(dias/30).

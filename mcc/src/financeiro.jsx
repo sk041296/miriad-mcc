@@ -5,7 +5,7 @@ import {
 } from "recharts";
 import {
   C, fmt, fmtK, fmtR, pct, sum, z8, Card, Btn, Kpi, Th, Td, Lbl, NumInput, ChartTip,
-  getFin, setFin, listar, hojeISO, addDiasISO, ymISO,
+  getFin, setFin, listar, criar, editar, hojeISO, addDiasISO, ymISO,
 } from "./core.jsx";
 import { resumoPmm } from "./pmm.jsx";
 
@@ -101,7 +101,7 @@ function autoAnticipate(p) {
 }
 
 /* ---------- Sub-abas do módulo financeiro ---------- */
-const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"]];
+const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"]];
 
 export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
   const [subLocal, setSubLocal] = useState("premissas");
@@ -132,6 +132,7 @@ export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
       {sub === "custos" && <CustosPorObra />}
       {sub === "custosdir" && <CustosDiretosAuto />}
       {sub === "medprojetada" && <MedicaoProjetada />}
+      {sub === "op" && <KanbanOP />}
     </div>
   );
 }
@@ -640,6 +641,120 @@ function MedicaoProjetada() {
           </tbody>
         </table></div>
       </Card>
+    </div>
+  );
+}
+
+/* ============================================================
+   Kanban do Financeiro — Ordens de Pagamento (OP)
+   Status: pendente_nf -> liberada -> paga
+   ============================================================ */
+const OP_COLS = [
+  ["pendente_nf", "Pendente NF", C.laranja],
+  ["liberada",    "Liberada",    "#2563eb"],
+  ["paga",        "Paga",        C.verde],
+];
+
+function KanbanOP() {
+  const [ops, setOps] = useState(null);
+  const [obras, setObras] = useState([]);
+  const [filtroObra, setFiltroObra] = useState("");
+  const [busy, setBusy] = useState(null);
+
+  const carregar = () => {
+    Promise.all([listar("ordens_pagamento"), listar("obras")])
+      .then(([o, ob]) => { setOps(o); setObras(ob); })
+      .catch(() => setOps([]));
+  };
+  useEffect(carregar, []);
+
+  if (ops === null) return <div style={{ color: C.dim, padding: 20 }}>Carregando ordens de pagamento…</div>;
+
+  const nomeObra = (id) => (obras.find((o) => o.id === id) || {}).codigo || "—";
+  const visiveis = filtroObra ? ops.filter((o) => o.obra_id === filtroObra) : ops;
+  const porStatus = (s) => visiveis.filter((o) => (o.status || "pendente_nf") === s)
+    .sort((a, b) => (a.vencimento || "9999").localeCompare(b.vencimento || "9999"));
+
+  const totalCol = (s) => sum(porStatus(s).map((o) => Number(o.valor) || 0));
+  const totalGeral = sum(visiveis.map((o) => Number(o.valor) || 0));
+  const totalPago = sum(visiveis.filter((o) => o.status === "paga").map((o) => Number(o.valor) || 0));
+
+  const mover = async (op, novoStatus, patchExtra = {}) => {
+    setBusy(op.id);
+    const patch = { status: novoStatus, atualizado_em: new Date().toISOString(), ...patchExtra };
+    if (novoStatus === "paga" && !op.data_pagamento) patch.data_pagamento = hojeISO();
+    try {
+      await editar("ordens_pagamento", op.id, patch);
+      setOps((prev) => prev.map((x) => x.id === op.id ? { ...x, ...patch } : x));
+    } catch (e) { alert("Erro ao mover OP: " + (e.message || e)); }
+    setBusy(null);
+  };
+
+  const conferirNF = async (op) => {
+    const num = prompt("Número da NF:", op.nf_numero || "");
+    if (num === null) return;
+    const valStr = prompt("Valor da NF (R$):", op.nf_valor != null ? String(op.nf_valor) : String(op.valor || ""));
+    if (valStr === null) return;
+    const nfVal = Number(String(valStr).replace(/\./g, "").replace(",", ".")) || 0;
+    const dif = Math.abs(nfVal - (Number(op.valor) || 0));
+    if (dif > 0.01 && !confirm(`Valor da NF (${fmt(nfVal)}) difere do valor da OP (${fmt(op.valor)}) em ${fmt(dif)}.\n\nLiberar mesmo assim?`)) return;
+    await mover(op, "liberada", { nf_numero: num, nf_valor: nfVal, nf_conferida: true });
+  };
+
+  const vencido = (op) => op.status !== "paga" && op.vencimento && op.vencimento < hojeISO();
+
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+        <Kpi label="Total em aberto" value={fmt(totalGeral - totalPago)} />
+        <Kpi label="Já pago" value={fmt(totalPago)} />
+        <Kpi label="Nº de OPs" value={String(visiveis.length)} />
+        <div style={{ marginLeft: "auto" }}>
+          <Lbl>Obra</Lbl>
+          <select value={filtroObra} onChange={(e) => setFiltroObra(e.target.value)}
+            style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${C.linha}`, fontSize: 13, fontWeight: 600, color: C.dim }}>
+            <option value="">Todas as obras</option>
+            {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, alignItems: "start" }}>
+        {OP_COLS.map(([sid, slabel, scor]) => (
+          <div key={sid} style={{ background: "#f7f7f8", borderRadius: 12, padding: 10, minHeight: 200 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, paddingLeft: 4 }}>
+              <span style={{ fontWeight: 800, fontSize: 13, color: scor }}>{slabel}</span>
+              <span style={{ fontSize: 11, color: C.dim, fontWeight: 700 }}>{porStatus(sid).length} · {fmt(totalCol(sid))}</span>
+            </div>
+            {porStatus(sid).map((op) => (
+              <div key={op.id} style={{ background: C.branco, border: `1px solid ${vencido(op) ? C.laranja : C.linha}`, borderRadius: 10, padding: 12, marginBottom: 8, boxShadow: "0 1px 2px rgba(0,0,0,.04)" }}>
+                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+                  <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{op.fornecedor || "—"}</span>
+                  <span style={{ fontWeight: 800, fontSize: 13, color: scor, whiteSpace: "nowrap" }}>{fmt(op.valor)}</span>
+                </div>
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 4, display: "flex", flexWrap: "wrap", gap: "2px 8px" }}>
+                  <span>{nomeObra(op.obra_id)}</span>
+                  {op.centro_custo && <span>· {op.centro_custo}</span>}
+                  {op.vencimento && <span style={{ color: vencido(op) ? C.laranja : C.dim, fontWeight: vencido(op) ? 700 : 400 }}>· venc {op.vencimento.split("-").reverse().join("/")}</span>}
+                </div>
+                {op.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>{op.descricao}</div>}
+                {op.nf_numero && <div style={{ fontSize: 11, color: "#2563eb", marginTop: 3 }}>NF {op.nf_numero}{op.nf_valor != null ? ` · ${fmt(op.nf_valor)}` : ""}</div>}
+                {op.status === "paga" && op.data_pagamento && <div style={{ fontSize: 11, color: C.verde, marginTop: 3 }}>Pago em {op.data_pagamento.split("-").reverse().join("/")}</div>}
+
+                <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+                  {sid === "pendente_nf" && <Btn small onClick={() => conferirNF(op)} disabled={busy === op.id}>Conferir NF</Btn>}
+                  {sid === "liberada" && <>
+                    <Btn small onClick={() => mover(op, "paga")} disabled={busy === op.id}>Marcar paga</Btn>
+                    <Btn small kind="ghost" onClick={() => mover(op, "pendente_nf", { nf_conferida: false })} disabled={busy === op.id}>← Pendente</Btn>
+                  </>}
+                  {sid === "paga" && <Btn small kind="ghost" onClick={() => mover(op, "liberada", { data_pagamento: null })} disabled={busy === op.id}>← Reabrir</Btn>}
+                </div>
+              </div>
+            ))}
+            {porStatus(sid).length === 0 && <div style={{ fontSize: 12, color: C.dim, textAlign: "center", padding: "20px 0" }}>Nenhuma OP</div>}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
