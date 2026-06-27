@@ -1,10 +1,10 @@
-import React, { useMemo } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie } from "recharts";
-import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip } from "./core.jsx";
+import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip, listar, Btn, aprovarOrdem, rejeitarOrdem } from "./core.jsx";
 import { observacoesPorItem, projecaoItem, dataProjetada } from "./produtividade.js";
 
 /* PAINEL GERAL — consolidação de todas as obras (restrito a gestores) */
-export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
+export function PainelGeral({ obras, eapPorObra, rdos, restricoes, usuario }) {
   const dados = obras.map((o) => {
     const itens = eapPorObra[o.id] || [];
     const rdosObra = rdos.filter((r) => r.obra_id === o.id);
@@ -38,6 +38,7 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <PendenciasAprovacao usuario={usuario} obras={obras} />
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Kpi dark label="Valor total dos contratos (à faturar)" value={fmtR(totalContrato)} sub={`${obras.length} obras · ${sum(dados.map((d) => d.nRdos))} RDOs`} />
         <Kpi label="Executado — reconhecido em RDO" value={fmtR(totalMed)} accent={C.verde} />
@@ -149,5 +150,65 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes }) {
       ))}
       {obras.length === 0 && <Card title="Sem obras"><div style={{ fontSize: 13, color: C.dim }}>Cadastre uma obra e a EAP no módulo Operacional → Obras.</div></Card>}
     </div>
+  );
+}
+
+/* ============================================================
+   Espelho de pendências de aprovação no Painel Geral
+   Visível para Coord. Suprimentos e Diretoria.
+   ============================================================ */
+function PendenciasAprovacao({ usuario, obras }) {
+  const [ocs, setOcs] = useState([]);
+  const [oss, setOss] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const ehSup = usuario && usuario.papel === "coord_suprimentos";
+  const ehDir = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor");
+  const podeVer = ehSup || ehDir;
+
+  const carregar = () => {
+    if (!podeVer) return;
+    Promise.all([listar("ordens_compra"), listar("contratos_servico")])
+      .then(([a, b]) => {
+        setOcs(a.filter((x) => (x.status_aprovacao || "aprovada") === "aguardando"));
+        setOss(b.filter((x) => (x.status_aprovacao || "aprovada") === "aguardando"));
+      }).catch(() => {});
+  };
+  useEffect(carregar, []);
+
+  if (!podeVer) return null;
+
+  const nomeObra = (id) => (obras.find((o) => o.id === id) || {}).codigo || "—";
+  // pendentes da MINHA alçada = ainda não aprovei
+  const minhasOc = ocs.filter((x) => ehSup ? !x.aprov_suprimentos_por : !x.aprov_diretor_por);
+  const minhasOs = oss.filter((x) => ehSup ? !x.aprov_suprimentos_por : !x.aprov_diretor_por);
+  const total = minhasOc.length + minhasOs.length;
+
+  if (total === 0) return null;
+
+  const aprovar = async (tabela, id) => {
+    setBusy(id);
+    try { const r = await aprovarOrdem(tabela, id); carregar(); if (r && r.status === "aprovada") alert(`Aprovada! ${r.ops_geradas || 0} OP(s) gerada(s).`); }
+    catch (e) { alert("Erro: " + (e.message || e)); }
+    setBusy(null);
+  };
+
+  const linha = (x, tabela, valorLabel) => (
+    <div key={x.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "8px 12px", background: C.branco, borderRadius: 8, border: `1px solid ${C.linha}` }}>
+      <div style={{ fontSize: 12.5 }}>
+        <b>{x.numero || x.empresa || "—"}</b> · {nomeObra(x.obra_id)} · {x.fornecedor || x.empresa || "—"}
+        <span style={{ color: C.dim }}> · {valorLabel}</span>
+        <span style={{ marginLeft: 8, fontSize: 10.5, color: C.dim }}>Sup {x.aprov_suprimentos_por ? "✓" : "—"} · Dir {x.aprov_diretor_por ? "✓" : "—"}</span>
+      </div>
+      <Btn small onClick={() => aprovar(tabela, x.id)} disabled={busy === x.id}>Aprovar</Btn>
+    </div>
+  );
+
+  return (
+    <Card title={`⚠ ${total} ordem(ns) aguardando sua aprovação`}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {minhasOc.map((x) => linha(x, "ordens_compra", fmtR(x.valor)))}
+        {minhasOs.map((x) => linha(x, "contratos_servico", fmtR(x.valor)))}
+      </div>
+    </Card>
   );
 }

@@ -6,6 +6,7 @@ import {
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap, resumoRdo,
   aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner, numBR, extrairItensPlanilha,
+  aprovarOrdem, rejeitarOrdem,
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
@@ -584,7 +585,7 @@ function MedicaoGerador({ obras, eapPorObra, rdos, usuarioNome }) {
 }
 
 /* ============================ OS-i (Ordem de Serviço Inteligente) ============================ */
-function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
+function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou, usuario }) {
   const vazio = { obra_id: "", empresa: "", cnpj: "", responsavel: "", tipo: "indireto", custo_mensal: 0, meses: 1, itens_eap: [], valor: 0, cond: { modo: "valor", parcelas: [] } };
   const [ct, setCt] = useState(vazio);
   useEffect(() => {
@@ -710,16 +711,17 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou }) {
         </div>
       </Card>
       <Card title={`Ordens de serviço (${contratos.length})`}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Obra</Th><Th>Empresa</Th><Th>CNPJ</Th><Th>Tipo</Th><Th>Itens EAP</Th><Th right>Mensal × meses</Th><Th right>Valor</Th><Th /></tr></thead>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Obra</Th><Th>Empresa</Th><Th>CNPJ</Th><Th>Tipo</Th><Th>Itens EAP</Th><Th right>Mensal × meses</Th><Th right>Valor</Th><Th>Aprovação</Th><Th /></tr></thead>
           <tbody>{contratos.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap : (x.escopo_eap ? [{ eap_codigo: x.escopo_eap }] : []); return (
             <tr key={x.id}><Td>{o?.codigo || "—"}</Td><Td style={{ fontWeight: 600 }}>{x.empresa || "—"}</Td><Td>{x.cnpj}</Td>
               <Td><span style={{ background: x.tipo === "direto" ? C.laranja : C.cinza2, color: x.tipo === "direto" ? "#fff" : C.dim, borderRadius: 5, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>{x.tipo || "indireto"}</span></Td>
               <Td style={{ fontSize: 12 }}>{itens.map((i) => i.eap_codigo).join(", ") || "—"}</Td>
               <Td right>{x.tipo === "direto" ? `${fmtR(x.custo_mensal)} × ${x.meses}` : "—"}</Td>
               <Td right color={C.verde} style={{ fontWeight: 700 }}>{fmtR(x.valor)}</Td>
+              <Td><AprovacaoOrdem ordem={x} tabela="contratos_servico" usuario={usuario} onMudou={onMudou} /></Td>
               <Td><div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}><button onClick={() => carregarOs(x)} style={{ background: "none", border: `1px solid ${C.linha}`, color: C.azul, borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Editar</button><button onClick={async () => { if (confirm("Excluir OS?")) { await remover("contratos_servico", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></div></Td></tr>
           ); })}
-            {contratos.length === 0 && <tr><Td colSpan={8} color={C.dim} style={{ padding: 14 }}>Nenhuma ordem de serviço.</Td></tr>}</tbody></table>
+            {contratos.length === 0 && <tr><Td colSpan={9} color={C.dim} style={{ padding: 14 }}>Nenhuma ordem de serviço.</Td></tr>}</tbody></table>
       </Card>
     </div>
   );
@@ -786,6 +788,48 @@ function OcLinhas({ itens, valor = [], onChange }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
+
+/* Selo de aprovação + botões para OC-i / OS-i */
+function AprovacaoOrdem({ ordem, tabela, usuario, onMudou }) {
+  const [busy, setBusy] = useState(false);
+  const st = ordem.status_aprovacao || "aprovada";
+  const ehSup = usuario && usuario.papel === "coord_suprimentos";
+  const ehDir = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor");
+  const jaSup = !!ordem.aprov_suprimentos_por;
+  const jaDir = !!ordem.aprov_diretor_por;
+  const cor = st === "aprovada" ? C.verde : st === "rejeitada" ? C.vermelho : C.laranja;
+  const rotulo = st === "aprovada" ? "Aprovada" : st === "rejeitada" ? "Rejeitada" : "Aguardando aprovação";
+
+  const aprovar = async () => {
+    setBusy(true);
+    try { const r = await aprovarOrdem(tabela, ordem.id); onMudou && onMudou(); if (r && r.status === "aprovada") alert(`Ordem aprovada! ${r.ops_geradas || 0} OP(s) gerada(s) no financeiro.`); }
+    catch (e) { alert("Erro: " + (e.message || e)); }
+    setBusy(false);
+  };
+  const rejeitar = async () => {
+    const m = prompt("Motivo da rejeição (opcional):", "");
+    if (m === null) return;
+    setBusy(true);
+    try { await rejeitarOrdem(tabela, ordem.id, m); onMudou && onMudou(); }
+    catch (e) { alert("Erro: " + (e.message || e)); }
+    setBusy(false);
+  };
+
+  if (st === "aprovada") return <span style={{ background: `${C.verde}1c`, color: C.verde, borderRadius: 5, padding: "2px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>✓ aprovada</span>;
+  if (st === "rejeitada") return <span style={{ background: `${C.vermelho}14`, color: C.vermelho, borderRadius: 5, padding: "2px 8px", fontSize: 10.5, fontWeight: 700, whiteSpace: "nowrap" }}>✕ rejeitada</span>;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 4, minWidth: 150 }}>
+      <span style={{ color: cor, fontSize: 10.5, fontWeight: 700 }}>● {rotulo}</span>
+      <span style={{ fontSize: 10, color: C.dim }}>Sup: {jaSup ? "✓" : "—"} · Dir: {jaDir ? "✓" : "—"}</span>
+      <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>
+        {ehSup && !jaSup && <Btn small onClick={aprovar} disabled={busy}>Aprovar (Supr.)</Btn>}
+        {ehDir && !jaDir && <Btn small onClick={aprovar} disabled={busy}>Aprovar (Dir.)</Btn>}
+        {(ehSup || ehDir) && <Btn small kind="ghost" onClick={rejeitar} disabled={busy}>Rejeitar</Btn>}
+      </div>
     </div>
   );
 }
@@ -948,11 +992,12 @@ function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, 
       )}
 
       <Card title={`Ordens de compra (${ocs.length})`}>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Faturamento</Th><Th>Fornecedor</Th><Th>Itens EAP</Th><Th>Pagamento</Th><Th right>Valor</Th><Th>PDF</Th><Th /></tr></thead>
+        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>OC</Th><Th>Obra</Th><Th>Faturamento</Th><Th>Fornecedor</Th><Th>Itens EAP</Th><Th>Pagamento</Th><Th right>Valor</Th><Th>Aprovação</Th><Th>PDF</Th><Th /></tr></thead>
           <tbody>{ocs.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const itens = (x.itens_eap && x.itens_eap.length) ? x.itens_eap.map((i) => i.eap_codigo).join(", ") : (x.eap_codigo || "—"); return <tr key={x.id}><Td>{x.numero || "—"}</Td><Td>{o?.codigo || "—"}</Td><Td>{dataBR(x.data_faturamento || x.data)}</Td><Td>{x.fornecedor || "—"}</Td><Td style={{ fontSize: 12 }}>{itens}</Td><Td style={{ fontSize: 12 }}>{resumoCond(x)}</Td><Td right color={C.laranja}>{fmtR(x.valor)}</Td>
+            <Td><AprovacaoOrdem ordem={x} tabela="ordens_compra" usuario={usuario} onMudou={onMudou} /></Td>
             <Td><button onClick={() => gerarPdfOC(x, o || {})} style={{ background: "none", border: `1px solid ${C.laranja}`, color: C.laranja, borderRadius: 6, padding: "3px 10px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>PDF</button></Td>
             <Td><div style={{ display: "flex", gap: 4, justifyContent: "flex-end" }}><button onClick={() => carregarOc(x)} style={{ background: "none", border: `1px solid ${C.linha}`, color: C.azul, borderRadius: 6, padding: "3px 9px", fontSize: 11, fontWeight: 700, cursor: "pointer" }}>Editar</button><button onClick={async () => { if (confirm("Excluir OC?")) { await remover("ordens_compra", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></div></Td></tr>; })}
-            {ocs.length === 0 && <tr><Td colSpan={9} color={C.dim} style={{ padding: 14 }}>Nenhuma OC lançada.</Td></tr>}</tbody></table>
+            {ocs.length === 0 && <tr><Td colSpan={10} color={C.dim} style={{ padding: 14 }}>Nenhuma OC lançada.</Td></tr>}</tbody></table>
       </Card>
     </div>
   );

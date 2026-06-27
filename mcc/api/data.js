@@ -17,6 +17,7 @@ const TABELAS = {
   pmm: { ordem: "mes", asc: false, filtro: "obra_id" },
   boletins_medicao: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   ordens_pagamento: { ordem: "vencimento", asc: true },
+  config_financeiro: { ordem: "chave", asc: true },
   usuarios: { ordem: "nome", asc: true },
 };
 
@@ -44,6 +45,44 @@ function proximaSegundaISO(d = new Date()) {
 function proximoMesISO(d = new Date()) {
   const x = new Date(d.getFullYear(), d.getMonth() + 1, 1); return x.toISOString().slice(0, 10);
 }
+
+// Gera as Ordens de Pagamento (uma por parcela) a partir de uma OC/OS aprovada.
+// Idempotente: o índice único (origem_tipo, origem_id, parcela) impede duplicar.
+async function gerarOPsDaOrigem(supabase, tabela, origem) {
+  const tipo = tabela === "ordens_compra" ? "oc" : "bmp";
+  // centro de custo vem da obra
+  let centro = null;
+  if (origem.obra_id) {
+    const { data: ob } = await supabase.from("obras").select("centro_custo").eq("id", origem.obra_id).maybeSingle();
+    centro = ob?.centro_custo || null;
+  }
+  const cond = origem.condicao_pagamento || {};
+  let parcelas = Array.isArray(cond.parcelas) && cond.parcelas.length
+    ? cond.parcelas
+    : [{ parcela: "1/1", valor: Number(origem.valor) || 0, vencimento: origem.data_faturamento || origem.data || null, obs: "" }];
+  const forn = origem.fornecedor || origem.empresa || origem.responsavel || null;
+  const cnpj = (origem.dados_oc && origem.dados_oc.cnpj) || null;
+  const linhas = parcelas.map((p) => ({
+    origem_tipo: tipo,
+    origem_id: origem.id,
+    obra_id: origem.obra_id || null,
+    numero: (origem.numero || "OC") + "-" + (p.parcela || "1/1"),
+    fornecedor: forn,
+    cnpj,
+    centro_custo: centro,
+    descricao: (tipo === "oc" ? "OC " : "OS ") + (origem.numero || "") + " · parcela " + (p.parcela || "1/1"),
+    valor: Number(p.valor) || 0,
+    vencimento: p.vencimento || null,
+    status: "pendente_nf",
+    payload: { parcela: p.parcela || "1/1", obs: p.obs || "", origem: tipo + "_aprovada" },
+  }));
+  // insere ignorando conflitos (idempotente)
+  for (const l of linhas) {
+    await supabase.from("ordens_pagamento").upsert(l, { onConflict: "origem_tipo,origem_id,(payload->>'parcela')", ignoreDuplicates: true });
+  }
+  return linhas.length;
+}
+
 
 // quem pode criar qual papel
 function podeCriarPapel(criador, alvo) {
@@ -137,6 +176,38 @@ export default async function handler(req, res) {
     const { t, row, obra, itens } = req.body || {};
 
     // alocação de supervisor numa obra + e-mail de comunicação
+    if (t === "aprovar_ordem" || t === "rejeitar_ordem") {
+      const { tabela, id, motivo } = req.body || {};
+      if (tabela !== "ordens_compra" && tabela !== "contratos_servico") return res.status(400).json({ error: "Tabela inválida" });
+      const ehSuprimentos = s.papel === "coord_suprimentos";
+      const ehDiretor = s.papel === "ceo" || s.papel === "diretor";
+      if (!ehSuprimentos && !ehDiretor) return res.status(403).json({ error: "Apenas Coord. de Suprimentos ou Diretoria podem aprovar/rejeitar." });
+      const { data: ordem } = await supabase.from(tabela).select("*").eq("id", id).maybeSingle();
+      if (!ordem) return res.status(404).json({ error: "Ordem não encontrada" });
+
+      if (t === "rejeitar_ordem") {
+        await supabase.from(tabela).update({ status_aprovacao: "rejeitada", rejeitada_por: s.id, rejeitada_em: new Date().toISOString(), rejeicao_motivo: motivo || null }).eq("id", id);
+        return res.status(200).json({ ok: true, status: "rejeitada" });
+      }
+
+      // aprovar: registra a aprovação do papel correspondente
+      const patch = {};
+      if (ehSuprimentos) { patch.aprov_suprimentos_por = s.id; patch.aprov_suprimentos_em = new Date().toISOString(); }
+      if (ehDiretor) { patch.aprov_diretor_por = s.id; patch.aprov_diretor_em = new Date().toISOString(); }
+      const temSup = patch.aprov_suprimentos_por || ordem.aprov_suprimentos_por;
+      const temDir = patch.aprov_diretor_por || ordem.aprov_diretor_por;
+      if (temSup && temDir) patch.status_aprovacao = "aprovada";
+      await supabase.from(tabela).update(patch).eq("id", id);
+
+      // se ficou completa, gera as OPs
+      let ops = 0;
+      if (temSup && temDir) {
+        const ordemAtual = { ...ordem, ...patch };
+        try { ops = await gerarOPsDaOrigem(supabase, tabela, ordemAtual); } catch (e) { return res.status(500).json({ error: "Aprovada, mas falhou ao gerar OP: " + e.message }); }
+      }
+      return res.status(200).json({ ok: true, status: temSup && temDir ? "aprovada" : "aguardando", ops_geradas: ops });
+    }
+
     if (t === "alocar_supervisor") {
       if (!ALOCA_SUPERVISOR.has(s.papel)) return res.status(403).json({ error: "Sem permissão para alocar supervisores." });
       const { obra_id, supervisor_id } = req.body;
@@ -327,6 +398,22 @@ export default async function handler(req, res) {
       if (s.papel === "sup_obras") {
         await supabase.from("envio_semanal").upsert({ usuario_id: s.id, semana: mondayISO(), confirmado_em: new Date().toISOString() }, { onConflict: "usuario_id,semana" });
       }
+      return res.status(200).json({ row: data });
+    }
+
+    // OC-i / OS-i: portão de aprovação por valor (Suprimentos + Diretor)
+    if (t === "ordens_compra" || t === "contratos_servico") {
+      let limite = 1000;
+      try {
+        const { data: cfg } = await supabase.from("config_financeiro").select("valor").eq("chave", "limite_aprovacao_oc").maybeSingle();
+        if (cfg && cfg.valor != null) limite = Number(cfg.valor) || 1000;
+      } catch (_) {}
+      const valorOC = Number(row.valor) || (t === "contratos_servico" ? (Number(row.custo_mensal) || 0) * (Number(row.meses) || 0) : 0);
+      row.status_aprovacao = valorOC > limite ? "aguardando" : "aprovada";
+      const { data, error } = await supabase.from(t).insert(row).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      // Se já nasce aprovada (abaixo do limite), gera OP imediatamente
+      if (data.status_aprovacao === "aprovada") { try { await gerarOPsDaOrigem(supabase, t, data); } catch (_) {} }
       return res.status(200).json({ row: data });
     }
 

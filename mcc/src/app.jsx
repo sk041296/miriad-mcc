@@ -315,7 +315,7 @@ function Usuarios({ usuario }) {
 }
 
 /* ---------------- Painel Geral wrapper ---------------- */
-function PainelGeralWrap() {
+function PainelGeralWrap({ usuario }) {
   const [d, setD] = useState(null);
   useEffect(() => { (async () => {
     const obras = await listar("obras"); const eap = {}, rdos = [], restr = [];
@@ -323,7 +323,7 @@ function PainelGeralWrap() {
     setD({ obras, eapPorObra: eap, rdos, restricoes: restr });
   })(); }, []);
   if (!d) return <div style={{ color: C.dim, padding: 20 }}>Consolidando obras…</div>;
-  return <PainelGeral {...d} />;
+  return <PainelGeral {...d} usuario={usuario} />;
 }
 
 /* ---------------- Itens do menu Operacional (com notas) ---------------- */
@@ -515,7 +515,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
         : gerencialAberto && ehDir ? <PainelGerencial />
         : rankingAberto && ehDir ? <Ranking />
         : usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
-        : secao === "painel" && A.painel ? <PainelGeralWrap />
+        : secao === "painel" && A.painel ? <PainelGeralWrap usuario={usuario} />
         : secao === "financeiro" && temFin ? <ModuloFinanceiro sub={finTab} setSub={setFinTab} />
         : temOp ? <ModuloOperacional usuario={usuario} sub={opTab} setSub={setOpTab} acesso={A.cap} />
         : <div style={{ color: C.dim }}>Sem acesso a este módulo.</div>}

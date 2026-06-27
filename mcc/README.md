@@ -1,5 +1,15 @@
 # Miriad Construction Control (MCC)
 
+## v10.14 — Aprovação de OC-i / OS-i (Suprimentos + Diretoria)
+- OC/OS acima de R$ 1.000 entram como "aguardando aprovação" e só geram OP após aprovação dupla.
+- Aprovação independe de ordem, mas exige Coord. de Suprimentos E um Diretor.
+- Selo de status e botões de aprovar/rejeitar nas abas OC-i e OS-i (operacional).
+- Espelho de pendências no Painel Geral: Suprimentos/Diretoria veem ao abrir o sistema "X ordens aguardando sua aprovação".
+- OCs/OS abaixo do limite e as já existentes ficam aprovadas automaticamente.
+- Limite configurável em config_financeiro (chave limite_aprovacao_oc).
+
+> **Migração:** rode `supabase/migration_v10_14.sql` UMA vez (idempotente; termina com reload schema).
+
 ## v10.13 — Ordens de Pagamento (Kanban do Financeiro)
 - Nova aba "Ordens de Pagamento" no módulo Financeiro (papéis CEO, Diretor, Financeiro).
 - Kanban com 3 colunas: Pendente NF -> Liberada -> Paga.
