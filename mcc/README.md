@@ -1,5 +1,10 @@
 # Miriad Construction Control (MCC)
 
+## v10.22 — Robustez do preenchimento com IA
+- Corrige "Erro na IA: Expected ',' or ']'": a resposta da IA às vezes vinha com JSON imperfeito.
+- Três defesas: (1) teto de tokens maior (evita truncamento), (2) prompt mais estrito sobre o formato JSON, (3) parser tolerante que repara JSON comum (vírgula faltando, texto extra, fechamento de estruturas).
+- Limite de 8 insumos por item para respostas mais enxutas e confiáveis.
+
 ## v10.21 — Preenchimento com IA no construtor (Fatia 3c)
 - Botão "✨ IA" por item: sugere a composição analítica daquele item de EAP (material, mão de obra, equipamentos, locações) via API Anthropic.
 - Botão "✨ Preencher todos com IA": gera memoriais preliminares para todos os itens da EAP sem memorial, de uma vez.

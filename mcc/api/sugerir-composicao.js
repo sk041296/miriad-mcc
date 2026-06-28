@@ -58,7 +58,10 @@ Regras:
 - Quantidades são por UMA unidade do serviço (coeficientes de composição).
 - Se não tiver certeza do preço, use 0 (o usuário preencherá).
 - Seja realista e específico para construção civil brasileira.
-- Inclua mão de obra sempre que o serviço exigir execução.`;
+- Inclua mão de obra sempre que o serviço exigir execução.
+- Limite a no máximo 8 insumos por item, priorizando os mais relevantes.
+
+CRÍTICO sobre o formato: retorne SOMENTE o JSON, começando com { e terminando com }. Não use markdown, não escreva nada antes ou depois. Garanta que TODAS as vírgulas entre elementos estejam presentes e que todas as aspas, colchetes e chaves estejam fechados corretamente. Use ponto como separador decimal. Não use vírgula após o último elemento de um array ou objeto.`;
 }
 
 export default async function handler(req, res) {
@@ -71,18 +74,45 @@ export default async function handler(req, res) {
   if (itens.length > 40) return res.status(400).json({ error: "Máximo de 40 itens por chamada." });
 
   try {
-    const maxTokens = Math.min(8000, 600 + itens.length * 400);
+    const maxTokens = Math.min(16000, 1200 + itens.length * 700);
     const texto = await chamarModelo(montarPrompt(itens), maxTokens);
-    let parsed;
-    try { parsed = JSON.parse(texto); }
-    catch (_) {
-      const m = texto.match(/\{[\s\S]*\}/);
-      if (m) parsed = JSON.parse(m[0]);
-      else throw new Error("Resposta da IA não veio em JSON válido.");
-    }
+    const parsed = parseJsonTolerante(texto);
+    if (!parsed) return res.status(502).json({ error: "A IA respondeu, mas o JSON veio malformado. Tente novamente (geralmente funciona na 2ª tentativa) ou reduza a quantidade de itens." });
     const composicoes = Array.isArray(parsed?.composicoes) ? parsed.composicoes : [];
     return res.status(200).json({ composicoes });
   } catch (e) {
     return res.status(500).json({ error: e.message || String(e) });
   }
+}
+
+// Tenta parsear JSON mesmo se vier imperfeito (vírgula faltando, truncado, texto extra)
+function parseJsonTolerante(texto) {
+  if (!texto) return null;
+  // 1) tentativa direta
+  try { return JSON.parse(texto); } catch (_) {}
+  // 2) isola do primeiro { ao último }
+  let s = texto;
+  const ini = s.indexOf("{");
+  const fim = s.lastIndexOf("}");
+  if (ini >= 0 && fim > ini) s = s.slice(ini, fim + 1);
+  try { return JSON.parse(s); } catch (_) {}
+  // 3) remove vírgulas finais antes de } ou ]
+  let r = s.replace(/,\s*([}\]])/g, "$1");
+  try { return JSON.parse(r); } catch (_) {}
+  // 4) se truncou no meio: fecha aspas/colchetes/chaves abertos
+  try {
+    let t = s;
+    // fecha string aberta
+    const aspas = (t.match(/"/g) || []).length;
+    if (aspas % 2 !== 0) t += '"';
+    // conta e fecha colchetes/chaves
+    const ab = (t.match(/\[/g) || []).length, fc = (t.match(/\]/g) || []).length;
+    const ac = (t.match(/\{/g) || []).length, fch = (t.match(/\}/g) || []).length;
+    t = t.replace(/,\s*$/, "");
+    for (let k = 0; k < ab - fc; k++) t += "]";
+    for (let k = 0; k < ac - fch; k++) t += "}";
+    t = t.replace(/,\s*([}\]])/g, "$1");
+    return JSON.parse(t);
+  } catch (_) {}
+  return null;
 }
