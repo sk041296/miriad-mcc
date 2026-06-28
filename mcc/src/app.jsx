@@ -336,6 +336,7 @@ const OP_ITENS = [
   { id: "oc", label: "OC-i", nota: "Ordem de compra de materiais" },
   { id: "os", label: "OS-i", nota: "Ordem de serviço (mão de obra)" },
   { id: "prestadores", label: "Prestadores", nota: "Mão de obra direta e indireta" },
+  { id: "novoprojeto", label: "Novo Projeto", nota: "Upload da EAP e abertura de projeto" },
   { id: "eap", label: "EAP & Custos", nota: "Orçamento e curva de custos" },
   { id: "obras", label: "Obras", nota: "Cadastro e EAP das obras" },
 ];
