@@ -97,6 +97,7 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, a
       {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
       {sub === "eap" && <EapCustos obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} onMudou={carregar} />}
       {sub === "novoprojeto" && <NovoProjeto obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
+      {sub === "metascusto" && <MetasCusto obras={obras} eapPorObra={eapPorObra} />}
       {sub === "obras" && <Obras obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
     </div>
   );
@@ -1298,6 +1299,96 @@ function DashboardConsolidado({ obras, eapPorObra, ocs, contratos, rdos }) {
 /* ============================ Novo Projeto ============================ */
 /* Fluxo: upload da EAP -> desconto -> escolher Memorial Executivo OU Meta de custo %.
    Reaproveita o componente Obras (upload testado) e adiciona a bifurcação. */
+/* Cálculo de consumido por EAP (reusa a mesma lógica do financeiro) */
+function consumidoPorEap(ocs, contratos, obraId) {
+  const m = {};
+  const add = (cod, val) => { const c = String(cod || "").split(" ")[0].trim(); if (!c) return; m[c] = (m[c] || 0) + (Number(val) || 0); };
+  (ocs || []).filter((o) => o.obra_id === obraId).forEach((o) => {
+    if (Array.isArray(o.itens_eap) && o.itens_eap.length && o.itens_eap.some((x) => x.eap_codigo)) o.itens_eap.forEach((x) => add(x.eap_codigo, x.valor != null ? x.valor : x.valor_total));
+    else add(o.eap_codigo, o.valor);
+  });
+  (contratos || []).filter((c) => c.obra_id === obraId).forEach((c) => {
+    if (Array.isArray(c.itens_eap) && c.itens_eap.length) {
+      if (c.tipo === "direto") { const v = (Number(c.custo_mensal) || 0) * (Number(c.meses) || 0); const n = c.itens_eap.length || 1; c.itens_eap.forEach((x) => add(x.eap_codigo, v / n)); }
+      else c.itens_eap.forEach((x) => add(x.eap_codigo, x.valor));
+    } else add(c.escopo_eap, c.valor);
+  });
+  return m;
+}
+
+/* Fatia A — Tela de Metas de Custo por EAP (verba do memorial vs consumido) */
+function MetasCusto({ obras, eapPorObra }) {
+  const [obraId, setObraId] = useState("");
+  const [ocs, setOcs] = useState([]);
+  const [contratos, setContratos] = useState([]);
+  const [carregando, setCarregando] = useState(false);
+
+  useEffect(() => {
+    if (!obraId) return;
+    setCarregando(true);
+    Promise.all([listar("ordens_compra").catch(() => []), listar("contratos_servico").catch(() => [])])
+      .then(([o, c]) => { setOcs(o); setContratos(c); }).finally(() => setCarregando(false));
+  }, [obraId]);
+
+  const obra = obras.find((o) => o.id === obraId);
+  const itens = obraId ? (eapPorObra[obraId] || []) : [];
+  const comVerba = itens.filter((i) => i.verba_contratacao != null && Number(i.verba_contratacao) > 0);
+  const consumido = consumidoPorEap(ocs, contratos, obraId);
+
+  const linhas = comVerba.map((i) => {
+    const verba = Number(i.verba_contratacao) || 0;
+    const gasto = consumido[String(i.codigo).split(" ")[0].trim()] || 0;
+    const saldo = verba - gasto;
+    const pct = verba > 0 ? gasto / verba : 0;
+    return { cod: i.codigo, desc: i.descricao, verba, gasto, saldo, pct };
+  }).sort((a, b) => b.pct - a.pct);
+
+  const totVerba = sum(linhas.map((l) => l.verba));
+  const totGasto = sum(linhas.map((l) => l.gasto));
+  const furos = linhas.filter((l) => l.pct > 1);
+
+  const corPct = (pct) => pct > 1 ? C.vermelho : pct > 0.9 ? C.laranja : C.verde;
+
+  return (
+    <Card title="◎ Metas de Custo por EAP (verba do memorial × consumido)">
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
+        <div><Lbl>Obra</Lbl>
+          <select value={obraId} onChange={(e) => setObraId(e.target.value)} style={inp({ width: 240 })}>
+            <option value="">Selecione…</option>
+            {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
+          </select>
+        </div>
+      </div>
+
+      {!obraId ? <div style={{ color: C.dim, fontSize: 13 }}>Selecione uma obra para ver as metas de custo dos itens com memorial.</div>
+        : carregando ? <div style={{ color: C.dim }}>Carregando…</div>
+        : comVerba.length === 0 ? <div style={{ color: C.dim, fontSize: 13 }}>Nenhum item desta obra tem verba de contratação definida (memorial executivo). Crie memoriais na aba Novo Projeto.</div>
+        : <>
+          <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+            <Kpi label="Verba total (itens c/ memorial)" value={fmtR(totVerba)} />
+            <Kpi label="Consumido" value={fmtR(totGasto)} accent={C.laranja} />
+            <Kpi label="Saldo" value={fmtR(totVerba - totGasto)} accent={totVerba - totGasto < 0 ? C.vermelho : C.verde} />
+            <Kpi label="Itens acima da verba" value={String(furos.length)} accent={furos.length ? C.vermelho : C.verde} />
+          </div>
+
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr><Th>EAP</Th><Th>Descrição</Th><Th right>Verba (s/BDI)</Th><Th right>Consumido</Th><Th right>Saldo</Th><Th right>% consumido</Th></tr></thead>
+            <tbody>{linhas.map((l) => (
+              <tr key={l.cod} style={{ background: l.pct > 1 ? `${C.vermelho}0c` : "transparent" }}>
+                <Td><b>{l.cod}</b></Td>
+                <Td style={{ fontSize: 12 }}>{(l.desc || "").slice(0, 50)}</Td>
+                <Td right>{fmtR(l.verba)}</Td>
+                <Td right color={C.laranja}>{fmtR(l.gasto)}</Td>
+                <Td right color={l.saldo < 0 ? C.vermelho : C.verde}>{fmtR(l.saldo)}</Td>
+                <Td right><span style={{ fontWeight: 800, color: corPct(l.pct) }}>{(l.pct * 100).toFixed(0)}%</span></Td>
+              </tr>
+            ))}</tbody>
+          </table>
+        </>}
+    </Card>
+  );
+}
+
 function NovoProjeto({ obras, eapPorObra, onMudou }) {
   const [obraSel, setObraSel] = useState("");
   const obra = obras.find((o) => o.id === obraSel);

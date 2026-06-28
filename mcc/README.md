@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v10.24 — Metas de Custo por EAP (Alarmes de verba — Fatia A)
+- Nova aba "Metas de Custo" no Operacional: para cada obra, mostra os itens de EAP com memorial e compara a verba (custo s/BDI) com o consumido (soma das OCs/OSs daquela EAP).
+- Por item: verba, consumido, saldo e % consumido, com destaque visual (verde/laranja/vermelho) e itens acima da verba destacados.
+- KPIs: verba total, consumido, saldo e nº de itens acima da verba.
+- Base de cálculo que alimenta as próximas fatias (alarme na criação de OC/OS, integração com aprovação, painel de furos).
+
 ## v10.23 — Exportação do orçamento em PDF/XLSX (Fatia 3d)
 - Barra "Exportar orçamento da obra" no construtor, com duas opções combináveis:
   - BDI embutido: mostra valores já com BDI (sem expor o BDI), com EAP, descrição, qtd, valor unit c/BDI, subtotal e total.
