@@ -1,5 +1,13 @@
 # Miriad Construction Control (MCC)
 
+## v10.21 — Preenchimento com IA no construtor (Fatia 3c)
+- Botão "✨ IA" por item: sugere a composição analítica daquele item de EAP (material, mão de obra, equipamentos, locações) via API Anthropic.
+- Botão "✨ Preencher todos com IA": gera memoriais preliminares para todos os itens da EAP sem memorial, de uma vez.
+- A IA propõe insumos e coeficientes; o sistema completa preços com o histórico de OCs/OSs quando possível. Tudo entra como preliminar para revisão antes de salvar.
+- Novo endpoint api/sugerir-composicao.js (reusa ANTHROPIC_API_KEY já configurada; maxDuration 60s no vercel.json).
+
+> Sem migração nova.
+
 ## v10.20 — Correção da busca de último preço
 - Ajuste na similaridade: agora mede a cobertura das palavras da BUSCA no item histórico (não pune descrições de OC longas/detalhadas).
 - Ex.: "tela tapume" agora casa com "TELA TAPUME LARANJA PLASTCOR 1,20X50M".

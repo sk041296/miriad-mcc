@@ -6,7 +6,7 @@ import {
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap, resumoRdo,
   aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner, numBR, extrairItensPlanilha,
-  aprovarOrdem, rejeitarOrdem,
+  aprovarOrdem, rejeitarOrdem, sugerirComposicaoIA,
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
@@ -1448,6 +1448,56 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
     setMsg(`Preço de "${achado.desc.slice(0, 30)}" (${achado.fonte}): ${fmtR(achado.valor_unit)}`);
   };
 
+  // ---- IA (Fatia 3c) ----
+  const [iaBusy, setIaBusy] = useState(false);
+  // tenta aplicar último preço a cada insumo sugerido que veio com valor 0
+  const completarPrecos = (insumos) => insumos.map((it) => {
+    if (Number(it.valor_unit) > 0) return it;
+    const ach = buscarUltimoPreco(it.descricao);
+    return ach ? { ...it, valor_unit: ach.valor_unit, unidade: it.unidade || ach.unidade } : it;
+  });
+
+  const preencherIAItem = async () => {
+    if (!eapCod && !avulso) { setMsg("Selecione um item de EAP."); return; }
+    setIaBusy(true); setMsg("Consultando IA…");
+    try {
+      const eapItem = itensEap.find((i) => i.codigo === eapCod);
+      const comps = await sugerirComposicaoIA([{ eap_codigo: eapCod || "AVULSO", descricao: descEap, unidade: eapItem?.unidade, quantidade: eapItem?.quantidade }]);
+      const c = comps[0];
+      if (!c || !Array.isArray(c.insumos) || !c.insumos.length) { setMsg("A IA não retornou composição."); setIaBusy(false); return; }
+      const novos = completarPrecos(c.insumos).map((x) => ({ seg: x.segmento || "MATERIAL", descricao: x.descricao || "", unidade: x.unidade || "", quantidade: Number(x.quantidade) || 0, valor_unit: Number(x.valor_unit) || 0 }));
+      setItens(novos);
+      setMsg(`✓ IA sugeriu ${novos.length} insumo(s). Revise quantidades e valores antes de salvar.`);
+    } catch (e) { setMsg("Erro na IA: " + (e.message || e)); }
+    setIaBusy(false);
+  };
+
+  const preencherIATodos = async () => {
+    if (!obraId) { setMsg("Selecione uma obra."); return; }
+    const alvos = itensEap.filter((i) => !i.tem_memorial);
+    if (!alvos.length) { setMsg("Todos os itens da EAP já têm memorial."); return; }
+    if (!confirm(`Gerar composição por IA para ${alvos.length} item(ns) sem memorial? Isso cria memoriais preliminares para revisão.`)) return;
+    setIaBusy(true); setMsg(`Consultando IA para ${alvos.length} itens…`);
+    try {
+      const comps = await sugerirComposicaoIA(alvos.map((i) => ({ eap_codigo: i.codigo, descricao: i.descricao, unidade: i.unidade, quantidade: i.quantidade })));
+      let criados = 0;
+      for (const c of comps) {
+        const eapItem = alvos.find((i) => i.codigo === c.eap_codigo);
+        if (!eapItem || !Array.isArray(c.insumos) || !c.insumos.length) continue;
+        const insumos = completarPrecos(c.insumos);
+        const sbdi = sum(insumos.map((x) => (Number(x.quantidade) || 0) * (Number(x.valor_unit) || 0)));
+        const novo = await criar("memoriais_custo", { obra_id: obraId, eap_codigo: c.eap_codigo, tabela_ref: "PROPRIO", descricao: eapItem.descricao, bdi: Number(bdi) || 0, subtotal_sbdi: sbdi, subtotal_cbdi: sbdi * (1 + (Number(bdi) || 0)) }).catch(() => null);
+        if (!novo) continue;
+        await Promise.all(insumos.map((x, n) => criar("memoriais_itens", { memorial_id: novo.id, obra_id: obraId, eap_codigo: c.eap_codigo, segmento: x.segmento || "MATERIAL", descricao: x.descricao || "", unidade: x.unidade || "", quantidade: Number(x.quantidade) || 0, valor_unit: Number(x.valor_unit) || 0, subtotal_sbdi: (Number(x.quantidade) || 0) * (Number(x.valor_unit) || 0), subtotal_cbdi: (Number(x.quantidade) || 0) * (Number(x.valor_unit) || 0) * (1 + (Number(bdi) || 0)), ordem: n })));
+        await editar("eap_itens", eapItem.id, { tem_memorial: true, verba_contratacao: sbdi });
+        criados++;
+      }
+      setMsg(`✓ IA criou ${criados} memorial(is) preliminar(es). Abra cada item para revisar.`);
+      onMudou && onMudou();
+    } catch (e) { setMsg("Erro na IA: " + (e.message || e)); }
+    setIaBusy(false);
+  };
+
   const addItem = (seg) => setItens((a) => [...a, { seg, descricao: "", unidade: "", quantidade: 0, valor_unit: 0 }]);
   const setItem = (idx, campo, val) => setItens((a) => a.map((x, i) => i === idx ? { ...x, [campo]: val } : x));
   const delItem = (idx) => setItens((a) => a.filter((_, i) => i !== idx));
@@ -1485,7 +1535,9 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
   };
 
   return (
-    <Card title="▣ Construtor de Memorial Executivo">
+    <Card title="▣ Construtor de Memorial Executivo" right={
+      obraId ? <Btn small kind="ghost" onClick={preencherIATodos} disabled={iaBusy}>{iaBusy ? "IA…" : "✨ Preencher todos com IA"}</Btn> : null
+    }>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
         <div><Lbl>Obra</Lbl>
           <select value={obraId} onChange={(e) => { setObraId(e.target.value); setEapCod(""); }} style={inp({ width: 200 })}>
@@ -1514,7 +1566,10 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
 
       {(eapCod || avulso) && <>
         <div style={{ marginBottom: 10 }}><Lbl>Descrição do item (sintético)</Lbl>
-          <input value={descEap} onChange={(e) => setDescEap(e.target.value)} style={inp({ width: "100%" })} placeholder="Ex: Forro em fibra mineral, fornecimento e instalação" />
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input value={descEap} onChange={(e) => setDescEap(e.target.value)} style={inp({ flex: 1 })} placeholder="Ex: Forro em fibra mineral, fornecimento e instalação" />
+            <Btn small kind="ghost" onClick={preencherIAItem} disabled={iaBusy || !descEap}>{iaBusy ? "IA…" : "✨ IA"}</Btn>
+          </div>
         </div>
 
         {composicoesSimilar().length > 0 && (
