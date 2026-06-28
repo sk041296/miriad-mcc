@@ -1,5 +1,10 @@
 # Miriad Construction Control (MCC)
 
+## v10.15 — Kanban de OPs por faixa de vencimento + gráfico
+- Cada coluna do Kanban (Pendente NF / Liberada / Paga) agora agrupa as OPs por faixa de vencimento: 0-30, 31-60 e após 60 dias, com seções expansíveis (clique no cabeçalho).
+- Gráfico no topo com os valores a vencer (OPs em aberto) em 7, 15, 60 dias e total.
+- Cada card de OP mostra a descrição do material comprado (cruzado da OC de origem).
+
 ## v10.14 — Aprovação de OC-i / OS-i (Suprimentos + Diretoria)
 - OC/OS acima de R$ 1.000 entram como "aguardando aprovação" e só geram OP após aprovação dupla.
 - Aprovação independe de ordem, mas exige Coord. de Suprimentos E um Diretor.

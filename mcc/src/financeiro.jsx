@@ -647,7 +647,9 @@ function MedicaoProjetada() {
 
 /* ============================================================
    Kanban do Financeiro — Ordens de Pagamento (OP)
-   Status: pendente_nf -> liberada -> paga
+   3 colunas (pendente_nf, liberada, paga) com subgrupos por
+   faixa de vencimento (0-30, 31-60, >60) expansíveis +
+   gráfico de valores a vencer (7/15/60/total) + material no card.
    ============================================================ */
 const OP_COLS = [
   ["pendente_nf", "Pendente NF", C.laranja],
@@ -655,15 +657,41 @@ const OP_COLS = [
   ["paga",        "Paga",        C.verde],
 ];
 
+// faixas de vencimento (dias a partir de hoje)
+const FAIXAS = [
+  ["f30", "Vencimento em 30 dias", 0, 30],
+  ["f60", "Vencimento em 31–60 dias", 31, 60],
+  ["fmais", "Vencimento após 60 dias", 61, 99999],
+];
+
+function diasAte(venc) {
+  if (!venc) return null;
+  const h = new Date(hojeISO() + "T00:00:00");
+  const v = new Date(String(venc).slice(0, 10) + "T00:00:00");
+  return Math.round((v - h) / 86400000);
+}
+
 function KanbanOP() {
   const [ops, setOps] = useState(null);
   const [obras, setObras] = useState([]);
+  const [ocsMat, setOcsMat] = useState({}); // origem_id -> resumo de materiais
   const [filtroObra, setFiltroObra] = useState("");
   const [busy, setBusy] = useState(null);
+  const [expand, setExpand] = useState({}); // chave "status:faixa" -> bool
 
   const carregar = () => {
-    Promise.all([listar("ordens_pagamento"), listar("obras")])
-      .then(([o, ob]) => { setOps(o); setObras(ob); })
+    Promise.all([listar("ordens_pagamento"), listar("obras"), listar("ordens_compra")])
+      .then(([o, ob, ocs]) => {
+        setOps(o); setObras(ob);
+        // monta mapa origem_id -> "material1; material2"
+        const mp = {};
+        ocs.forEach((oc) => {
+          const its = Array.isArray(oc.itens_eap) ? oc.itens_eap : [];
+          const desc = its.map((i) => i.descricao || i.material).filter(Boolean);
+          if (desc.length) mp[oc.id] = desc.slice(0, 3).join("; ") + (desc.length > 3 ? "…" : "");
+        });
+        setOcsMat(mp);
+      })
       .catch(() => setOps([]));
   };
   useEffect(carregar, []);
@@ -671,11 +699,20 @@ function KanbanOP() {
   if (ops === null) return <div style={{ color: C.dim, padding: 20 }}>Carregando ordens de pagamento…</div>;
 
   const nomeObra = (id) => (obras.find((o) => o.id === id) || {}).codigo || "—";
+  const matDe = (op) => op.origem_tipo === "oc" ? (ocsMat[op.origem_id] || null) : null;
   const visiveis = filtroObra ? ops.filter((o) => o.obra_id === filtroObra) : ops;
-  const porStatus = (s) => visiveis.filter((o) => (o.status || "pendente_nf") === s)
-    .sort((a, b) => (a.vencimento || "9999").localeCompare(b.vencimento || "9999"));
+  const porStatus = (s) => visiveis.filter((o) => (o.status || "pendente_nf") === s);
 
-  const totalCol = (s) => sum(porStatus(s).map((o) => Number(o.valor) || 0));
+  // ---- Gráfico: valores A VENCER (não pagos) em janelas ----
+  const aVencer = visiveis.filter((o) => o.status !== "paga" && o.vencimento);
+  const somaAte = (lim) => sum(aVencer.filter((o) => { const d = diasAte(o.vencimento); return d != null && d <= lim; }).map((o) => Number(o.valor) || 0));
+  const dadosGrafico = [
+    { faixa: "7 dias", valor: somaAte(7) },
+    { faixa: "15 dias", valor: somaAte(15) },
+    { faixa: "60 dias", valor: somaAte(60) },
+    { faixa: "Total", valor: sum(aVencer.map((o) => Number(o.valor) || 0)) },
+  ];
+
   const totalGeral = sum(visiveis.map((o) => Number(o.valor) || 0));
   const totalPago = sum(visiveis.filter((o) => o.status === "paga").map((o) => Number(o.valor) || 0));
 
@@ -703,9 +740,92 @@ function KanbanOP() {
 
   const vencido = (op) => op.status !== "paga" && op.vencimento && op.vencimento < hojeISO();
 
+  // agrupa as OPs de uma coluna por faixa de vencimento
+  const faixaDe = (op) => {
+    const d = diasAte(op.vencimento);
+    if (d == null) return "fmais";
+    if (d <= 30) return "f30";
+    if (d <= 60) return "f60";
+    return "fmais";
+  };
+
+  const card = (op, scor, sid) => (
+    <div key={op.id} style={{ background: C.branco, border: `1px solid ${vencido(op) ? C.laranja : C.linha}`, borderRadius: 10, padding: 12, marginBottom: 8, boxShadow: "0 1px 2px rgba(0,0,0,.04)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
+        <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{op.fornecedor || "—"}</span>
+        <span style={{ fontWeight: 800, fontSize: 13, color: scor, whiteSpace: "nowrap" }}>{fmt(op.valor)}</span>
+      </div>
+      <div style={{ fontSize: 11, color: C.dim, marginTop: 4, display: "flex", flexWrap: "wrap", gap: "2px 8px" }}>
+        <span>{nomeObra(op.obra_id)}</span>
+        {op.centro_custo && <span>· {op.centro_custo}</span>}
+        {op.vencimento && <span style={{ color: vencido(op) ? C.laranja : C.dim, fontWeight: vencido(op) ? 700 : 400 }}>· venc {op.vencimento.split("-").reverse().join("/")}</span>}
+      </div>
+      {matDe(op) && <div style={{ fontSize: 11, color: "#475569", marginTop: 3, fontStyle: "italic" }}>Material: {matDe(op)}</div>}
+      {op.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>{op.descricao}</div>}
+      {op.nf_numero && <div style={{ fontSize: 11, color: "#2563eb", marginTop: 3 }}>NF {op.nf_numero}{op.nf_valor != null ? ` · ${fmt(op.nf_valor)}` : ""}</div>}
+      {op.status === "paga" && op.data_pagamento && <div style={{ fontSize: 11, color: C.verde, marginTop: 3 }}>Pago em {op.data_pagamento.split("-").reverse().join("/")}</div>}
+      <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
+        {sid === "pendente_nf" && <Btn small onClick={() => conferirNF(op)} disabled={busy === op.id}>Conferir NF</Btn>}
+        {sid === "liberada" && <>
+          <Btn small onClick={() => mover(op, "paga")} disabled={busy === op.id}>Marcar paga</Btn>
+          <Btn small kind="ghost" onClick={() => mover(op, "pendente_nf", { nf_conferida: false })} disabled={busy === op.id}>← Pendente</Btn>
+        </>}
+        {sid === "paga" && <Btn small kind="ghost" onClick={() => mover(op, "liberada", { data_pagamento: null })} disabled={busy === op.id}>← Reabrir</Btn>}
+      </div>
+    </div>
+  );
+
+  const coluna = (sid, slabel, scor) => {
+    const lista = porStatus(sid);
+    const totalC = sum(lista.map((o) => Number(o.valor) || 0));
+    return (
+      <div key={sid} style={{ background: "#f7f7f8", borderRadius: 12, padding: 10, minHeight: 200 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, paddingLeft: 4 }}>
+          <span style={{ fontWeight: 800, fontSize: 13, color: scor }}>{slabel}</span>
+          <span style={{ fontSize: 11, color: C.dim, fontWeight: 700 }}>{lista.length} · {fmt(totalC)}</span>
+        </div>
+        {FAIXAS.map(([fid, flabel]) => {
+          const itens = lista.filter((o) => faixaDe(o) === fid).sort((a, b) => (a.vencimento || "9999").localeCompare(b.vencimento || "9999"));
+          if (itens.length === 0) return null;
+          const chave = sid + ":" + fid;
+          const aberto = expand[chave] !== false; // começa aberto
+          const totalF = sum(itens.map((o) => Number(o.valor) || 0));
+          return (
+            <div key={fid} style={{ marginBottom: 8 }}>
+              <div onClick={() => setExpand((e) => ({ ...e, [chave]: aberto ? false : true }))}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", cursor: "pointer", padding: "6px 8px", background: "#ececed", borderRadius: 7, marginBottom: 6, userSelect: "none" }}>
+                <span style={{ fontSize: 11, fontWeight: 700, color: "#334155" }}>{aberto ? "▾" : "▸"} {flabel}</span>
+                <span style={{ fontSize: 10.5, color: C.dim, fontWeight: 700 }}>{itens.length} · {fmt(totalF)}</span>
+              </div>
+              {aberto && itens.map((op) => card(op, scor, sid))}
+            </div>
+          );
+        })}
+        {lista.length === 0 && <div style={{ fontSize: 12, color: C.dim, textAlign: "center", padding: "20px 0" }}>Nenhuma OP</div>}
+      </div>
+    );
+  };
+
   return (
     <div>
-      <div style={{ display: "flex", gap: 12, marginBottom: 16, flexWrap: "wrap", alignItems: "center" }}>
+      {/* Gráfico de valores a vencer */}
+      <Card title="Valores a vencer (OPs em aberto)">
+        <div style={{ height: 200 }}>
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={dadosGrafico} margin={{ top: 8, right: 12, left: 12, bottom: 4 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke={C.linha} />
+              <XAxis dataKey="faixa" tick={{ fontSize: 12 }} />
+              <YAxis tickFormatter={(v) => fmtK(v)} tick={{ fontSize: 11 }} />
+              <Tooltip content={<ChartTip />} formatter={(v) => fmtR(v)} />
+              <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
+                {dadosGrafico.map((d, i) => <Cell key={i} fill={i === 3 ? C.preto : C.laranja} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </Card>
+
+      <div style={{ display: "flex", gap: 12, margin: "16px 0", flexWrap: "wrap", alignItems: "center" }}>
         <Kpi label="Total em aberto" value={fmt(totalGeral - totalPago)} />
         <Kpi label="Já pago" value={fmt(totalPago)} />
         <Kpi label="Nº de OPs" value={String(visiveis.length)} />
@@ -720,40 +840,7 @@ function KanbanOP() {
       </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, alignItems: "start" }}>
-        {OP_COLS.map(([sid, slabel, scor]) => (
-          <div key={sid} style={{ background: "#f7f7f8", borderRadius: 12, padding: 10, minHeight: 200 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, paddingLeft: 4 }}>
-              <span style={{ fontWeight: 800, fontSize: 13, color: scor }}>{slabel}</span>
-              <span style={{ fontSize: 11, color: C.dim, fontWeight: 700 }}>{porStatus(sid).length} · {fmt(totalCol(sid))}</span>
-            </div>
-            {porStatus(sid).map((op) => (
-              <div key={op.id} style={{ background: C.branco, border: `1px solid ${vencido(op) ? C.laranja : C.linha}`, borderRadius: 10, padding: 12, marginBottom: 8, boxShadow: "0 1px 2px rgba(0,0,0,.04)" }}>
-                <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}>
-                  <span style={{ fontWeight: 700, fontSize: 13, lineHeight: 1.3 }}>{op.fornecedor || "—"}</span>
-                  <span style={{ fontWeight: 800, fontSize: 13, color: scor, whiteSpace: "nowrap" }}>{fmt(op.valor)}</span>
-                </div>
-                <div style={{ fontSize: 11, color: C.dim, marginTop: 4, display: "flex", flexWrap: "wrap", gap: "2px 8px" }}>
-                  <span>{nomeObra(op.obra_id)}</span>
-                  {op.centro_custo && <span>· {op.centro_custo}</span>}
-                  {op.vencimento && <span style={{ color: vencido(op) ? C.laranja : C.dim, fontWeight: vencido(op) ? 700 : 400 }}>· venc {op.vencimento.split("-").reverse().join("/")}</span>}
-                </div>
-                {op.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>{op.descricao}</div>}
-                {op.nf_numero && <div style={{ fontSize: 11, color: "#2563eb", marginTop: 3 }}>NF {op.nf_numero}{op.nf_valor != null ? ` · ${fmt(op.nf_valor)}` : ""}</div>}
-                {op.status === "paga" && op.data_pagamento && <div style={{ fontSize: 11, color: C.verde, marginTop: 3 }}>Pago em {op.data_pagamento.split("-").reverse().join("/")}</div>}
-
-                <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
-                  {sid === "pendente_nf" && <Btn small onClick={() => conferirNF(op)} disabled={busy === op.id}>Conferir NF</Btn>}
-                  {sid === "liberada" && <>
-                    <Btn small onClick={() => mover(op, "paga")} disabled={busy === op.id}>Marcar paga</Btn>
-                    <Btn small kind="ghost" onClick={() => mover(op, "pendente_nf", { nf_conferida: false })} disabled={busy === op.id}>← Pendente</Btn>
-                  </>}
-                  {sid === "paga" && <Btn small kind="ghost" onClick={() => mover(op, "liberada", { data_pagamento: null })} disabled={busy === op.id}>← Reabrir</Btn>}
-                </div>
-              </div>
-            ))}
-            {porStatus(sid).length === 0 && <div style={{ fontSize: 12, color: C.dim, textAlign: "center", padding: "20px 0" }}>Nenhuma OP</div>}
-          </div>
-        ))}
+        {OP_COLS.map(([sid, slabel, scor]) => coluna(sid, slabel, scor))}
       </div>
     </div>
   );
