@@ -1,5 +1,10 @@
 # Miriad Construction Control (MCC)
 
+## v10.20 — Correção da busca de último preço
+- Ajuste na similaridade: agora mede a cobertura das palavras da BUSCA no item histórico (não pune descrições de OC longas/detalhadas).
+- Ex.: "tela tapume" agora casa com "TELA TAPUME LARANJA PLASTCOR 1,20X50M".
+- Corte em 60% de cobertura para evitar falsos positivos.
+
 ## v10.19 — Inteligência determinística no construtor (Fatia 3b)
 - Botão "Copiar de [obra]": reaproveita composições da mesma EAP já feitas em outras obras.
 - Botão "⚡" em cada insumo: busca o último preço unitário pago nas OCs/OSs por similaridade de nome e preenche o valor.

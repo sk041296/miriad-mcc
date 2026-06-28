@@ -1415,16 +1415,17 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
   }, [obras]);
 
   const norm2 = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
-  const similaridade = (a, b) => {
-    const pa = new Set(norm2(a).split(" ").filter((w) => w.length >= 3));
-    const pb = new Set(norm2(b).split(" ").filter((w) => w.length >= 3));
+  const similaridade = (busca, alvo) => {
+    const pa = new Set(norm2(busca).split(" ").filter((w) => w.length >= 3));
+    const pb = new Set(norm2(alvo).split(" ").filter((w) => w.length >= 3));
     if (!pa.size || !pb.size) return 0;
     let comum = 0; pa.forEach((w) => { if (pb.has(w)) comum++; });
-    return comum / Math.max(pa.size, pb.size);
+    // cobertura: quanto das palavras da BUSCA aparece no alvo (não pune alvo detalhado)
+    return comum / pa.size;
   };
   const buscarUltimoPreco = (descricao) => {
     if (!descricao || !descricao.trim()) return null;
-    const cands = precoHist.map((h) => ({ ...h, sim: similaridade(descricao, h.desc) })).filter((h) => h.sim >= 0.5);
+    const cands = precoHist.map((h) => ({ ...h, sim: similaridade(descricao, h.desc) })).filter((h) => h.sim >= 0.6);
     if (!cands.length) return null;
     cands.sort((a, b) => (b.sim - a.sim) || (String(b.data || "").localeCompare(String(a.data || ""))));
     return cands[0];
