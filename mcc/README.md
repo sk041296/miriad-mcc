@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v10.23 — Exportação do orçamento em PDF/XLSX (Fatia 3d)
+- Barra "Exportar orçamento da obra" no construtor, com duas opções combináveis:
+  - BDI embutido: mostra valores já com BDI (sem expor o BDI), com EAP, descrição, qtd, valor unit c/BDI, subtotal e total.
+  - Composição analítica aberta: detalha cada insumo; desligada, sai só o resumo sintético por EAP.
+- PDF no papel timbrado da Miriad (logo + dados). XLSX nativo via SheetJS.
+- Conclui a Fatia 3 (construtor de memorial: manual + determinístico + IA + exportação).
+
 ## v10.22 — Robustez do preenchimento com IA
 - Corrige "Erro na IA: Expected ',' or ']'": a resposta da IA às vezes vinha com JSON imperfeito.
 - Três defesas: (1) teto de tokens maior (evita truncamento), (2) prompt mais estrito sobre o formato JSON, (3) parser tolerante que repara JSON comum (vírgula faltando, texto extra, fechamento de estruturas).

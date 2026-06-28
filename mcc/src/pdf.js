@@ -303,3 +303,99 @@ export function gerarPdfOC(oc, obra) {
   if (!w) { alert("Permita pop-ups para gerar o PDF da OC."); return; }
   w.document.write(html); w.document.close();
 }
+
+/* Geração do PDF de ORÇAMENTO a partir de memoriais de custo.
+   opcoes: { bdiEmbutido: bool, analitico: bool }
+   memoriais: [{ cab: {eap_codigo, descricao, bdi, subtotal_sbdi, subtotal_cbdi}, itens: [...] }] */
+export function gerarPdfOrcamento(obra, memoriais, opcoes) {
+  const { bdiEmbutido = true, analitico = false } = opcoes || {};
+  const fmtBR = (v) => (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const SEG = { MATERIAL: "Material", MAO_DE_OBRA: "Mão de obra", EQUIPAMENTO: "Equip./ferram.", LOCACAO: "Locação" };
+
+  let totalGeral = 0;
+  const blocos = (memoriais || []).map((m) => {
+    const cab = m.cab || {};
+    const bdi = Number(cab.bdi) || 0;
+    // valores conforme exibição: com BDI (embutido) ou sem
+    const valSint = bdiEmbutido ? (Number(cab.subtotal_cbdi) || 0) : (Number(cab.subtotal_sbdi) || 0);
+    totalGeral += valSint;
+
+    if (!analitico) {
+      // só linha sintética
+      return `<tr>
+        <td><b>${cab.eap_codigo || ""}</b></td>
+        <td>${(cab.descricao || "").replace(/</g, "&lt;")}</td>
+        <td style="text-align:center">${cab.tabela_ref || ""}</td>
+        <td style="text-align:right"><b>R$ ${fmtBR(valSint)}</b></td>
+      </tr>`;
+    }
+    // analítico: sintética + insumos
+    const linhasItens = (m.itens || []).map((it) => {
+      const q = Number(it.quantidade) || 0, vu = Number(it.valor_unit) || 0;
+      const sub = q * vu;
+      const vuShow = bdiEmbutido ? vu * (1 + bdi) : vu;
+      const subShow = bdiEmbutido ? sub * (1 + bdi) : sub;
+      return `<tr class="ana">
+        <td style="padding-left:18px">${SEG[it.segmento] || it.segmento || ""}</td>
+        <td>${(it.descricao || "").replace(/</g, "&lt;")}</td>
+        <td style="text-align:center">${it.unidade || ""}</td>
+        <td style="text-align:right">${q ? fmtBR(q) : ""}</td>
+        <td style="text-align:right">${vu ? "R$ " + fmtBR(vuShow) : ""}</td>
+        <td style="text-align:right">R$ ${fmtBR(subShow)}</td>
+      </tr>`;
+    }).join("");
+    return `<tr class="sint">
+        <td colspan="5"><b>${cab.eap_codigo || ""}</b> — ${(cab.descricao || "").replace(/</g, "&lt;")} ${cab.tabela_ref ? `<span style="font-weight:400">(${cab.tabela_ref})</span>` : ""}</td>
+        <td style="text-align:right"><b>R$ ${fmtBR(valSint)}</b></td>
+      </tr>${linhasItens}`;
+  }).join("");
+
+  const cabecalhoTabela = analitico
+    ? `<tr><th>Segmento / EAP</th><th>Descrição</th><th>Un.</th><th style="text-align:right">Qtd</th><th style="text-align:right">V. unit${bdiEmbutido ? "" : " (s/BDI)"}</th><th style="text-align:right">Subtotal</th></tr>`
+    : `<tr><th>EAP</th><th>Descrição</th><th style="text-align:center">Tab.</th><th style="text-align:right">Valor${bdiEmbutido ? "" : " (s/BDI)"}</th></tr>`;
+  const colspanTotal = analitico ? 5 : 3;
+
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+  <title>Orçamento — ${obra.codigo || ""}</title>
+  <style>
+    @page { size: A4; margin: 10mm 9mm; }
+    * { font-family: Arial, Helvetica, sans-serif; color: #1c1c1c; }
+    body { margin: 0; font-size: 10px; }
+    .barra { background: #f37335; color: #fff; font-weight: 800; font-size: 15px; letter-spacing: .06em; text-align: center; padding: 6px; border-radius: 3px; margin-bottom: 8px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 8px; }
+    th, td { border: 1px solid #c9c9c9; padding: 3px 6px; font-size: 9.5px; vertical-align: top; }
+    th { background: #141414; color: #fff; text-transform: uppercase; font-size: 8.5px; letter-spacing: .03em; }
+    tr.sint td { background: #f3f3f1; font-weight: 700; }
+    tr.ana td { font-size: 9px; color: #333; }
+    .empresa { display: flex; gap: 14px; align-items: center; border: 1px solid #c9c9c9; padding: 8px 12px; margin-bottom: 8px; }
+    .empresa .nome { font-size: 13px; font-weight: 800; color: #c21000; }
+    .empresa .l { font-size: 9.5px; line-height: 1.5; }
+    .logo { width: 165px; height: auto; flex-shrink: 0; }
+    .tot td { background: #f37335; color: #fff; font-weight: 800; font-size: 11px; }
+    .obs { font-size: 8px; color: #555; margin-top: 6px; }
+  </style></head><body>
+    <div class="barra">ORÇAMENTO</div>
+    <div class="empresa">
+      <img class="logo" src="${LOGO_FULL}" alt="Miriad Construtora" />
+      <div class="l">
+        <div class="nome">${EMPRESA_OC.nome}</div>
+        <div>${EMPRESA_OC.endereco}</div>
+        <div>CNPJ: ${EMPRESA_OC.cnpj} · ${EMPRESA_OC.telefone} · ${EMPRESA_OC.email}</div>
+        <div><b>Obra:</b> ${obra.codigo || ""} ${obra.nome ? "— " + obra.nome : ""} &nbsp;·&nbsp; <b>Data:</b> ${dataBR(new Date().toISOString())}</div>
+      </div>
+    </div>
+    <table>
+      <thead>${cabecalhoTabela}</thead>
+      <tbody>
+        ${blocos}
+        <tr class="tot"><td colspan="${colspanTotal}" style="text-align:right">TOTAL GERAL</td><td style="text-align:right">R$ ${fmtBR(totalGeral)}</td></tr>
+      </tbody>
+    </table>
+    <div class="obs">${bdiEmbutido ? "Valores com BDI embutido." : "Valores de custo, sem BDI."} ${analitico ? "Composição analítica detalhada." : "Resumo sintético por item de EAP."}</div>
+    <script>window.onload=()=>{setTimeout(()=>window.print(),350)}</script>
+  </body></html>`;
+
+  const w = window.open("", "_blank");
+  if (!w) { alert("Permita pop-ups para gerar o PDF do orçamento."); return; }
+  w.document.write(html); w.document.close();
+}

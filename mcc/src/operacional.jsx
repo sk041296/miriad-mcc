@@ -8,7 +8,7 @@ import {
   aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner, numBR, extrairItensPlanilha,
   aprovarOrdem, rejeitarOrdem, sugerirComposicaoIA,
 } from "./core.jsx";
-import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC } from "./pdf.js";
+import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC, gerarPdfOrcamento } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
 import { SmI } from "./smi.jsx";
 import { SsI } from "./ssi.jsx";
@@ -1498,6 +1498,64 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
     setIaBusy(false);
   };
 
+  // ---- Exportação do orçamento (Fatia 3d) ----
+  const [expBdi, setExpBdi] = useState(true);
+  const [expAnalitico, setExpAnalitico] = useState(false);
+  const [expBusy, setExpBusy] = useState(false);
+
+  const carregarMemoriaisDaObra = async () => {
+    if (!obraId) { setMsg("Selecione uma obra para exportar."); return null; }
+    const cabs = await listar("memoriais_custo", { obra_id: obraId });
+    if (!cabs.length) { setMsg("Esta obra ainda não tem memoriais salvos."); return null; }
+    const full = [];
+    for (const cab of cabs.sort((a, b) => String(a.eap_codigo).localeCompare(String(b.eap_codigo), undefined, { numeric: true }))) {
+      const its = await listar("memoriais_itens", { memorial_id: cab.id });
+      full.push({ cab, itens: its.sort((a, b) => (a.ordem || 0) - (b.ordem || 0)) });
+    }
+    return full;
+  };
+
+  const exportarPdf = async () => {
+    setExpBusy(true); setMsg("");
+    try {
+      const mems = await carregarMemoriaisDaObra();
+      if (mems) gerarPdfOrcamento(obra || {}, mems, { bdiEmbutido: expBdi, analitico: expAnalitico });
+    } catch (e) { setMsg("Erro ao exportar: " + (e.message || e)); }
+    setExpBusy(false);
+  };
+
+  const exportarXlsx = async () => {
+    setExpBusy(true); setMsg("");
+    try {
+      const mems = await carregarMemoriaisDaObra();
+      if (!mems) { setExpBusy(false); return; }
+      const SEG = { MATERIAL: "Material", MAO_DE_OBRA: "Mão de obra", EQUIPAMENTO: "Equip./ferram.", LOCACAO: "Locação" };
+      const rows = [];
+      if (expAnalitico) {
+        rows.push(["EAP / Segmento", "Descrição", "Un.", "Qtd", expBdi ? "V.unit c/BDI" : "V.unit s/BDI", "Subtotal"]);
+        mems.forEach(({ cab, itens }) => {
+          const bdi = Number(cab.bdi) || 0;
+          rows.push([cab.eap_codigo, cab.descricao, "", "", "", expBdi ? (Number(cab.subtotal_cbdi) || 0) : (Number(cab.subtotal_sbdi) || 0)]);
+          itens.forEach((it) => {
+            const q = Number(it.quantidade) || 0, vu = Number(it.valor_unit) || 0;
+            rows.push(["  " + (SEG[it.segmento] || it.segmento), it.descricao, it.unidade, q, expBdi ? vu * (1 + bdi) : vu, expBdi ? q * vu * (1 + bdi) : q * vu]);
+          });
+        });
+      } else {
+        rows.push(["EAP", "Descrição", "Tabela", expBdi ? "Valor c/BDI" : "Valor s/BDI"]);
+        mems.forEach(({ cab }) => rows.push([cab.eap_codigo, cab.descricao, cab.tabela_ref, expBdi ? (Number(cab.subtotal_cbdi) || 0) : (Number(cab.subtotal_sbdi) || 0)]));
+      }
+      const total = mems.reduce((s, { cab }) => s + (expBdi ? (Number(cab.subtotal_cbdi) || 0) : (Number(cab.subtotal_sbdi) || 0)), 0);
+      rows.push([]); rows.push(["TOTAL GERAL", "", ...(expAnalitico ? ["", "", ""] : [""]), total].slice(0, rows[0].length));
+      const ws = XLSX.utils.aoa_to_sheet(rows);
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Orçamento");
+      XLSX.writeFile(wb, `Orcamento_${(obra?.codigo || "obra").replace(/[^a-z0-9]/gi, "_")}.xlsx`);
+      setMsg("✓ Planilha gerada.");
+    } catch (e) { setMsg("Erro ao exportar: " + (e.message || e)); }
+    setExpBusy(false);
+  };
+
   const addItem = (seg) => setItens((a) => [...a, { seg, descricao: "", unidade: "", quantidade: 0, valor_unit: 0 }]);
   const setItem = (idx, campo, val) => setItens((a) => a.map((x, i) => i === idx ? { ...x, [campo]: val } : x));
   const delItem = (idx) => setItens((a) => a.filter((_, i) => i !== idx));
@@ -1563,6 +1621,21 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
           <input type="number" step="0.01" value={(Number(bdi) * 100).toFixed(2)} onChange={(e) => setBdi((Number(e.target.value) || 0) / 100)} style={inp({ width: 90 })} />
         </div>
       </div>
+
+      {obraId && (
+        <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", padding: 10, background: "#f7f7f8", borderRadius: 8, marginBottom: 12 }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: C.dim }}>Exportar orçamento da obra:</span>
+          <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+            <input type="checkbox" checked={expBdi} onChange={(e) => setExpBdi(e.target.checked)} /> BDI embutido
+          </label>
+          <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 4 }}>
+            <input type="checkbox" checked={expAnalitico} onChange={(e) => setExpAnalitico(e.target.checked)} /> composição analítica aberta
+          </label>
+          <div style={{ flex: 1 }} />
+          <Btn small kind="ghost" onClick={exportarPdf} disabled={expBusy}>⇩ PDF</Btn>
+          <Btn small kind="ghost" onClick={exportarXlsx} disabled={expBusy}>⇩ XLSX</Btn>
+        </div>
+      )}
 
       {(eapCod || avulso) && <>
         <div style={{ marginBottom: 10 }}><Lbl>Descrição do item (sintético)</Lbl>
