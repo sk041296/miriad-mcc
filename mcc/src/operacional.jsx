@@ -15,7 +15,7 @@ import { SsI } from "./ssi.jsx";
 import { Pos } from "./pos.jsx";
 import { Pmm } from "./pmm.jsx";
 
-const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
+const OP_TABS = [["rdo", "RDO-i"], ["os", "OS-i · Serviços"], ["oc", "OC-i · Materiais"], ["prestadores", "Prestadores"], ["novoprojeto", "Novo Projeto"], ["eap", "EAP & Custos"], ["obras", "Obras"]];
 
 export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, acesso }) {
   const [subLocal, setSubLocal] = useState("rdo");
@@ -96,6 +96,7 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, a
       {sub === "oc" && <OcI obras={obras} eapPorObra={eapPorObra} ocs={ocs} restricoes={restricoes} colaboradores={colaboradores} usuario={usuario} draft={draftOc} onConsumeDraft={() => setDraftOc(null)} onMudou={recargaOcs} />}
       {sub === "prestadores" && <Prestadores obras={obras} funcionarios={funcionarios} contratos={contratos} onMudou={carregar} />}
       {sub === "eap" && <EapCustos obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} onMudou={carregar} />}
+      {sub === "novoprojeto" && <NovoProjeto obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
       {sub === "obras" && <Obras obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
     </div>
   );
@@ -1293,6 +1294,60 @@ function DashboardConsolidado({ obras, eapPorObra, ocs, contratos, rdos }) {
   );
 }
 
+
+/* ============================ Novo Projeto ============================ */
+/* Fluxo: upload da EAP -> desconto -> escolher Memorial Executivo OU Meta de custo %.
+   Reaproveita o componente Obras (upload testado) e adiciona a bifurcação. */
+function NovoProjeto({ obras, eapPorObra, onMudou }) {
+  const [obraSel, setObraSel] = useState("");
+  const obra = obras.find((o) => o.id === obraSel);
+  const itens = obraSel ? (eapPorObra[obraSel] || []) : [];
+  const temMemorial = itens.some((i) => i.tem_memorial);
+  const temMeta = itens.some((i) => i.meta_pct != null || i.meta_valor != null);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card title="Novo Projeto — fluxo de abertura">
+        <div style={{ fontSize: 13, color: C.dim, lineHeight: 1.6 }}>
+          <b style={{ color: C.preto }}>Passo 1.</b> Faça o upload da planilha orçamentária (EAP analítica) abaixo. <br />
+          <b style={{ color: C.preto }}>Passo 2.</b> Aplique o desconto da licitação na aba <b>EAP &amp; Custos</b>, se houver. <br />
+          <b style={{ color: C.preto }}>Passo 3.</b> Defina o custo-alvo do projeto de uma destas formas:
+        </div>
+        <div style={{ display: "flex", gap: 12, marginTop: 14, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 260, border: `1px solid ${C.linha}`, borderRadius: 10, padding: 14 }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: C.laranja }}>◎ Meta de custo (%)</div>
+            <div style={{ fontSize: 12.5, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>
+              Rápido. Define um percentual do custo de referência como meta. Ideal para soltar o projeto imediatamente e detalhar depois.
+            </div>
+            <div style={{ marginTop: 10 }}><Btn small onClick={() => alert("Use a aba 'EAP & Custos' → botão 'Definir meta de custo (global)'.")}>Como definir meta %</Btn></div>
+          </div>
+          <div style={{ flex: 1, minWidth: 260, border: `1px solid ${C.laranja}`, borderRadius: 10, padding: 14, background: `${C.laranja}08` }}>
+            <div style={{ fontWeight: 800, fontSize: 14, color: C.laranja }}>▣ Memorial Executivo de Custo</div>
+            <div style={{ fontSize: 12.5, color: C.dim, marginTop: 6, lineHeight: 1.5 }}>
+              Detalhado. Monta a composição analítica de cada EAP (material, mão de obra, equipamentos, locações), com verba de contratação por item. Pode ser feito depois da meta %.
+            </div>
+            <div style={{ marginTop: 10 }}><Btn small kind="ghost" disabled>Construtor de memorial (em breve)</Btn></div>
+          </div>
+        </div>
+        {obraSel && (
+          <div style={{ marginTop: 14, fontSize: 12.5, color: C.dim }}>
+            Status de <b>{obra?.codigo}</b>: meta% {temMeta ? "✓ definida" : "— pendente"} · memorial {temMemorial ? "✓ criado" : "— pendente"}
+          </div>
+        )}
+        <div style={{ marginTop: 12 }}>
+          <Lbl>Acompanhar projeto</Lbl>
+          <select value={obraSel} onChange={(e) => setObraSel(e.target.value)} style={inp({ maxWidth: 320 })}>
+            <option value="">Selecione uma obra…</option>
+            {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
+          </select>
+        </div>
+      </Card>
+
+      {/* Reaproveita todo o upload de EAP testado do componente Obras */}
+      <Obras obras={obras} eapPorObra={eapPorObra} onMudou={onMudou} />
+    </div>
+  );
+}
 
 /* ============================ Obras (upload EAP) ============================ */
 function Obras({ obras, eapPorObra, onMudou }) {

@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v10.16 — Tab "Novo Projeto" (Bloco I do módulo de Orçamentos)
+- Nova aba "Novo Projeto" no módulo Operacional, com o fluxo de abertura: upload da EAP → desconto → escolha entre Meta de custo (%) ou Memorial Executivo.
+- Reaproveita o upload de EAP existente (sem alterar a lógica testada).
+- Bifurcação memorial vs meta% preparada (construtor de memorial vem nas próximas fatias).
+- Migração v10_16 inclusa (tabelas memoriais_custo e memoriais_itens + campos de verba na eap_itens) — necessária para as próximas fatias do módulo.
+
 ## v10.15 — Kanban de OPs por faixa de vencimento + gráfico
 - Cada coluna do Kanban (Pendente NF / Liberada / Paga) agora agrupa as OPs por faixa de vencimento: 0-30, 31-60 e após 60 dias, com seções expansíveis (clique no cabeçalho).
 - Gráfico no topo com os valores a vencer (OPs em aberto) em 7, 15, 60 dias e total.
