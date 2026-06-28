@@ -21,7 +21,7 @@ const TABELAS = {
   catalogo_financeiro: { ordem: "codigo", asc: true },
   catalogo_mao_obra: { ordem: "prestador", asc: true },
   memoriais_custo: { ordem: "criado_em", asc: false, filtro: "obra_id" },
-  memoriais_itens: { ordem: "ordem", asc: true },
+  memoriais_itens: { ordem: "ordem", asc: true, filtro: "memorial_id" },
   usuarios: { ordem: "nome", asc: true },
 };
 

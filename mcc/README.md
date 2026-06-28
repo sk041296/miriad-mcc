@@ -1,5 +1,15 @@
 # Miriad Construction Control (MCC)
 
+## v10.18 — Construtor de Memorial Executivo (Fatia 3a — manual)
+- Tela na tab Novo Projeto para montar a composição analítica de cada EAP.
+- Funciona a partir de um item de EAP existente OU avulso.
+- Insumos agrupados por segmento (Material, Mão de obra, Equipamentos, Locações), com qtd, valor unit e subtotais com/sem BDI calculados ao vivo.
+- BDI configurável por memorial. Salva em memoriais_custo + memoriais_itens.
+- Ao salvar, marca a EAP com tem_memorial e grava a verba_contratacao (custo s/ BDI).
+- Próximas fatias: 3b inteligência (busca determinística + último preço), 3c IA, 3d geração de PDF/XLSX.
+
+> Sem migração nova — usa as tabelas da v10.16 e os catálogos da v10.17.
+
 ## v10.17 — Catálogo de insumos (Fatia 2 do módulo de Orçamentos)
 - Tabelas catalogo_financeiro (plano de contas / naturezas) e catalogo_mao_obra (custos de MO) — fundação do construtor de memorial.
 - Consulta do catálogo na tab Novo Projeto (plano de contas + mão de obra, com busca).

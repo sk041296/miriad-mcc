@@ -1346,12 +1346,165 @@ function NovoProjeto({ obras, eapPorObra, onMudou }) {
       {/* Reaproveita todo o upload de EAP testado do componente Obras */}
       <Obras obras={obras} eapPorObra={eapPorObra} onMudou={onMudou} />
 
+      <ConstrutorMemorial obras={obras} eapPorObra={eapPorObra} onMudou={onMudou} />
+
       <CatalogoInsumos />
     </div>
   );
 }
 
 /* Consulta dos catálogos da empresa (plano de contas + mão de obra) */
+const SEGMENTOS = [
+  ["MATERIAL", "Material"],
+  ["MAO_DE_OBRA", "Mão de obra"],
+  ["EQUIPAMENTO", "Equipamentos e ferramentas"],
+  ["LOCACAO", "Locações"],
+];
+
+/* Construtor de Memorial Executivo (Fatia 3a — manual) */
+function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
+  const [obraId, setObraId] = useState("");
+  const [eapCod, setEapCod] = useState("");
+  const [avulso, setAvulso] = useState(false);
+  const [descEap, setDescEap] = useState("");
+  const [tabelaRef, setTabelaRef] = useState("PROPRIO");
+  const [bdi, setBdi] = useState(0.2842);
+  const [itens, setItens] = useState([]); // {seg, descricao, unidade, quantidade, valor_unit}
+  const [memorialId, setMemorialId] = useState(null);
+  const [salvando, setSalvando] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const itensEap = obraId ? (eapPorObra[obraId] || []) : [];
+
+  // carrega memorial existente ao trocar obra+eap
+  useEffect(() => {
+    if (!obraId || !eapCod || avulso) return;
+    setMsg("");
+    listar("memoriais_custo", { obra_id: obraId }).then((ms) => {
+      const m = ms.find((x) => x.eap_codigo === eapCod);
+      if (m) {
+        setMemorialId(m.id); setDescEap(m.descricao || ""); setTabelaRef(m.tabela_ref || "PROPRIO"); setBdi(m.bdi || 0.2842);
+        listar("memoriais_itens", { memorial_id: m.id }).then((its) => {
+          setItens(its.sort((a, b) => (a.ordem || 0) - (b.ordem || 0)).map((x) => ({ seg: x.segmento, descricao: x.descricao, unidade: x.unidade, quantidade: x.quantidade, valor_unit: x.valor_unit })));
+        });
+      } else {
+        setMemorialId(null); setItens([]);
+        const eapItem = itensEap.find((i) => i.codigo === eapCod);
+        setDescEap(eapItem?.descricao || "");
+      }
+    });
+  }, [obraId, eapCod, avulso]);
+
+  const addItem = (seg) => setItens((a) => [...a, { seg, descricao: "", unidade: "", quantidade: 0, valor_unit: 0 }]);
+  const setItem = (idx, campo, val) => setItens((a) => a.map((x, i) => i === idx ? { ...x, [campo]: val } : x));
+  const delItem = (idx) => setItens((a) => a.filter((_, i) => i !== idx));
+
+  const sbdiItem = (it) => (Number(it.quantidade) || 0) * (Number(it.valor_unit) || 0);
+  const cbdiItem = (it) => sbdiItem(it) * (1 + (Number(bdi) || 0));
+  const totSbdi = sum(itens.map(sbdiItem));
+  const totCbdi = totSbdi * (1 + (Number(bdi) || 0));
+
+  const salvar = async () => {
+    if (!eapCod && !avulso) { setMsg("Selecione um item de EAP."); return; }
+    setSalvando(true); setMsg("");
+    try {
+      let memId = memorialId;
+      const cabecalho = { obra_id: obraId || null, eap_codigo: eapCod || ("AVULSO-" + Date.now()), tabela_ref: tabelaRef, descricao: descEap, bdi: Number(bdi) || 0, subtotal_sbdi: totSbdi, subtotal_cbdi: totCbdi };
+      if (memId) { await editar("memoriais_custo", memId, cabecalho); }
+      else { const novo = await criar("memoriais_custo", cabecalho); memId = novo.id; setMemorialId(memId); }
+      // regrava itens: apaga os antigos e insere os atuais
+      const antigos = await listar("memoriais_itens", { memorial_id: memId });
+      await Promise.all(antigos.map((x) => remover("memoriais_itens", x.id)));
+      await Promise.all(itens.map((it, i) => criar("memoriais_itens", {
+        memorial_id: memId, obra_id: obraId || null, eap_codigo: eapCod, segmento: it.seg,
+        descricao: it.descricao, unidade: it.unidade, quantidade: Number(it.quantidade) || 0,
+        valor_unit: Number(it.valor_unit) || 0, subtotal_sbdi: sbdiItem(it), subtotal_cbdi: cbdiItem(it), ordem: i,
+      })));
+      // marca a EAP como tendo memorial + grava verba (custo s/ BDI)
+      if (obraId && eapCod) {
+        const eapItem = itensEap.find((i) => i.codigo === eapCod);
+        if (eapItem) await editar("eap_itens", eapItem.id, { tem_memorial: true, verba_contratacao: totSbdi });
+      }
+      setMsg("✓ Memorial salvo. Verba de contratação: " + fmtR(totSbdi));
+      onMudou && onMudou();
+    } catch (e) { setMsg("Erro: " + (e.message || e)); }
+    setSalvando(false);
+  };
+
+  return (
+    <Card title="▣ Construtor de Memorial Executivo">
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 14 }}>
+        <div><Lbl>Obra</Lbl>
+          <select value={obraId} onChange={(e) => { setObraId(e.target.value); setEapCod(""); }} style={inp({ width: 200 })}>
+            <option value="">Selecione…</option>
+            {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
+          </select>
+        </div>
+        <div><Lbl>Item da EAP</Lbl>
+          <select value={eapCod} onChange={(e) => setEapCod(e.target.value)} style={inp({ width: 260 })} disabled={!obraId || avulso}>
+            <option value="">Selecione…</option>
+            {itensEap.map((i) => <option key={i.id} value={i.codigo}>{i.codigo} — {(i.descricao || "").slice(0, 40)}</option>)}
+          </select>
+        </div>
+        <label style={{ fontSize: 12, color: C.dim, display: "flex", alignItems: "center", gap: 5 }}>
+          <input type="checkbox" checked={avulso} onChange={(e) => { setAvulso(e.target.checked); if (e.target.checked) setEapCod(""); }} /> avulso
+        </label>
+        <div><Lbl>Tabela ref.</Lbl>
+          <select value={tabelaRef} onChange={(e) => setTabelaRef(e.target.value)} style={inp({ width: 120 })}>
+            {["SINAPI", "ORSE", "PROPRIO", "OUTRA"].map((t) => <option key={t} value={t}>{t}</option>)}
+          </select>
+        </div>
+        <div><Lbl>BDI (%)</Lbl>
+          <input type="number" step="0.01" value={(Number(bdi) * 100).toFixed(2)} onChange={(e) => setBdi((Number(e.target.value) || 0) / 100)} style={inp({ width: 90 })} />
+        </div>
+      </div>
+
+      {(eapCod || avulso) && <>
+        <div style={{ marginBottom: 10 }}><Lbl>Descrição do item (sintético)</Lbl>
+          <input value={descEap} onChange={(e) => setDescEap(e.target.value)} style={inp({ width: "100%" })} placeholder="Ex: Forro em fibra mineral, fornecimento e instalação" />
+        </div>
+
+        {SEGMENTOS.map(([sid, slabel]) => {
+          const idxs = itens.map((it, i) => ({ it, i })).filter((x) => x.it.seg === sid);
+          return (
+            <div key={sid} style={{ marginBottom: 14 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontWeight: 700, fontSize: 12.5, color: C.laranja }}>{slabel}</span>
+                <Btn small kind="ghost" onClick={() => addItem(sid)}>+ insumo</Btn>
+              </div>
+              {idxs.length > 0 && (
+                <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+                  <thead><tr><Th>Descrição</Th><Th>Un.</Th><Th right>Qtd</Th><Th right>V. unit</Th><Th right>Sub s/BDI</Th><Th right>Sub c/BDI</Th><Th /></tr></thead>
+                  <tbody>{idxs.map(({ it, i }) => (
+                    <tr key={i}>
+                      <Td><input value={it.descricao} onChange={(e) => setItem(i, "descricao", e.target.value)} style={inp({ width: "100%", fontSize: 12, padding: "3px 6px" })} /></Td>
+                      <Td><input value={it.unidade} onChange={(e) => setItem(i, "unidade", e.target.value)} style={inp({ width: 50, fontSize: 12, padding: "3px 6px" })} /></Td>
+                      <Td right><input type="number" value={it.quantidade} onChange={(e) => setItem(i, "quantidade", e.target.value)} style={inp({ width: 70, fontSize: 12, padding: "3px 6px", textAlign: "right" })} /></Td>
+                      <Td right><input type="number" value={it.valor_unit} onChange={(e) => setItem(i, "valor_unit", e.target.value)} style={inp({ width: 80, fontSize: 12, padding: "3px 6px", textAlign: "right" })} /></Td>
+                      <Td right>{fmtR(sbdiItem(it))}</Td>
+                      <Td right color={C.laranja}>{fmtR(cbdiItem(it))}</Td>
+                      <Td><button onClick={() => delItem(i)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 14 }}>×</button></Td>
+                    </tr>
+                  ))}</tbody>
+                </table>
+              )}
+            </div>
+          );
+        })}
+
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", borderTop: `2px solid ${C.preto}`, paddingTop: 10, marginTop: 6 }}>
+          <div style={{ fontSize: 12.5 }}>
+            <b>Custo s/ BDI (verba):</b> <span style={{ color: C.preto, fontWeight: 800 }}>{fmtR(totSbdi)}</span>
+            <span style={{ color: C.dim, marginLeft: 16 }}>Venda c/ BDI: <b style={{ color: C.laranja }}>{fmtR(totCbdi)}</b></span>
+          </div>
+          <Btn onClick={salvar} disabled={salvando}>{salvando ? "Salvando…" : "Salvar memorial"}</Btn>
+        </div>
+        {msg && <div style={{ marginTop: 8, fontSize: 12.5, color: msg.startsWith("✓") ? C.verde : C.vermelho }}>{msg}</div>}
+      </>}
+    </Card>
+  );
+}
+
 function CatalogoInsumos() {
   const [fin, setFin] = useState(null);
   const [mo, setMo] = useState([]);
