@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v10.17 — Catálogo de insumos (Fatia 2 do módulo de Orçamentos)
+- Tabelas catalogo_financeiro (plano de contas / naturezas) e catalogo_mao_obra (custos de MO) — fundação do construtor de memorial.
+- Consulta do catálogo na tab Novo Projeto (plano de contas + mão de obra, com busca).
+- Backend: catálogos e tabelas de memorial registrados na whitelist.
+
+> **Migração:** rode `supabase/migration_v10_17.sql` (cria as tabelas) e depois `carga_catalogos.sql` (insere os 60+21 itens da DATABASE da empresa).
+
 ## v10.16 — Tab "Novo Projeto" (Bloco I do módulo de Orçamentos)
 - Nova aba "Novo Projeto" no módulo Operacional, com o fluxo de abertura: upload da EAP → desconto → escolha entre Meta de custo (%) ou Memorial Executivo.
 - Reaproveita o upload de EAP existente (sem alterar a lógica testada).

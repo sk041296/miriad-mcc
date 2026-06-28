@@ -18,6 +18,10 @@ const TABELAS = {
   boletins_medicao: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   ordens_pagamento: { ordem: "vencimento", asc: true },
   config_financeiro: { ordem: "chave", asc: true },
+  catalogo_financeiro: { ordem: "codigo", asc: true },
+  catalogo_mao_obra: { ordem: "prestador", asc: true },
+  memoriais_custo: { ordem: "criado_em", asc: false, filtro: "obra_id" },
+  memoriais_itens: { ordem: "ordem", asc: true },
   usuarios: { ordem: "nome", asc: true },
 };
 

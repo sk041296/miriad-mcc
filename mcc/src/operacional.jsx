@@ -1345,7 +1345,53 @@ function NovoProjeto({ obras, eapPorObra, onMudou }) {
 
       {/* Reaproveita todo o upload de EAP testado do componente Obras */}
       <Obras obras={obras} eapPorObra={eapPorObra} onMudou={onMudou} />
+
+      <CatalogoInsumos />
     </div>
+  );
+}
+
+/* Consulta dos catálogos da empresa (plano de contas + mão de obra) */
+function CatalogoInsumos() {
+  const [fin, setFin] = useState(null);
+  const [mo, setMo] = useState([]);
+  const [aba, setAba] = useState("fin");
+  const [busca, setBusca] = useState("");
+  useEffect(() => {
+    Promise.all([listar("catalogo_financeiro"), listar("catalogo_mao_obra")])
+      .then(([f, m]) => { setFin(f); setMo(m); }).catch(() => setFin([]));
+  }, []);
+  if (fin === null) return null;
+  if (fin.length === 0 && mo.length === 0) return null;
+
+  const q = busca.trim().toLowerCase();
+  const finF = fin.filter((x) => !q || (x.descricao || "").toLowerCase().includes(q) || (x.codigo || "").includes(q));
+  const moF = mo.filter((x) => !q || (x.prestador || "").toLowerCase().includes(q));
+
+  return (
+    <Card title={`Catálogo da empresa (${fin.length} naturezas · ${mo.length} mão de obra)`} right={
+      <input placeholder="Buscar…" value={busca} onChange={(e) => setBusca(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px", width: 160 })} />
+    }>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        <Btn small kind={aba === "fin" ? "dark" : "ghost"} onClick={() => setAba("fin")}>Plano de contas</Btn>
+        <Btn small kind={aba === "mo" ? "dark" : "ghost"} onClick={() => setAba("mo")}>Mão de obra</Btn>
+      </div>
+      {aba === "fin" ? (
+        <div style={{ maxHeight: 360, overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr><Th>Código</Th><Th>Descrição</Th><Th>Tipo</Th></tr></thead>
+            <tbody>{finF.map((x) => <tr key={x.id}><Td style={{ fontSize: 12, fontFamily: "monospace" }}>{x.codigo}</Td><Td>{x.descricao}</Td><Td style={{ fontSize: 12 }}>{x.tipo}</Td></tr>)}</tbody>
+          </table>
+        </div>
+      ) : (
+        <div style={{ maxHeight: 360, overflow: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr><Th>Prestador</Th><Th right>Salário mensal</Th><Th right>Valor/hora</Th><Th>Unidade</Th></tr></thead>
+            <tbody>{moF.map((x) => <tr key={x.id}><Td>{x.prestador}</Td><Td right>{x.salario_mensal != null ? fmtR(x.salario_mensal) : "—"}</Td><Td right color={C.laranja}>{x.valor_hora != null ? fmtR(x.valor_hora) : "—"}</Td><Td style={{ fontSize: 12 }}>{x.unidade || "—"}</Td></tr>)}</tbody>
+          </table>
+        </div>
+      )}
+    </Card>
   );
 }
 
