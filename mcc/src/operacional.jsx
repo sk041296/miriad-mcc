@@ -1395,6 +1395,58 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
     });
   }, [obraId, eapCod, avulso]);
 
+  // dados de apoio para a inteligência (Fatia 3b)
+  const [todosMemoriais, setTodosMemoriais] = useState([]);
+  const [precoHist, setPrecoHist] = useState([]);
+  useEffect(() => {
+    Promise.all((obras || []).map((o) => listar("memoriais_custo", { obra_id: o.id }).catch(() => [])))
+      .then((arrs) => setTodosMemoriais(arrs.flat()));
+    Promise.all([listar("ordens_compra").catch(() => []), listar("contratos_servico").catch(() => [])])
+      .then(([ocs, oss]) => {
+        const hist = [];
+        ocs.forEach((oc) => (Array.isArray(oc.itens_eap) ? oc.itens_eap : []).forEach((it) => {
+          if (it.descricao && (it.valor_unit != null)) hist.push({ desc: it.descricao, valor_unit: Number(it.valor_unit), unidade: it.unidade || "", fonte: "OC " + (oc.numero || ""), data: oc.data || oc.criado_em });
+        }));
+        oss.forEach((os) => (Array.isArray(os.itens_eap) ? os.itens_eap : []).forEach((it) => {
+          if (it.descricao && (it.valor_unit != null)) hist.push({ desc: it.descricao, valor_unit: Number(it.valor_unit), unidade: it.unidade || "", fonte: "OS " + (os.numero || ""), data: os.data || os.criado_em });
+        }));
+        setPrecoHist(hist);
+      });
+  }, [obras]);
+
+  const norm2 = (s) => String(s || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9 ]/g, " ").replace(/\s+/g, " ").trim();
+  const similaridade = (a, b) => {
+    const pa = new Set(norm2(a).split(" ").filter((w) => w.length >= 3));
+    const pb = new Set(norm2(b).split(" ").filter((w) => w.length >= 3));
+    if (!pa.size || !pb.size) return 0;
+    let comum = 0; pa.forEach((w) => { if (pb.has(w)) comum++; });
+    return comum / Math.max(pa.size, pb.size);
+  };
+  const buscarUltimoPreco = (descricao) => {
+    if (!descricao || !descricao.trim()) return null;
+    const cands = precoHist.map((h) => ({ ...h, sim: similaridade(descricao, h.desc) })).filter((h) => h.sim >= 0.5);
+    if (!cands.length) return null;
+    cands.sort((a, b) => (b.sim - a.sim) || (String(b.data || "").localeCompare(String(a.data || ""))));
+    return cands[0];
+  };
+  const composicoesSimilar = () => {
+    if (!eapCod) return [];
+    return todosMemoriais.filter((m) => m.eap_codigo === eapCod && m.id !== memorialId);
+  };
+  const importarComposicao = async (mem) => {
+    if (!confirm(`Copiar a composição de ${mem.eap_codigo} (de outra obra)? Os insumos atuais serão substituídos.`)) return;
+    const its = await listar("memoriais_itens", { memorial_id: mem.id });
+    setItens(its.sort((a, b) => (a.ordem || 0) - (b.ordem || 0)).map((x) => ({ seg: x.segmento, descricao: x.descricao, unidade: x.unidade, quantidade: x.quantidade, valor_unit: x.valor_unit })));
+    setMsg(`Composição copiada de ${mem.eap_codigo}. Revise quantidades e valores antes de salvar.`);
+  };
+  const aplicarUltimoPreco = (idx) => {
+    const it = itens[idx];
+    const achado = buscarUltimoPreco(it.descricao);
+    if (!achado) { setMsg("Sem histórico de preço para esse insumo."); return; }
+    setItens((a) => a.map((x, i) => i === idx ? { ...x, valor_unit: achado.valor_unit, unidade: x.unidade || achado.unidade } : x));
+    setMsg(`Preço de "${achado.desc.slice(0, 30)}" (${achado.fonte}): ${fmtR(achado.valor_unit)}`);
+  };
+
   const addItem = (seg) => setItens((a) => [...a, { seg, descricao: "", unidade: "", quantidade: 0, valor_unit: 0 }]);
   const setItem = (idx, campo, val) => setItens((a) => a.map((x, i) => i === idx ? { ...x, [campo]: val } : x));
   const delItem = (idx) => setItens((a) => a.filter((_, i) => i !== idx));
@@ -1464,6 +1516,18 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
           <input value={descEap} onChange={(e) => setDescEap(e.target.value)} style={inp({ width: "100%" })} placeholder="Ex: Forro em fibra mineral, fornecimento e instalação" />
         </div>
 
+        {composicoesSimilar().length > 0 && (
+          <div style={{ marginBottom: 12, padding: 10, background: `${C.laranja}0c`, borderRadius: 8, border: `1px solid ${C.laranja}40` }}>
+            <div style={{ fontSize: 12, fontWeight: 700, color: C.laranja, marginBottom: 6 }}>🔎 {composicoesSimilar().length} composição(ões) desta EAP em outras obras:</div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {composicoesSimilar().map((m) => {
+                const ob = obras.find((o) => o.id === m.obra_id);
+                return <Btn key={m.id} small kind="ghost" onClick={() => importarComposicao(m)}>Copiar de {ob?.codigo || "obra"} ({fmtR(m.subtotal_sbdi)})</Btn>;
+              })}
+            </div>
+          </div>
+        )}
+
         {SEGMENTOS.map(([sid, slabel]) => {
           const idxs = itens.map((it, i) => ({ it, i })).filter((x) => x.it.seg === sid);
           return (
@@ -1480,7 +1544,10 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
                       <Td><input value={it.descricao} onChange={(e) => setItem(i, "descricao", e.target.value)} style={inp({ width: "100%", fontSize: 12, padding: "3px 6px" })} /></Td>
                       <Td><input value={it.unidade} onChange={(e) => setItem(i, "unidade", e.target.value)} style={inp({ width: 50, fontSize: 12, padding: "3px 6px" })} /></Td>
                       <Td right><input type="number" value={it.quantidade} onChange={(e) => setItem(i, "quantidade", e.target.value)} style={inp({ width: 70, fontSize: 12, padding: "3px 6px", textAlign: "right" })} /></Td>
-                      <Td right><input type="number" value={it.valor_unit} onChange={(e) => setItem(i, "valor_unit", e.target.value)} style={inp({ width: 80, fontSize: 12, padding: "3px 6px", textAlign: "right" })} /></Td>
+                      <Td right><div style={{ display: "flex", gap: 3, alignItems: "center", justifyContent: "flex-end" }}>
+                        <button title="Buscar último preço pago" onClick={() => aplicarUltimoPreco(i)} style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 5, cursor: "pointer", fontSize: 11, padding: "2px 5px", color: C.laranja }}>⚡</button>
+                        <input type="number" value={it.valor_unit} onChange={(e) => setItem(i, "valor_unit", e.target.value)} style={inp({ width: 80, fontSize: 12, padding: "3px 6px", textAlign: "right" })} />
+                      </div></Td>
                       <Td right>{fmtR(sbdiItem(it))}</Td>
                       <Td right color={C.laranja}>{fmtR(cbdiItem(it))}</Td>
                       <Td><button onClick={() => delItem(i)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 14 }}>×</button></Td>

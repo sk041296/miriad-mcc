@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v10.19 — Inteligência determinística no construtor (Fatia 3b)
+- Botão "Copiar de [obra]": reaproveita composições da mesma EAP já feitas em outras obras.
+- Botão "⚡" em cada insumo: busca o último preço unitário pago nas OCs/OSs por similaridade de nome e preenche o valor.
+- Busca por palavras-chave (normaliza acento/maiúscula/pontuação), determinística, roda no navegador.
+- Próximas: 3c (preencher com IA), 3d (geração de PDF/XLSX).
+
 ## v10.18 — Construtor de Memorial Executivo (Fatia 3a — manual)
 - Tela na tab Novo Projeto para montar a composição analítica de cada EAP.
 - Funciona a partir de um item de EAP existente OU avulso.
