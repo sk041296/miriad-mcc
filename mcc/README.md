@@ -1,5 +1,9 @@
 # Miriad Construction Control (MCC)
 
+## v10.31 — Toggle no Desempenho Consolidado + nome da EAP ao clicar
+- O gráfico "Desempenho consolidado — empresa" agora tem o mesmo toggle (vs avanço / vs meta total). Resolve obras como ECOPARK/PMSP que apareciam com meta cinza gigante e realizado zero.
+- No dashboard de EAP & Custos, ao clicar numa barra, aparece o nome completo da EAP (código + descrição). O tooltip de hover também mostra o nome.
+
 ## v10.30 — Toggle de CPI no dashboard de EAP & Custos
 - Corrige a percepção de "meta zerada": quando há gasto mas avanço físico zero (RDOs sem execução), a meta proporcional zera por definição.
 - Novo toggle: "CPI vs avanço" (meta proporcional ao avanço físico — eficiência de execução) e "CPI vs meta total" (meta total do item — controle de orçamento, independe do avanço).

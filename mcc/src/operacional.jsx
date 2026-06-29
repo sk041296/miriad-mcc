@@ -1250,13 +1250,27 @@ function ModalMini({ titulo, children, onFechar }) {
   );
 }
 
+/* Tooltip do gráfico de metas: mostra código + nome da EAP + valores */
+function ChartTipEap({ active, payload }) {
+  if (!active || !payload || !payload.length) return null;
+  const p = payload[0].payload || {};
+  return (
+    <div style={{ background: "#fff", border: `1px solid ${C.linha}`, borderRadius: 8, padding: "8px 11px", boxShadow: "0 2px 8px rgba(0,0,0,.12)", maxWidth: 260 }}>
+      <div style={{ fontWeight: 800, fontSize: 12.5, marginBottom: 2 }}>{p.nome}</div>
+      {p.desc && <div style={{ fontSize: 11, color: C.dim, marginBottom: 6 }}>{p.desc}</div>}
+      {payload.map((e, i) => <div key={i} style={{ fontSize: 11.5, color: e.color }}>{e.name}: {fmtR(e.value)}</div>)}
+    </div>
+  );
+}
+
 function DashboardMeta({ linhas, obra, totMeta, totReal, totMetaProp, cpiGlobal, modoCPI }) {
   const labelMeta = modoCPI === "total" ? "Meta total" : "Meta (proporcional)";
+  const [eapSel, setEapSel] = useState(null);
   const comReal = linhas.filter((l) => l.real > 0);
   const dentro = comReal.filter((l) => l.cpi != null && l.cpi >= 1).length;
   const fora = comReal.filter((l) => l.cpi != null && l.cpi < 1).length;
   const top = comReal.slice().sort((a, b) => Math.abs(b.desvio) - Math.abs(a.desvio)).slice(0, 10)
-    .map((l) => ({ nome: l.codigo, [labelMeta]: l.metaProporcional, "Realizado": l.real }));
+    .map((l) => ({ nome: l.codigo, desc: l.descricao || "", [labelMeta]: l.metaProporcional, "Realizado": l.real }));
   const pie = [{ name: "Dentro da meta", value: dentro, fill: C.verde }, { name: "Acima da meta", value: fora, fill: C.vermelho }];
   return (
     <div>
@@ -1269,13 +1283,18 @@ function DashboardMeta({ linhas, obra, totMeta, totReal, totMetaProp, cpiGlobal,
       {top.length > 0 ? (
         <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr", gap: 16 }}>
           <div>
-            <div style={{ fontSize: 12, color: C.dim, marginBottom: 6, fontWeight: 700 }}>Meta × Realizado — itens com maior desvio</div>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 6, fontWeight: 700 }}>Meta × Realizado — itens com maior desvio <span style={{ fontWeight: 400 }}>(clique numa barra para ver o nome)</span></div>
+            {eapSel && (
+              <div style={{ fontSize: 12.5, background: `${C.laranja}10`, border: `1px solid ${C.laranja}40`, borderRadius: 7, padding: "7px 11px", marginBottom: 8 }}>
+                <b>{eapSel.nome}</b> — {eapSel.desc || "(sem descrição)"}
+              </div>
+            )}
             <ResponsiveContainer width="100%" height={300}>
-              <BarChart data={top} margin={{ top: 5, right: 8, left: 8, bottom: 0 }}>
+              <BarChart data={top} margin={{ top: 5, right: 8, left: 8, bottom: 0 }} onClick={(e) => { const p = e && e.activePayload && e.activePayload[0] && e.activePayload[0].payload; if (p) setEapSel({ nome: p.nome, desc: p.desc }); }}>
                 <CartesianGrid stroke={C.linha} strokeDasharray="2 4" vertical={false} />
                 <XAxis dataKey="nome" tick={{ fill: C.dim, fontSize: 10 }} /><YAxis tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} width={66} />
-                <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey={labelMeta} fill={C.cinza2} radius={[3, 3, 0, 0]} /><Bar dataKey="Realizado" fill={C.laranja} radius={[3, 3, 0, 0]}>
+                <Tooltip content={<ChartTipEap />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                <Bar dataKey={labelMeta} fill={C.cinza2} radius={[3, 3, 0, 0]} style={{ cursor: "pointer" }} /><Bar dataKey="Realizado" fill={C.laranja} radius={[3, 3, 0, 0]} style={{ cursor: "pointer" }}>
                   {top.map((d, i) => <Cell key={i} fill={d["Realizado"] > d[labelMeta] ? C.vermelho : C.verde} />)}
                 </Bar>
               </BarChart>
@@ -1295,19 +1314,26 @@ function DashboardMeta({ linhas, obra, totMeta, totReal, totMetaProp, cpiGlobal,
 }
 
 function DashboardConsolidado({ obras, eapPorObra, ocs, contratos, rdos }) {
+  const [modoCPI, setModoCPI] = useState("total");
+  const labelMeta = modoCPI === "total" ? "Meta total" : "Meta proporcional";
   const dados = obras.map((o) => {
     const itens = eapPorObra[o.id] || [];
     const real = realizadoPorItem(ocs, contratos, o.id);
     const exec = {}; rdos.filter((r) => r.obra_id === o.id).forEach((r) => (r.atividades || []).forEach((a) => { exec[a.eap] = (exec[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); }));
     let meta = 0, realizado = 0, metaProp = 0;
-    itens.forEach((e) => { const m = metaItem(e); const rl = real[e.codigo] || 0; const av = e.qtde ? Math.min((exec[e.codigo] || 0) / e.qtde, 1) : 0; meta += m; realizado += rl; metaProp += m * av; });
+    itens.forEach((e) => { const m = metaItem(e); const rl = real[e.codigo] || 0; const av = e.qtde ? Math.min((exec[e.codigo] || 0) / e.qtde, 1) : 0; meta += m; realizado += rl; metaProp += modoCPI === "total" ? m : m * av; });
     return { codigo: o.codigo, meta, realizado, metaProp, cpi: realizado > 0 ? metaProp / realizado : null };
   }).filter((d) => d.meta > 0 || d.realizado > 0);
   const totMeta = sum(dados.map((d) => d.meta)), totReal = sum(dados.map((d) => d.realizado)), totProp = sum(dados.map((d) => d.metaProp));
   const cpiEmpresa = totReal > 0 ? totProp / totReal : null;
-  const chart = dados.map((d) => ({ nome: d.codigo, "Meta proporcional": d.metaProp, "Realizado": d.realizado }));
+  const chart = dados.map((d) => ({ nome: d.codigo, [labelMeta]: d.metaProp, "Realizado": d.realizado }));
   return (
-    <Card title="Desempenho consolidado — empresa (todas as obras)">
+    <Card title="Desempenho consolidado — empresa (todas as obras)" right={
+      <div style={{ display: "flex", gap: 6 }}>
+        <Btn small kind={modoCPI === "avanco" ? "dark" : "ghost"} onClick={() => setModoCPI("avanco")}>vs avanço</Btn>
+        <Btn small kind={modoCPI === "total" ? "dark" : "ghost"} onClick={() => setModoCPI("total")}>vs meta total</Btn>
+      </div>
+    }>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 16 }}>
         <Kpi dark label="Meta de custo — empresa" value={fmtR(totMeta)} sub={`${dados.length} obras`} />
         <Kpi label="Realizado total (OC + OS)" value={fmtR(totReal)} accent={totReal > totProp ? C.vermelho : C.verde} />
@@ -1319,7 +1345,7 @@ function DashboardConsolidado({ obras, eapPorObra, ocs, contratos, rdos }) {
             <CartesianGrid stroke={C.linha} strokeDasharray="2 4" horizontal={false} />
             <XAxis type="number" tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} /><YAxis type="category" dataKey="nome" width={130} tick={{ fill: C.dim, fontSize: 11 }} />
             <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
-            <Bar dataKey="Meta proporcional" fill={C.cinza2} radius={[0, 3, 3, 0]} /><Bar dataKey="Realizado" radius={[0, 3, 3, 0]}>{chart.map((d, i) => <Cell key={i} fill={d["Realizado"] > d["Meta proporcional"] ? C.vermelho : C.verde} />)}</Bar>
+            <Bar dataKey={labelMeta} fill={C.cinza2} radius={[0, 3, 3, 0]} /><Bar dataKey="Realizado" radius={[0, 3, 3, 0]}>{chart.map((d, i) => <Cell key={i} fill={d["Realizado"] > d[labelMeta] ? C.vermelho : C.verde} />)}</Bar>
           </BarChart>
         </ResponsiveContainer>
       ) : <div style={{ fontSize: 13, color: C.dim }}>Sem dados de meta/realizado para consolidar.</div>}
