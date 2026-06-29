@@ -1,5 +1,16 @@
 # Miriad Construction Control (MCC)
 
+## v10.34 — Renomeada a tab "Orçamentos" para "Memorial Executivo"
+- A aba do construtor/consulta de memoriais agora se chama "Memorial Executivo" no menu lateral (antes "Orçamentos"), evitando confusão com "Orçamento Comercial".
+- Apenas troca de rótulo; rota e permissões inalteradas.
+
+## v10.33 — Kanban de orçamentos (Bloco IV)
+- Na tab Orçamento Comercial, toggle Lista / Kanban.
+- Kanban com colunas por status do pipeline (Aberta → Enviada → Em negociação → Ganha → Perdida), com total por coluna.
+- Filtros por tipo de obra, cliente e unidade de negócio (CAPEX/OPEX).
+- Card resumido (cliente, valor, tipo, un. negócio); clique expande para escopo, data, observação, e botões de mover status (←/→), editar, tornar projeto.
+- Conclui o módulo de orçamento (Blocos I–IV).
+
 ## v10.32 — Tab "Orçamento Comercial" (propostas → projeto)
 - Nova aba no Operacional para propostas comerciais (separadas das obras).
 - Campos: cliente, código, tipo de obra, unidade de negócio (CAPEX/OPEX), valor, data, status (aberta/enviada/negociação/ganha/perdida), descrição.

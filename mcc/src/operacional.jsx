@@ -1546,8 +1546,20 @@ function OrcamentoComercial({ usuario, onConverteu }) {
   const [editId, setEditId] = useState(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
+  const [vista, setVista] = useState("lista"); // lista | kanban
+  const [fTipo, setFTipo] = useState("");
+  const [fCliente, setFCliente] = useState("");
+  const [fUn, setFUn] = useState("");
+  const [expandido, setExpandido] = useState({});
 
   const podeConverter = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor" || usuario.papel === "coord_planejamento");
+
+  const moverStatus = async (p, novo) => {
+    setBusy(true);
+    try { await editar("orcamentos_comerciais", p.id, { status: novo, atualizado_em: new Date().toISOString() }); carregar(); }
+    catch (e) { alert("Erro: " + (e.message || e)); }
+    setBusy(false);
+  };
 
   const carregar = () => listar("orcamentos_comerciais").then(setProps).catch(() => setProps([]));
   useEffect(() => { carregar(); }, []);
@@ -1599,30 +1611,98 @@ function OrcamentoComercial({ usuario, onConverteu }) {
         </div>
       </Card>
 
-      <Card title={`Propostas comerciais (${props.length})`}>
-        {props.length === 0 ? <div style={{ color: C.dim, fontSize: 13 }}>Nenhuma proposta cadastrada.</div>
-          : <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>Cliente</Th><Th>Tipo</Th><Th>Un. neg.</Th><Th right>Valor</Th><Th>Data</Th><Th>Status</Th><Th /></tr></thead>
-            <tbody>{props.map((p) => { const si = stInfo(p.status); return (
-              <tr key={p.id}>
-                <Td><b>{p.cliente}</b>{p.codigo ? <span style={{ color: C.dim, fontSize: 11 }}> · {p.codigo}</span> : ""}<div style={{ fontSize: 11, color: C.dim }}>{(p.descricao || "").slice(0, 50)}</div></Td>
-                <Td style={{ fontSize: 12 }}>{p.tipo_obra}</Td>
-                <Td style={{ fontSize: 12 }}>{p.unidade_negocio}</Td>
-                <Td right color={C.laranja}>{fmtR(p.valor)}</Td>
-                <Td style={{ fontSize: 12 }}>{p.data_proposta ? p.data_proposta.split("-").reverse().join("/") : "—"}</Td>
-                <Td><span style={{ color: si[2], fontWeight: 700, fontSize: 11.5 }}>● {si[1]}</span></Td>
-                <Td><div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
-                  {p.obra_id ? <span style={{ fontSize: 11, color: C.verde }}>✓ projeto</span> : <>
-                    {podeConverter && <Btn small onClick={() => converter(p)} disabled={busy}>Tornar projeto</Btn>}
-                    <Btn small kind="ghost" onClick={() => editarProp(p)}>Editar</Btn>
-                    <button onClick={() => excluir(p)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 15 }}>×</button>
-                  </>}
-                </div></Td>
-              </tr>
-            ); })}</tbody>
-          </table>}
-        {!podeConverter && <div style={{ fontSize: 11, color: C.dim, marginTop: 10 }}>Apenas Diretoria ou Coord. de Planejamento podem converter propostas em projeto.</div>}
-      </Card>
+      {(() => {
+        const tiposUnicos = [...new Set(props.map((p) => p.tipo_obra).filter(Boolean))];
+        const clientesUnicos = [...new Set(props.map((p) => p.cliente).filter(Boolean))];
+        const filtradas = props.filter((p) => (!fTipo || p.tipo_obra === fTipo) && (!fCliente || p.cliente === fCliente) && (!fUn || p.unidade_negocio === fUn));
+        const COLS = STATUS_PROP.filter((x) => x[0] !== "convertida");
+
+        const acoesCard = (p) => p.obra_id ? <span style={{ fontSize: 11, color: C.verde }}>✓ projeto</span> : <>
+          {podeConverter && <Btn small onClick={() => converter(p)} disabled={busy}>Tornar projeto</Btn>}
+          <Btn small kind="ghost" onClick={() => editarProp(p)}>Editar</Btn>
+          <button onClick={() => excluir(p)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 15 }}>×</button>
+        </>;
+
+        return (
+          <Card title={`Propostas comerciais (${filtradas.length}${filtradas.length !== props.length ? " de " + props.length : ""})`} right={
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn small kind={vista === "lista" ? "dark" : "ghost"} onClick={() => setVista("lista")}>Lista</Btn>
+              <Btn small kind={vista === "kanban" ? "dark" : "ghost"} onClick={() => setVista("kanban")}>Kanban</Btn>
+            </div>
+          }>
+            {/* filtros */}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
+              <select value={fTipo} onChange={(e) => setFTipo(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px" })}><option value="">Todos os tipos</option>{tiposUnicos.map((t) => <option key={t} value={t}>{t}</option>)}</select>
+              <select value={fCliente} onChange={(e) => setFCliente(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px" })}><option value="">Todos os clientes</option>{clientesUnicos.map((c) => <option key={c} value={c}>{c}</option>)}</select>
+              <select value={fUn} onChange={(e) => setFUn(e.target.value)} style={inp({ fontSize: 12, padding: "5px 10px" })}><option value="">CAPEX + OPEX</option><option value="CAPEX">CAPEX</option><option value="OPEX">OPEX</option></select>
+              {(fTipo || fCliente || fUn) && <Btn small kind="ghost" onClick={() => { setFTipo(""); setFCliente(""); setFUn(""); }}>limpar</Btn>}
+            </div>
+
+            {filtradas.length === 0 ? <div style={{ color: C.dim, fontSize: 13 }}>Nenhuma proposta {props.length ? "com esses filtros" : "cadastrada"}.</div>
+              : vista === "lista" ? (
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <thead><tr><Th>Cliente</Th><Th>Tipo</Th><Th>Un. neg.</Th><Th right>Valor</Th><Th>Data</Th><Th>Status</Th><Th /></tr></thead>
+                  <tbody>{filtradas.map((p) => { const si = stInfo(p.status); return (
+                    <tr key={p.id}>
+                      <Td><b>{p.cliente}</b>{p.codigo ? <span style={{ color: C.dim, fontSize: 11 }}> · {p.codigo}</span> : ""}<div style={{ fontSize: 11, color: C.dim }}>{(p.descricao || "").slice(0, 50)}</div></Td>
+                      <Td style={{ fontSize: 12 }}>{p.tipo_obra}</Td>
+                      <Td style={{ fontSize: 12 }}>{p.unidade_negocio}</Td>
+                      <Td right color={C.laranja}>{fmtR(p.valor)}</Td>
+                      <Td style={{ fontSize: 12 }}>{p.data_proposta ? p.data_proposta.split("-").reverse().join("/") : "—"}</Td>
+                      <Td><span style={{ color: si[2], fontWeight: 700, fontSize: 11.5 }}>● {si[1]}</span></Td>
+                      <Td><div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>{acoesCard(p)}</div></Td>
+                    </tr>
+                  ); })}</tbody>
+                </table>
+              ) : (
+                /* KANBAN por status */
+                <div style={{ display: "grid", gridTemplateColumns: `repeat(${COLS.length}, minmax(180px, 1fr))`, gap: 10, alignItems: "start", overflowX: "auto" }}>
+                  {COLS.map(([sid, slabel, scor]) => {
+                    const cards = filtradas.filter((p) => (p.status || "aberta") === sid);
+                    const totalC = sum(cards.map((c) => Number(c.valor) || 0));
+                    return (
+                      <div key={sid} style={{ background: "#f7f7f8", borderRadius: 12, padding: 10, minHeight: 120 }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, paddingLeft: 2 }}>
+                          <span style={{ fontWeight: 800, fontSize: 12, color: scor }}>{slabel}</span>
+                          <span style={{ fontSize: 10.5, color: C.dim, fontWeight: 700 }}>{cards.length} · {fmtK(totalC)}</span>
+                        </div>
+                        {cards.map((p) => {
+                          const exp = !!expandido[p.id];
+                          const idxCol = COLS.findIndex((c) => c[0] === sid);
+                          return (
+                            <div key={p.id} style={{ background: C.branco, border: `1px solid ${C.linha}`, borderRadius: 9, padding: 10, marginBottom: 8 }}>
+                              <div onClick={() => setExpandido((e) => ({ ...e, [p.id]: !exp }))} style={{ cursor: "pointer" }}>
+                                <div style={{ display: "flex", justifyContent: "space-between", gap: 6 }}>
+                                  <span style={{ fontWeight: 700, fontSize: 12.5 }}>{exp ? "▾ " : "▸ "}{p.cliente}</span>
+                                  <span style={{ fontWeight: 800, fontSize: 12, color: C.laranja, whiteSpace: "nowrap" }}>{fmtR(p.valor)}</span>
+                                </div>
+                                <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>{p.tipo_obra} · {p.unidade_negocio}{p.codigo ? " · " + p.codigo : ""}</div>
+                              </div>
+                              {exp && (
+                                <div style={{ marginTop: 8, paddingTop: 8, borderTop: `1px solid ${C.linha}`, fontSize: 11.5, color: "#333", display: "flex", flexDirection: "column", gap: 3 }}>
+                                  {p.descricao && <div><b>Escopo:</b> {p.descricao}</div>}
+                                  <div><b>Data:</b> {p.data_proposta ? p.data_proposta.split("-").reverse().join("/") : "—"}</div>
+                                  {p.observacao && <div><b>Obs:</b> {p.observacao}</div>}
+                                  <div style={{ display: "flex", gap: 5, marginTop: 6, flexWrap: "wrap", alignItems: "center" }}>
+                                    {idxCol > 0 && !p.obra_id && <Btn small kind="ghost" onClick={() => moverStatus(p, COLS[idxCol - 1][0])} disabled={busy}>←</Btn>}
+                                    {idxCol < COLS.length - 1 && !p.obra_id && <Btn small kind="ghost" onClick={() => moverStatus(p, COLS[idxCol + 1][0])} disabled={busy}>→</Btn>}
+                                    {acoesCard(p)}
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                        {cards.length === 0 && <div style={{ fontSize: 11, color: C.dim, textAlign: "center", padding: "12px 0" }}>—</div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            {!podeConverter && <div style={{ fontSize: 11, color: C.dim, marginTop: 10 }}>Apenas Diretoria ou Coord. de Planejamento podem converter propostas em projeto.</div>}
+          </Card>
+        );
+      })()}
     </div>
   );
 }
