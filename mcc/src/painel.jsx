@@ -1,10 +1,10 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie } from "recharts";
-import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip, listar, Btn, aprovarOrdem, rejeitarOrdem } from "./core.jsx";
+import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip, listar, Btn, aprovarOrdem, rejeitarOrdem, furosDeVerba } from "./core.jsx";
 import { observacoesPorItem, projecaoItem, dataProjetada } from "./produtividade.js";
 
 /* PAINEL GERAL — consolidação de todas as obras (restrito a gestores) */
-export function PainelGeral({ obras, eapPorObra, rdos, restricoes, usuario }) {
+export function PainelGeral({ obras, eapPorObra, rdos, restricoes, usuario, ocs, contratos }) {
   const dados = obras.map((o) => {
     const itens = eapPorObra[o.id] || [];
     const rdosObra = rdos.filter((r) => r.obra_id === o.id);
@@ -39,6 +39,7 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes, usuario }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <PendenciasAprovacao usuario={usuario} obras={obras} />
+      <PainelFurosVerba usuario={usuario} obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} />
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Kpi dark label="Valor total dos contratos (à faturar)" value={fmtR(totalContrato)} sub={`${obras.length} obras · ${sum(dados.map((d) => d.nRdos))} RDOs`} />
         <Kpi label="Executado — reconhecido em RDO" value={fmtR(totalMed)} accent={C.verde} />
@@ -208,6 +209,87 @@ function PendenciasAprovacao({ usuario, obras }) {
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {minhasOc.map((x) => linha(x, "ordens_compra", fmtR(x.valor)))}
         {minhasOs.map((x) => linha(x, "contratos_servico", fmtR(x.valor)))}
+      </div>
+    </Card>
+  );
+}
+
+/* ============================================================
+   Fatia D — Painel de furos de verba (estouro do orçamento)
+   Visível para CEO, diretoria e coordenadores.
+   Gráfico do excesso por EAP + listagem das OCs/OSs agrupadas.
+   ============================================================ */
+function PainelFurosVerba({ usuario, obras, eapPorObra, ocs, contratos }) {
+  const [aberto, setAberto] = useState({});
+  const papel = usuario && usuario.papel;
+  const podeVer = ["ceo", "diretor", "coord_suprimentos", "coord_planejamento", "coord_obras", "coord_orcamentos"].includes(papel);
+  if (!podeVer) return null;
+
+  const furos = furosDeVerba(obras || [], eapPorObra || {}, ocs || [], contratos || []);
+  if (!furos.length) return null;
+
+  const totalExcesso = sum(furos.map((f) => f.excesso));
+  const totalForaVerba = sum(furos.map((f) => f.consumido));
+  const dadosGrafico = furos.slice(0, 12).map((f) => ({ nome: `${f.obraCodigo} · ${f.eap}`, excesso: f.excesso }));
+
+  return (
+    <Card title={`⚠ Custos fora da verba (${furos.length} ${furos.length === 1 ? "item" : "itens"} de EAP)`}>
+      <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
+        <Kpi label="Total contratado nas EAPs estouradas" value={fmtR(totalForaVerba)} accent={C.laranja} />
+        <Kpi label="Excesso total sobre a verba" value={fmtR(totalExcesso)} accent={C.vermelho} />
+        <Kpi label="Itens de EAP acima da verba" value={String(furos.length)} accent={C.vermelho} />
+      </div>
+
+      <div style={{ height: 230, marginBottom: 16 }}>
+        <ResponsiveContainer width="100%" height="100%">
+          <BarChart data={dadosGrafico} margin={{ top: 8, right: 12, left: 12, bottom: 50 }}>
+            <CartesianGrid strokeDasharray="3 3" stroke={C.linha} />
+            <XAxis dataKey="nome" tick={{ fontSize: 10 }} angle={-35} textAnchor="end" interval={0} height={60} />
+            <YAxis tickFormatter={(v) => fmtK(v)} tick={{ fontSize: 11 }} />
+            <Tooltip content={<ChartTip />} formatter={(v) => fmtR(v)} />
+            <Bar dataKey="excesso" fill={C.vermelho} radius={[5, 5, 0, 0]} />
+          </BarChart>
+        </ResponsiveContainer>
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {furos.map((f) => {
+          const chave = f.obraId + ":" + f.eap;
+          const exp = !!aberto[chave];
+          return (
+            <div key={chave} style={{ border: `1px solid ${C.linha}`, borderRadius: 8, overflow: "hidden" }}>
+              <div onClick={() => setAberto((a) => ({ ...a, [chave]: !exp }))}
+                style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "9px 12px", cursor: "pointer", background: `${C.vermelho}08` }}>
+                <div style={{ fontSize: 12.5 }}>
+                  <b>{exp ? "▾" : "▸"} {f.obraCodigo} · EAP {f.eap}</b>
+                  <span style={{ color: C.dim }}> — {(f.descricao || "").slice(0, 44)}</span>
+                </div>
+                <div style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                  <span style={{ color: C.dim }}>verba {fmtR(f.verba)} · consumido </span>
+                  <b style={{ color: C.vermelho }}>{fmtR(f.consumido)}</b>
+                  <span style={{ color: C.vermelho, fontWeight: 800 }}> ({(f.pct * 100).toFixed(0)}%)</span>
+                </div>
+              </div>
+              {exp && (
+                <div style={{ padding: "4px 12px 10px" }}>
+                  <div style={{ fontSize: 11, color: C.dim, margin: "6px 0" }}>{f.ordens.length} ordem(ns) nesta EAP · excesso de {fmtR(f.excesso)}:</div>
+                  <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                    <thead><tr><Th>Tipo</Th><Th>Nº</Th><Th>Fornecedor/Empresa</Th><Th right>Valor na EAP</Th><Th>Aprovação</Th></tr></thead>
+                    <tbody>{f.ordens.map((o) => (
+                      <tr key={o.tipo + o.id}>
+                        <Td>{o.tipo}</Td>
+                        <Td>{o.numero || "—"}</Td>
+                        <Td style={{ fontSize: 12 }}>{o.nome || "—"}</Td>
+                        <Td right color={C.laranja}>{fmtR(o.valor)}</Td>
+                        <Td style={{ fontSize: 11 }}>{o.status_aprovacao === "aguardando" ? "● aguardando" : o.status_aprovacao === "rejeitada" ? "✕ rejeitada" : "✓ aprovada"}</Td>
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </Card>
   );

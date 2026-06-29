@@ -320,7 +320,8 @@ function PainelGeralWrap({ usuario }) {
   useEffect(() => { (async () => {
     const obras = await listar("obras"); const eap = {}, rdos = [], restr = [];
     await Promise.all(obras.map(async (o) => { eap[o.id] = await listar("eap_itens", { obra_id: o.id }); (await listar("rdos", { obra_id: o.id })).forEach((r) => rdos.push(r)); (await listar("restricoes_material", { obra_id: o.id })).forEach((x) => restr.push(x)); }));
-    setD({ obras, eapPorObra: eap, rdos, restricoes: restr });
+    const [ocs, contratos] = await Promise.all([listar("ordens_compra").catch(() => []), listar("contratos_servico").catch(() => [])]);
+    setD({ obras, eapPorObra: eap, rdos, restricoes: restr, ocs, contratos });
   })(); }, []);
   if (!d) return <div style={{ color: C.dim, padding: 20 }}>Consolidando obras…</div>;
   return <PainelGeral {...d} usuario={usuario} />;

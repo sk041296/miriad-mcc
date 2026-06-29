@@ -344,3 +344,66 @@ export const acessoDe = (mapa, papel) => (mapa && mapa[papel]) || acessoPadrao(p
 export const getConfig = (chave = "acesso") => req(`/api/data?t=config&chave=${chave}`).then((d) => d.valor);
 export const setConfig = (chave, valor) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "config", chave, valor }) });
 export const dispararNotificacoes = () => req("/api/notificar?manual=1").then((d) => d);
+
+/* ===== Cálculo de verba/consumido por EAP (compartilhado: operacional + painel) ===== */
+const codEap = (c) => String(c || "").split(" ")[0].trim();
+
+export function consumidoPorEapObra(ocs, contratos, obraId) {
+  const m = {};
+  const add = (cod, val) => { const c = codEap(cod); if (!c) return; m[c] = (m[c] || 0) + (Number(val) || 0); };
+  (ocs || []).filter((o) => o.obra_id === obraId).forEach((o) => {
+    if (Array.isArray(o.itens_eap) && o.itens_eap.length && o.itens_eap.some((x) => x.eap_codigo)) o.itens_eap.forEach((x) => add(x.eap_codigo, x.valor != null ? x.valor : x.valor_total));
+    else add(o.eap_codigo, o.valor);
+  });
+  (contratos || []).filter((c) => c.obra_id === obraId).forEach((c) => {
+    if (Array.isArray(c.itens_eap) && c.itens_eap.length) {
+      if (c.tipo === "direto") { const v = (Number(c.custo_mensal) || 0) * (Number(c.meses) || 0); const n = c.itens_eap.length || 1; c.itens_eap.forEach((x) => add(x.eap_codigo, v / n)); }
+      else c.itens_eap.forEach((x) => add(x.eap_codigo, x.valor));
+    } else add(c.escopo_eap, c.valor);
+  });
+  return m;
+}
+
+// quanto uma OC/OS contribuiu para uma EAP específica
+function valorOrdemNaEap(ordem, cod, ehContrato) {
+  const alvo = codEap(cod);
+  if (Array.isArray(ordem.itens_eap) && ordem.itens_eap.length && ordem.itens_eap.some((x) => x.eap_codigo)) {
+    if (ehContrato && ordem.tipo === "direto") {
+      const v = (Number(ordem.custo_mensal) || 0) * (Number(ordem.meses) || 0); const n = ordem.itens_eap.length || 1;
+      return ordem.itens_eap.filter((x) => codEap(x.eap_codigo) === alvo).length * (v / n);
+    }
+    return ordem.itens_eap.filter((x) => codEap(x.eap_codigo) === alvo).reduce((s, x) => s + (Number(x.valor != null ? x.valor : x.valor_total) || 0), 0);
+  }
+  const codOrdem = codEap(ehContrato ? ordem.escopo_eap : ordem.eap_codigo);
+  return codOrdem === alvo ? (Number(ordem.valor) || 0) : 0;
+}
+
+/* Varre todas as obras e retorna as EAPs cujo consumido ultrapassou a verba,
+   com o GRUPO de OCs/OSs que compõem o consumo daquela EAP. */
+export function furosDeVerba(obras, eapPorObra, ocs, contratos) {
+  const furos = [];
+  (obras || []).forEach((obra) => {
+    const itens = (eapPorObra && eapPorObra[obra.id]) || [];
+    const consumido = consumidoPorEapObra(ocs, contratos, obra.id);
+    itens.forEach((i) => {
+      const verba = Number(i.verba_contratacao);
+      if (!(verba > 0)) return;
+      const cod = codEap(i.codigo);
+      const gasto = consumido[cod] || 0;
+      if (gasto <= verba + 0.005) return;
+      // grupo de ordens que tocam essa EAP
+      const ordens = [];
+      (ocs || []).filter((o) => o.obra_id === obra.id).forEach((o) => {
+        const v = valorOrdemNaEap(o, cod, false);
+        if (v > 0) ordens.push({ tipo: "OC", id: o.id, numero: o.numero || "", nome: o.fornecedor || "", valor: v, status_aprovacao: o.status_aprovacao || "aprovada" });
+      });
+      (contratos || []).filter((c) => c.obra_id === obra.id).forEach((c) => {
+        const v = valorOrdemNaEap(c, cod, true);
+        if (v > 0) ordens.push({ tipo: "OS", id: c.id, numero: c.numero || "", nome: c.empresa || "", valor: v, status_aprovacao: c.status_aprovacao || "aprovada" });
+      });
+      ordens.sort((a, b) => b.valor - a.valor);
+      furos.push({ obraId: obra.id, obraCodigo: obra.codigo, eap: i.codigo, descricao: i.descricao, verba, consumido: gasto, excesso: gasto - verba, pct: gasto / verba, ordens });
+    });
+  });
+  return furos.sort((a, b) => b.excesso - a.excesso);
+}

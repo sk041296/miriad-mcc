@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v10.28 — Painel de furos de verba (Alarmes — Fatia D)
+- No Painel Gerencial, card "Custos fora da verba" para CEO, diretoria e coordenadores.
+- Gráfico do excesso sobre a verba por obra/EAP + KPIs (total contratado nas EAPs estouradas, excesso total, nº de itens).
+- Listagem expansível: cada EAP estourada mostra o GRUPO de OCs/OSs que compõem o consumo (inclusive quando o estouro é por soma acumulada), com status de aprovação de cada uma.
+- Lógica de verba/consumido movida para o core (compartilhada entre operacional e painel).
+- Conclui os alarmes de verba (Fatias A–D).
+
 ## v10.27 — Correção da exportação do orçamento ("obra is not defined")
 - As funções de exportar PDF/XLSX agora resolvem a obra localmente a partir do obraId selecionado, eliminando qualquer dependência de escopo.
 - Corrige o erro "Erro ao exportar: obra is not defined" que ocorria em versões anteriores.
