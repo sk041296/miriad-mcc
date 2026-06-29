@@ -604,6 +604,18 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou, usu
   const salvar = async () => {
     setBusy(true);
     try {
+      // Fatia B — alarme de verba (considera OCs + OSs já lançadas na mesma EAP)
+      try {
+        const ocs = await listar("ordens_compra").catch(() => []);
+        const novosItens = ct.tipo === "direto"
+          ? ct.itens_eap.map((x) => ({ eap_codigo: x.eap_codigo, valor: valorTotal / (ct.itens_eap.length || 1) }))
+          : ct.itens_eap;
+        const chk = checarVerba({ eapItens, ocs, contratos, obraId: ct.obra_id, novosItens, ignorarOrigemId: editId, ignorarTabela: "contratos_servico" });
+        if (chk.temFuro) {
+          const ok = confirm("⚠ ATENÇÃO — custo acima da verba de contratação:\n\n" + textoAlertaVerba(chk.furos) + "\n\nDeseja lançar mesmo assim? (a ordem seguirá para aprovação)");
+          if (!ok) { setBusy(false); return; }
+        }
+      } catch (_) {}
       const payload = { obra_id: ct.obra_id || null, empresa: ct.empresa, cnpj: ct.cnpj, responsavel: ct.responsavel,
         tipo: ct.tipo, custo_mensal: ct.tipo === "direto" ? Number(ct.custo_mensal) || 0 : null, meses: ct.tipo === "direto" ? Number(ct.meses) || 0 : null,
         itens_eap: ct.itens_eap, escopo_eap: ct.itens_eap.map((x) => x.eap_codigo).join(", "), valor: valorTotal, condicao_pagamento: ct.cond };
@@ -879,6 +891,15 @@ function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, 
   const salvar = async () => {
     setBusy(true);
     try {
+      // Fatia B — alarme de verba (considera OCs + OSs já lançadas na mesma EAP)
+      try {
+        const contratos = await listar("contratos_servico").catch(() => []);
+        const chk = checarVerba({ eapItens, ocs, contratos, obraId: oc.obra_id, novosItens: oc.itens_eap, ignorarOrigemId: editId, ignorarTabela: "ordens_compra" });
+        if (chk.temFuro) {
+          const ok = confirm("⚠ ATENÇÃO — custo acima da verba de contratação:\n\n" + textoAlertaVerba(chk.furos) + "\n\nDeseja lançar mesmo assim? (a ordem seguirá para aprovação)");
+          if (!ok) { setBusy(false); return; }
+        }
+      } catch (_) {}
       const condicao_pagamento = { ...oc.cond, parcelas };
       const dados_oc = { solicitante: oc.solicitante, comprador: oc.comprador, cliente: oc.cliente, solicitacaoNum: oc.solicitacaoNum,
         cno: cnoEfetivo, observacao: oc.observacao, fornecedor: oc.forn, entrega: oc.entrega };
@@ -1314,6 +1335,34 @@ function consumidoPorEap(ocs, contratos, obraId) {
     } else add(c.escopo_eap, c.valor);
   });
   return m;
+}
+
+/* Fatia B — checagem de estouro de verba ao lançar OC/OS. */
+function checarVerba({ eapItens, ocs, contratos, obraId, novosItens, ignorarOrigemId, ignorarTabela }) {
+  const verbaDe = {};
+  (eapItens || []).forEach((i) => { if (i.verba_contratacao != null && Number(i.verba_contratacao) > 0) verbaDe[String(i.codigo).split(" ")[0].trim()] = Number(i.verba_contratacao); });
+  const ocsF = (ocs || []).filter((o) => !(ignorarTabela === "ordens_compra" && o.id === ignorarOrigemId));
+  const ctsF = (contratos || []).filter((c) => !(ignorarTabela === "contratos_servico" && c.id === ignorarOrigemId));
+  const consumido = consumidoPorEap(ocsF, ctsF, obraId);
+  const novoPorEap = {};
+  (novosItens || []).forEach((it) => { const c = String(it.eap_codigo || "").split(" ")[0].trim(); if (!c) return; novoPorEap[c] = (novoPorEap[c] || 0) + (Number(it.valor) || 0); });
+  const furos = [];
+  Object.keys(novoPorEap).forEach((cod) => {
+    const verba = verbaDe[cod];
+    if (verba == null) return;
+    const antes = consumido[cod] || 0;
+    const novo = novoPorEap[cod];
+    const total = antes + novo;
+    if (total > verba + 0.005) furos.push({ cod, verba, consumidoAntes: antes, novo, total, pct: verba > 0 ? total / verba : 0, individual: novo > verba + 0.005 });
+  });
+  return { furos, temFuro: furos.length > 0 };
+}
+
+function textoAlertaVerba(furos) {
+  return furos.map((f) => {
+    const tipo = f.individual ? "isoladamente" : "somada às demais da EAP";
+    return `• EAP ${f.cod}: verba ${fmtR(f.verba)}. Esta ordem (${tipo}) leva o total a ${fmtR(f.total)} = ${(f.pct * 100).toFixed(0)}% da verba (${fmtR(f.total - f.verba)} acima).`;
+  }).join("\n");
 }
 
 /* Fatia A — Tela de Metas de Custo por EAP (verba do memorial vs consumido) */

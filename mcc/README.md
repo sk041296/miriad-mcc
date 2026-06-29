@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v10.25 — Alarme de verba ao lançar OC/OS (Alarmes — Fatia B)
+- Ao salvar uma OC ou OS, o sistema checa se ela estoura a verba de contratação da(s) EAP(s) — individualmente OU somada às OCs/OSs já existentes na mesma EAP.
+- Se estourar, alerta o operador com o detalhe por EAP: verba, total resultante, % da verba e quanto excede.
+- O operador pode cancelar ou prosseguir (na próxima fatia, a ordem que estoura entra no fluxo de aprovação dupla).
+- Itens sem memorial (sem verba definida) não disparam alarme.
+
 ## v10.24 — Metas de Custo por EAP (Alarmes de verba — Fatia A)
 - Nova aba "Metas de Custo" no Operacional: para cada obra, mostra os itens de EAP com memorial e compara a verba (custo s/BDI) com o consumido (soma das OCs/OSs daquela EAP).
 - Por item: verba, consumido, saldo e % consumido, com destaque visual (verde/laranja/vermelho) e itens acima da verba destacados.

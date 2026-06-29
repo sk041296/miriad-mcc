@@ -83,7 +83,7 @@ const head = `<!doctype html>
   <body>
     <div id="root"></div>
     <!--
-      Miriad Construction Control (MCC) — v10.24
+      Miriad Construction Control (MCC) — v10.25
       Novidades: Dashboard de RDOs (último respondido + alerta de pendência no dia),
       condição de pagamento na OC-i (à vista / entrada+parcelas / parcelado puro, por dias),
       Financeiro: Custos por obra (serviço × material) e Custos diretos por obra (tabela editável tipo Premissas),
