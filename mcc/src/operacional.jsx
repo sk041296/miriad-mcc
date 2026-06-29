@@ -98,6 +98,7 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, a
       {sub === "eap" && <EapCustos obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} onMudou={carregar} />}
       {sub === "novoprojeto" && <NovoProjeto obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
       {sub === "metascusto" && <MetasCusto obras={obras} eapPorObra={eapPorObra} />}
+      {sub === "orcamentos" && <Orcamentos obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
       {sub === "obras" && <Obras obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
     </div>
   );
@@ -1489,10 +1490,6 @@ function NovoProjeto({ obras, eapPorObra, onMudou }) {
 
       {/* Reaproveita todo o upload de EAP testado do componente Obras */}
       <Obras obras={obras} eapPorObra={eapPorObra} onMudou={onMudou} />
-
-      <ConstrutorMemorial obras={obras} eapPorObra={eapPorObra} onMudou={onMudou} />
-
-      <CatalogoInsumos />
     </div>
   );
 }
@@ -1505,10 +1502,78 @@ const SEGMENTOS = [
   ["LOCACAO", "Locações"],
 ];
 
-/* Construtor de Memorial Executivo (Fatia 3a — manual) */
-function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
+/* ============================ Orçamentos (tab própria) ============================ */
+/* Consulta de memoriais por obra (cada EAP: tem memorial?, verba, abrir) + Construtor + Catálogo */
+function Orcamentos({ obras, eapPorObra, onMudou }) {
   const [obraId, setObraId] = useState("");
-  const [eapCod, setEapCod] = useState("");
+  const [memoriais, setMemoriais] = useState({}); // eap_codigo -> memorial
+  const [carregando, setCarregando] = useState(false);
+  const [abrir, setAbrir] = useState({ obra: "", eap: "", sinal: 0 });
+
+  const carregarMem = (oid) => {
+    if (!oid) { setMemoriais({}); return; }
+    setCarregando(true);
+    listar("memoriais_custo", { obra_id: oid }).then((ms) => {
+      const m = {}; ms.forEach((x) => { m[String(x.eap_codigo).split(" ")[0].trim()] = x; });
+      setMemoriais(m);
+    }).finally(() => setCarregando(false));
+  };
+  useEffect(() => { carregarMem(obraId); }, [obraId]);
+
+  const itens = obraId ? (eapPorObra[obraId] || []) : [];
+  const comMem = itens.filter((i) => memoriais[String(i.codigo).split(" ")[0].trim()]).length;
+
+  const abrirNoConstrutor = (eapCod) => setAbrir({ obra: obraId, eap: eapCod, sinal: Date.now() });
+
+  const onMudouTudo = () => { onMudou && onMudou(); carregarMem(obraId); };
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card title="Consulta de Memoriais por obra">
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14, flexWrap: "wrap" }}>
+          <div><Lbl>Obra</Lbl>
+            <select value={obraId} onChange={(e) => setObraId(e.target.value)} style={inp({ width: 260 })}>
+              <option value="">Selecione…</option>
+              {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
+            </select>
+          </div>
+          {obraId && <div style={{ fontSize: 12.5, color: C.dim, paddingBottom: 8 }}>{comMem} de {itens.length} itens com memorial</div>}
+        </div>
+
+        {!obraId ? <div style={{ color: C.dim, fontSize: 13 }}>Selecione uma obra para ver os itens de EAP e seus memoriais.</div>
+          : carregando ? <div style={{ color: C.dim }}>Carregando…</div>
+          : itens.length === 0 ? <div style={{ color: C.dim, fontSize: 13 }}>Esta obra não tem EAP carregada.</div>
+          : <div style={{ maxHeight: 420, overflow: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead><tr><Th>EAP</Th><Th>Descrição</Th><Th>Memorial</Th><Th right>Verba (s/BDI)</Th><Th /></tr></thead>
+              <tbody>{itens.map((i) => {
+                const cod = String(i.codigo).split(" ")[0].trim();
+                const mem = memoriais[cod];
+                return (
+                  <tr key={i.id} style={{ background: mem ? `${C.verde}08` : "transparent" }}>
+                    <Td><b>{i.codigo}</b></Td>
+                    <Td style={{ fontSize: 12 }}>{(i.descricao || "").slice(0, 50)}</Td>
+                    <Td>{mem ? <span style={{ color: C.verde, fontWeight: 700, fontSize: 12 }}>✓ criado</span> : <span style={{ color: C.dim, fontSize: 12 }}>— pendente</span>}</Td>
+                    <Td right>{mem ? fmtR(mem.subtotal_sbdi) : (i.verba_contratacao != null ? fmtR(i.verba_contratacao) : "—")}</Td>
+                    <Td><Btn small kind="ghost" onClick={() => abrirNoConstrutor(i.codigo)}>{mem ? "Editar" : "Criar"}</Btn></Td>
+                  </tr>
+                );
+              })}</tbody>
+            </table>
+          </div>}
+      </Card>
+
+      <ConstrutorMemorial obras={obras} eapPorObra={eapPorObra} onMudou={onMudouTudo} obraInicial={abrir.obra} eapInicial={abrir.eap} sinalAbrir={abrir.sinal} />
+
+      <CatalogoInsumos />
+    </div>
+  );
+}
+
+/* Construtor de Memorial Executivo (Fatia 3a — manual) */
+function ConstrutorMemorial({ obras, eapPorObra, onMudou, obraInicial, eapInicial, sinalAbrir }) {
+  const [obraId, setObraId] = useState(obraInicial || "");
+  const [eapCod, setEapCod] = useState(eapInicial || "");
   const [avulso, setAvulso] = useState(false);
   const [descEap, setDescEap] = useState("");
   const [tabelaRef, setTabelaRef] = useState("PROPRIO");
@@ -1517,6 +1582,13 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
   const [memorialId, setMemorialId] = useState(null);
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState("");
+
+  // quando a consulta pede para abrir uma EAP específica
+  useEffect(() => {
+    if (obraInicial) setObraId(obraInicial);
+    if (eapInicial !== undefined) setEapCod(eapInicial || "");
+    if (obraInicial || eapInicial) { try { window.scrollTo({ top: document.body.scrollHeight, behavior: "smooth" }); } catch (_) {} }
+  }, [obraInicial, eapInicial, sinalAbrir]);
 
   const obra = obras.find((o) => o.id === obraId);
   const itensEap = obraId ? (eapPorObra[obraId] || []) : [];

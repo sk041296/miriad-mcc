@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v10.29 — Tab "Orçamentos" própria + consulta de memoriais
+- Nova aba "Orçamentos" no menu lateral do Operacional (entre Metas de Custo e EAP & Custos).
+- O Construtor de Memorial saiu de "Novo Projeto" e agora vive na tab Orçamentos (com mais destaque).
+- Tela de consulta: lista por obra cada item de EAP, se já tem memorial (✓/pendente), a verba, e botão Criar/Editar que abre direto no construtor.
+- Novo Projeto ficou enxuto (upload da EAP + bifurcação meta/memorial).
+
 ## v10.28 — Painel de furos de verba (Alarmes — Fatia D)
 - No Painel Gerencial, card "Custos fora da verba" para CEO, diretoria e coordenadores.
 - Gráfico do excesso sobre a verba por obra/EAP + KPIs (total contratado nas EAPs estouradas, excesso total, nº de itens).
