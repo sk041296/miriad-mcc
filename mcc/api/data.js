@@ -413,7 +413,10 @@ export default async function handler(req, res) {
         if (cfg && cfg.valor != null) limite = Number(cfg.valor) || 1000;
       } catch (_) {}
       const valorOC = Number(row.valor) || (t === "contratos_servico" ? (Number(row.custo_mensal) || 0) * (Number(row.meses) || 0) : 0);
-      row.status_aprovacao = valorOC > limite ? "aguardando" : "aprovada";
+      // entra em aprovação se passar do limite OU se o lançamento furou a verba de contratação (sinalizado pelo frontend)
+      const furouVerba = row.furou_verba === true;
+      delete row.furou_verba; // não é coluna da tabela
+      row.status_aprovacao = (valorOC > limite || furouVerba) ? "aguardando" : "aprovada";
       const { data, error } = await supabase.from(t).insert(row).select().single();
       if (error) return res.status(500).json({ error: error.message });
       // Se já nasce aprovada (abaixo do limite), gera OP imediatamente

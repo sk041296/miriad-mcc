@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v10.26 — OC/OS que fura verba entra em aprovação (Alarmes — Fatia C)
+- Quando o operador confirma um lançamento que estoura a verba, a OC/OS entra automaticamente no fluxo de aprovação dupla (Suprimentos + Diretor), mesmo abaixo do limite de R$ 1.000.
+- O frontend sinaliza o furo ao backend (furou_verba); o backend força status "aguardando".
+- Integra-se ao fluxo de aprovação já existente (v10.14): só gera OP após as duas aprovações.
+- Edição de ordens não dispara o gate (apenas novos lançamentos).
+
 ## v10.25 — Alarme de verba ao lançar OC/OS (Alarmes — Fatia B)
 - Ao salvar uma OC ou OS, o sistema checa se ela estoura a verba de contratação da(s) EAP(s) — individualmente OU somada às OCs/OSs já existentes na mesma EAP.
 - Se estourar, alerta o operador com o detalhe por EAP: verba, total resultante, % da verba e quanto excede.

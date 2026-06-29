@@ -604,7 +604,8 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou, usu
   const salvar = async () => {
     setBusy(true);
     try {
-      // Fatia B — alarme de verba (considera OCs + OSs já lançadas na mesma EAP)
+      // Fatia B/C — alarme de verba (considera OCs + OSs já lançadas na mesma EAP)
+      let furouVerba = false;
       try {
         const ocs = await listar("ordens_compra").catch(() => []);
         const novosItens = ct.tipo === "direto"
@@ -614,12 +615,13 @@ function OsI({ obras, eapPorObra, contratos, draft, onConsumeDraft, onMudou, usu
         if (chk.temFuro) {
           const ok = confirm("⚠ ATENÇÃO — custo acima da verba de contratação:\n\n" + textoAlertaVerba(chk.furos) + "\n\nDeseja lançar mesmo assim? (a ordem seguirá para aprovação)");
           if (!ok) { setBusy(false); return; }
+          furouVerba = true;
         }
       } catch (_) {}
       const payload = { obra_id: ct.obra_id || null, empresa: ct.empresa, cnpj: ct.cnpj, responsavel: ct.responsavel,
         tipo: ct.tipo, custo_mensal: ct.tipo === "direto" ? Number(ct.custo_mensal) || 0 : null, meses: ct.tipo === "direto" ? Number(ct.meses) || 0 : null,
-        itens_eap: ct.itens_eap, escopo_eap: ct.itens_eap.map((x) => x.eap_codigo).join(", "), valor: valorTotal, condicao_pagamento: ct.cond };
-      if (editId) await editar("contratos_servico", editId, payload); else await criar("contratos_servico", payload);
+        itens_eap: ct.itens_eap, escopo_eap: ct.itens_eap.map((x) => x.eap_codigo).join(", "), valor: valorTotal, condicao_pagamento: ct.cond, furou_verba: furouVerba };
+      if (editId) { const { furou_verba, ...semFlag } = payload; await editar("contratos_servico", editId, semFlag); } else await criar("contratos_servico", payload);
       setCt({ ...vazio, obra_id: ct.obra_id }); setEditId(null); onMudou();
     } catch (e) { alert(e.message); } finally { setBusy(false); }
   };
@@ -891,13 +893,15 @@ function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, 
   const salvar = async () => {
     setBusy(true);
     try {
-      // Fatia B — alarme de verba (considera OCs + OSs já lançadas na mesma EAP)
+      // Fatia B/C — alarme de verba (considera OCs + OSs já lançadas na mesma EAP)
+      let furouVerba = false;
       try {
         const contratos = await listar("contratos_servico").catch(() => []);
         const chk = checarVerba({ eapItens, ocs, contratos, obraId: oc.obra_id, novosItens: oc.itens_eap, ignorarOrigemId: editId, ignorarTabela: "ordens_compra" });
         if (chk.temFuro) {
           const ok = confirm("⚠ ATENÇÃO — custo acima da verba de contratação:\n\n" + textoAlertaVerba(chk.furos) + "\n\nDeseja lançar mesmo assim? (a ordem seguirá para aprovação)");
           if (!ok) { setBusy(false); return; }
+          furouVerba = true;
         }
       } catch (_) {}
       const condicao_pagamento = { ...oc.cond, parcelas };
@@ -906,8 +910,8 @@ function OcI({ obras, eapPorObra, ocs, restricoes, colaboradores = [], usuario, 
       const payload = { obra_id: oc.obra_id || null, numero: oc.numero, fornecedor: oc.fornecedor, data: oc.data,
         data_faturamento: oc.data_faturamento || oc.data, condicao_pagamento, dados_oc,
         itens_eap: oc.itens_eap, eap_codigo: oc.itens_eap.map((x) => x.eap_codigo).join(", "),
-        material: oc.itens_eap.map((x) => x.material || x.descricao).filter(Boolean).join("; "), valor: valorTotal };
-      if (editId) await editar("ordens_compra", editId, payload); else await criar("ordens_compra", payload);
+        material: oc.itens_eap.map((x) => x.material || x.descricao).filter(Boolean).join("; "), valor: valorTotal, furou_verba: furouVerba };
+      if (editId) { const { furou_verba, ...semFlag } = payload; await editar("ordens_compra", editId, semFlag); } else await criar("ordens_compra", payload);
       setOc({ ...vazio, obra_id: oc.obra_id }); setEditId(null); onMudou();
     } catch (e) { alert(e.message); } finally { setBusy(false); }
   };
