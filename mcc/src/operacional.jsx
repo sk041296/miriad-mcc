@@ -1518,6 +1518,7 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
   const [salvando, setSalvando] = useState(false);
   const [msg, setMsg] = useState("");
 
+  const obra = obras.find((o) => o.id === obraId);
   const itensEap = obraId ? (eapPorObra[obraId] || []) : [];
 
   // carrega memorial existente ao trocar obra+eap
@@ -1662,8 +1663,9 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
   const exportarPdf = async () => {
     setExpBusy(true); setMsg("");
     try {
+      const obraAtual = obras.find((o) => o.id === obraId) || {};
       const mems = await carregarMemoriaisDaObra();
-      if (mems) gerarPdfOrcamento(obra || {}, mems, { bdiEmbutido: expBdi, analitico: expAnalitico });
+      if (mems) gerarPdfOrcamento(obraAtual, mems, { bdiEmbutido: expBdi, analitico: expAnalitico });
     } catch (e) { setMsg("Erro ao exportar: " + (e.message || e)); }
     setExpBusy(false);
   };
@@ -1671,6 +1673,7 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
   const exportarXlsx = async () => {
     setExpBusy(true); setMsg("");
     try {
+      const obraAtual = obras.find((o) => o.id === obraId) || {};
       const mems = await carregarMemoriaisDaObra();
       if (!mems) { setExpBusy(false); return; }
       const SEG = { MATERIAL: "Material", MAO_DE_OBRA: "Mão de obra", EQUIPAMENTO: "Equip./ferram.", LOCACAO: "Locação" };
@@ -1694,7 +1697,7 @@ function ConstrutorMemorial({ obras, eapPorObra, onMudou }) {
       const ws = XLSX.utils.aoa_to_sheet(rows);
       const wb = XLSX.utils.book_new();
       XLSX.utils.book_append_sheet(wb, ws, "Orçamento");
-      XLSX.writeFile(wb, `Orcamento_${(obra?.codigo || "obra").replace(/[^a-z0-9]/gi, "_")}.xlsx`);
+      XLSX.writeFile(wb, `Orcamento_${(obraAtual?.codigo || "obra").replace(/[^a-z0-9]/gi, "_")}.xlsx`);
       setMsg("✓ Planilha gerada.");
     } catch (e) { setMsg("Erro ao exportar: " + (e.message || e)); }
     setExpBusy(false);

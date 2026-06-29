@@ -1,5 +1,14 @@
 # Miriad Construction Control (MCC)
 
+## v10.27 — Correção da exportação do orçamento ("obra is not defined")
+- As funções de exportar PDF/XLSX agora resolvem a obra localmente a partir do obraId selecionado, eliminando qualquer dependência de escopo.
+- Corrige o erro "Erro ao exportar: obra is not defined" que ocorria em versões anteriores.
+
+## v10.27 — Correção da exportação do orçamento
+- Corrige "Erro ao exportar: obra is not defined" no construtor de memorial.
+- A variável da obra selecionada não estava definida no escopo do construtor; agora está.
+- PDF e XLSX do orçamento voltam a funcionar.
+
 ## v10.26 — OC/OS que fura verba entra em aprovação (Alarmes — Fatia C)
 - Quando o operador confirma um lançamento que estoura a verba, a OC/OS entra automaticamente no fluxo de aprovação dupla (Suprimentos + Diretor), mesmo abaixo do limite de R$ 1.000.
 - O frontend sinaliza o furo ao backend (furou_verba); o backend força status "aguardando".
