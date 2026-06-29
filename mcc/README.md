@@ -1,5 +1,10 @@
 # Miriad Construction Control (MCC)
 
+## v10.30 — Toggle de CPI no dashboard de EAP & Custos
+- Corrige a percepção de "meta zerada": quando há gasto mas avanço físico zero (RDOs sem execução), a meta proporcional zera por definição.
+- Novo toggle: "CPI vs avanço" (meta proporcional ao avanço físico — eficiência de execução) e "CPI vs meta total" (meta total do item — controle de orçamento, independe do avanço).
+- O gráfico, KPIs e tabela respeitam o modo escolhido; o texto explicativo muda conforme o modo.
+
 ## v10.29 — Tab "Orçamentos" própria + consulta de memoriais
 - Nova aba "Orçamentos" no menu lateral do Operacional (entre Metas de Custo e EAP & Custos).
 - O Construtor de Memorial saiu de "Novo Projeto" e agora vive na tab Orçamentos (com mais destaque).

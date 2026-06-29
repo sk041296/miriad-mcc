@@ -1121,6 +1121,7 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
   const [metaItemPct, setMetaItemPct] = useState(0.85);
   const [busy, setBusy] = useState(false);
   const [verDash, setVerDash] = useState(true);
+  const [modoCPI, setModoCPI] = useState("avanco"); // "avanco" = meta proporcional ao avanço físico | "total" = meta total do item
   useEffect(() => { if (!obraId && obras[0]) setObraId(obras[0].id); }, [obras]);
   const itens = eapPorObra[obraId] || [];
   const obra = obras.find((o) => o.id === obraId);
@@ -1136,7 +1137,7 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
     const custoUnitDesc = (Number(e.custo_sem_bdi) || 0) * (1 - (Number(e.desconto) || 0)); // unitário s/BDI já com desconto
     const custoTotalDesc = custoUnitDesc * (Number(e.qtde) || 0);                            // base total p/ comparar com a meta
     const metaUnit = e.qtde ? meta / Number(e.qtde) : (e.meta_valor != null ? Number(e.meta_valor) : (custoUnitDesc * (Number(e.meta_pct) || 0))); // meta por unidade
-    const metaProporcional = meta * avFis;        // meta esperada para o que já foi executado
+    const metaProporcional = modoCPI === "total" ? meta : meta * avFis; // referência conforme o modo
     const desvio = metaProporcional - real;        // > 0 = abaixo da meta (bom)
     const idc = meta ? real / meta : 0;            // % da meta total já gasto
     const cpi = real > 0 ? metaProporcional / real : null; // >=1 dentro da meta
@@ -1168,10 +1169,14 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
           <Btn small kind="ghost" onClick={() => { setDescVal(obra?.desconto || 0); setDescModal(true); }} disabled={!itens.length}>% Aplicar desconto da licitação</Btn>
           <Btn small onClick={() => { setMetaVal(obra?.meta_pct_padrao && obra.meta_pct_padrao !== 1 ? obra.meta_pct_padrao : 0.85); setMetaModal(true); }} disabled={!itens.length}>◎ Definir meta de custo (global)</Btn>
           <div style={{ flex: 1 }} />
+          <Btn small kind={modoCPI === "avanco" ? "dark" : "ghost"} onClick={() => setModoCPI("avanco")} title="Compara o gasto com a meta esperada para o avanço físico já executado">CPI vs avanço</Btn>
+          <Btn small kind={modoCPI === "total" ? "dark" : "ghost"} onClick={() => setModoCPI("total")} title="Compara o gasto com a meta total do item (controle de orçamento)">CPI vs meta total</Btn>
           <Btn small kind={verDash ? "dark" : "ghost"} onClick={() => setVerDash((v) => !v)}>{verDash ? "Ver tabela" : "Ver dashboard"}</Btn>
         </div>
         <div style={{ fontSize: 11, color: C.dim, marginBottom: 12 }}>
-          Meta = % sobre o custo SEM BDI (já com desconto da licitação). Realizado vem das OC-i e OS-i. CPI = meta proporcional ao avanço ÷ realizado (≥ 1 = dentro da meta).
+          Meta = % sobre o custo SEM BDI (já com desconto da licitação). Realizado vem das OC-i e OS-i. {modoCPI === "total"
+            ? "CPI = meta TOTAL do item ÷ realizado (controle de orçamento, independe do avanço físico)."
+            : "CPI = meta proporcional ao avanço físico ÷ realizado (≥ 1 = dentro da meta). Itens sem avanço em RDO aparecem com meta proporcional zero — use 'CPI vs meta total' para controle de compras."}
           {obra?.desconto ? ` Desconto aplicado: ${pct(obra.desconto, 1)}.` : " Nenhum desconto aplicado ainda."} {comMeta > 0 ? `${comMeta}/${itens.length} itens com meta.` : "Nenhuma meta definida."}
         </div>
 
@@ -1224,7 +1229,7 @@ function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
             </tr>}</tbody>
         </table></div>}
 
-        {verDash && <DashboardMeta linhas={linhas} obra={obra} totMeta={totMeta} totReal={totReal} totMetaProp={totMetaProp} cpiGlobal={cpiGlobal} />}
+        {verDash && <DashboardMeta linhas={linhas} obra={obra} totMeta={totMeta} totReal={totReal} totMetaProp={totMetaProp} cpiGlobal={cpiGlobal} modoCPI={modoCPI} />}
       </Card>
 
       <DashboardConsolidado obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} rdos={rdos} />
@@ -1245,12 +1250,13 @@ function ModalMini({ titulo, children, onFechar }) {
   );
 }
 
-function DashboardMeta({ linhas, obra, totMeta, totReal, totMetaProp, cpiGlobal }) {
+function DashboardMeta({ linhas, obra, totMeta, totReal, totMetaProp, cpiGlobal, modoCPI }) {
+  const labelMeta = modoCPI === "total" ? "Meta total" : "Meta (proporcional)";
   const comReal = linhas.filter((l) => l.real > 0);
   const dentro = comReal.filter((l) => l.cpi != null && l.cpi >= 1).length;
   const fora = comReal.filter((l) => l.cpi != null && l.cpi < 1).length;
   const top = comReal.slice().sort((a, b) => Math.abs(b.desvio) - Math.abs(a.desvio)).slice(0, 10)
-    .map((l) => ({ nome: l.codigo, "Meta (proporcional)": l.metaProporcional, "Realizado": l.real }));
+    .map((l) => ({ nome: l.codigo, [labelMeta]: l.metaProporcional, "Realizado": l.real }));
   const pie = [{ name: "Dentro da meta", value: dentro, fill: C.verde }, { name: "Acima da meta", value: fora, fill: C.vermelho }];
   return (
     <div>
@@ -1269,8 +1275,8 @@ function DashboardMeta({ linhas, obra, totMeta, totReal, totMetaProp, cpiGlobal 
                 <CartesianGrid stroke={C.linha} strokeDasharray="2 4" vertical={false} />
                 <XAxis dataKey="nome" tick={{ fill: C.dim, fontSize: 10 }} /><YAxis tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} width={66} />
                 <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
-                <Bar dataKey="Meta (proporcional)" fill={C.cinza2} radius={[3, 3, 0, 0]} /><Bar dataKey="Realizado" fill={C.laranja} radius={[3, 3, 0, 0]}>
-                  {top.map((d, i) => <Cell key={i} fill={d["Realizado"] > d["Meta (proporcional)"] ? C.vermelho : C.verde} />)}
+                <Bar dataKey={labelMeta} fill={C.cinza2} radius={[3, 3, 0, 0]} /><Bar dataKey="Realizado" fill={C.laranja} radius={[3, 3, 0, 0]}>
+                  {top.map((d, i) => <Cell key={i} fill={d["Realizado"] > d[labelMeta] ? C.vermelho : C.verde} />)}
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
