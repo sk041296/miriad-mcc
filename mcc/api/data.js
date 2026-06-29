@@ -20,6 +20,7 @@ const TABELAS = {
   config_financeiro: { ordem: "chave", asc: true },
   catalogo_financeiro: { ordem: "codigo", asc: true },
   catalogo_mao_obra: { ordem: "prestador", asc: true },
+  orcamentos_comerciais: { ordem: "criado_em", asc: false },
   memoriais_custo: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   memoriais_itens: { ordem: "ordem", asc: true, filtro: "memorial_id" },
   usuarios: { ordem: "nome", asc: true },
@@ -210,6 +211,26 @@ export default async function handler(req, res) {
         try { ops = await gerarOPsDaOrigem(supabase, tabela, ordemAtual); } catch (e) { return res.status(500).json({ error: "Aprovada, mas falhou ao gerar OP: " + e.message }); }
       }
       return res.status(200).json({ ok: true, status: temSup && temDir ? "aprovada" : "aguardando", ops_geradas: ops });
+    }
+
+    // converter proposta comercial em projeto (obra)
+    if (t === "tornar_projeto") {
+      const ehDiretor = s.papel === "ceo" || s.papel === "diretor";
+      const ehPlanejamento = s.papel === "coord_planejamento";
+      if (!ehDiretor && !ehPlanejamento) return res.status(403).json({ error: "Apenas Diretoria ou Coord. de Planejamento podem converter propostas em projeto." });
+      const { id } = req.body || {};
+      const { data: prop } = await supabase.from("orcamentos_comerciais").select("*").eq("id", id).maybeSingle();
+      if (!prop) return res.status(404).json({ error: "Proposta não encontrada" });
+      if (prop.obra_id) return res.status(400).json({ error: "Esta proposta já foi convertida em projeto." });
+      // cria a obra a partir da proposta (campos básicos seguros)
+      const novaObra = {
+        codigo: prop.codigo || (prop.cliente ? String(prop.cliente).slice(0, 24) : "PROJETO"),
+        nome: prop.descricao || prop.cliente || "Projeto convertido",
+      };
+      const { data: obraCriada, error: errObra } = await supabase.from("obras").insert(novaObra).select().maybeSingle();
+      if (errObra) return res.status(500).json({ error: "Falha ao criar obra: " + errObra.message });
+      await supabase.from("orcamentos_comerciais").update({ status: "convertida", obra_id: obraCriada.id, convertida_em: new Date().toISOString(), convertida_por: s.id, atualizado_em: new Date().toISOString() }).eq("id", id);
+      return res.status(200).json({ ok: true, obra_id: obraCriada.id });
     }
 
     if (t === "alocar_supervisor") {

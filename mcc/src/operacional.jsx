@@ -6,7 +6,7 @@ import {
   Card, Btn, Kpi, Th, Td, Lbl, inp, NumInput, ChartTip,
   listar, criar, criarObraComEap, criarRdoCompleto, editar, remover, parseEapApi, parseEapLote, diagnosticarEap, resumoRdo,
   aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner, numBR, extrairItensPlanilha,
-  aprovarOrdem, rejeitarOrdem, sugerirComposicaoIA,
+  aprovarOrdem, rejeitarOrdem, sugerirComposicaoIA, tornarProjeto,
 } from "./core.jsx";
 import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC, gerarPdfOrcamento } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
@@ -99,6 +99,7 @@ export function ModuloOperacional({ usuario, sub: subProp, setSub: setSubProp, a
       {sub === "novoprojeto" && <NovoProjeto obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
       {sub === "metascusto" && <MetasCusto obras={obras} eapPorObra={eapPorObra} />}
       {sub === "orcamentos" && <Orcamentos obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
+      {sub === "orccomercial" && <OrcamentoComercial usuario={usuario} onConverteu={carregar} />}
       {sub === "obras" && <Obras obras={obras} eapPorObra={eapPorObra} onMudou={carregar} />}
     </div>
   );
@@ -1533,6 +1534,98 @@ const SEGMENTOS = [
   ["EQUIPAMENTO", "Equipamentos e ferramentas"],
   ["LOCACAO", "Locações"],
 ];
+
+/* ============================ Orçamento Comercial (proposta) ============================ */
+const TIPOS_OBRA = ["Reforma", "Construção", "Linha de vida", "Galpão", "Instalações", "Manutenção", "Outro"];
+const STATUS_PROP = [["aberta", "Aberta", C.dim], ["enviada", "Enviada", "#2563eb"], ["negociacao", "Em negociação", C.laranja], ["ganha", "Ganha", C.verde], ["perdida", "Perdida", C.vermelho], ["convertida", "Convertida em projeto", C.verde]];
+
+function OrcamentoComercial({ usuario, onConverteu }) {
+  const vazio = { cliente: "", codigo: "", tipo_obra: "Reforma", unidade_negocio: "CAPEX", descricao: "", valor: "", data_proposta: hojeISO(), status: "aberta", observacao: "" };
+  const [form, setForm] = useState(vazio);
+  const [props, setProps] = useState([]);
+  const [editId, setEditId] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+
+  const podeConverter = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor" || usuario.papel === "coord_planejamento");
+
+  const carregar = () => listar("orcamentos_comerciais").then(setProps).catch(() => setProps([]));
+  useEffect(() => { carregar(); }, []);
+
+  const salvar = async () => {
+    if (!form.cliente.trim()) { setMsg("Informe o cliente."); return; }
+    setBusy(true); setMsg("");
+    try {
+      const payload = { ...form, valor: Number(String(form.valor).replace(/\./g, "").replace(",", ".")) || 0 };
+      if (editId) await editar("orcamentos_comerciais", editId, { ...payload, atualizado_em: new Date().toISOString() });
+      else await criar("orcamentos_comerciais", payload);
+      setForm(vazio); setEditId(null); carregar();
+      setMsg("✓ Proposta salva.");
+    } catch (e) { setMsg("Erro: " + (e.message || e)); }
+    setBusy(false);
+  };
+
+  const editarProp = (p) => { setForm({ cliente: p.cliente || "", codigo: p.codigo || "", tipo_obra: p.tipo_obra || "Reforma", unidade_negocio: p.unidade_negocio || "CAPEX", descricao: p.descricao || "", valor: p.valor != null ? String(p.valor) : "", data_proposta: p.data_proposta || hojeISO(), status: p.status || "aberta", observacao: p.observacao || "" }); setEditId(p.id); window.scrollTo({ top: 0, behavior: "smooth" }); };
+
+  const excluir = async (p) => { if (!confirm(`Excluir proposta de ${p.cliente}?`)) return; await remover("orcamentos_comerciais", p.id); carregar(); };
+
+  const converter = async (p) => {
+    if (!confirm(`Converter a proposta de "${p.cliente}" em um novo projeto? Será criada uma obra no sistema.`)) return;
+    setBusy(true);
+    try { const r = await tornarProjeto(p.id); carregar(); onConverteu && onConverteu(); alert("✓ Projeto criado! A obra já aparece no sistema. Faça o upload da EAP na aba Novo Projeto."); }
+    catch (e) { alert("Erro ao converter: " + (e.message || e)); }
+    setBusy(false);
+  };
+
+  const stInfo = (s) => STATUS_PROP.find((x) => x[0] === s) || STATUS_PROP[0];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <Card title={editId ? "Editar proposta comercial" : "Nova proposta comercial"}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 10, marginBottom: 12 }}>
+          <div><Lbl>Cliente *</Lbl><input value={form.cliente} onChange={(e) => setForm({ ...form, cliente: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Código/identificação</Lbl><input value={form.codigo} onChange={(e) => setForm({ ...form, codigo: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} placeholder="ex: PROP-2026-018" /></div>
+          <div><Lbl>Tipo de obra</Lbl><select value={form.tipo_obra} onChange={(e) => setForm({ ...form, tipo_obra: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })}>{TIPOS_OBRA.map((t) => <option key={t} value={t}>{t}</option>)}</select></div>
+          <div><Lbl>Unidade de negócio</Lbl><select value={form.unidade_negocio} onChange={(e) => setForm({ ...form, unidade_negocio: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })}><option value="CAPEX">CAPEX</option><option value="OPEX">OPEX</option></select></div>
+          <div><Lbl>Valor da proposta (R$)</Lbl><input value={form.valor} onChange={(e) => setForm({ ...form, valor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} placeholder="0,00" /></div>
+          <div><Lbl>Data</Lbl><input type="date" value={form.data_proposta} onChange={(e) => setForm({ ...form, data_proposta: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Status</Lbl><select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })}>{STATUS_PROP.filter((x) => x[0] !== "convertida").map((x) => <option key={x[0]} value={x[0]}>{x[1]}</option>)}</select></div>
+        </div>
+        <div style={{ marginBottom: 12 }}><Lbl>Descrição / escopo</Lbl><textarea rows={2} value={form.descricao} onChange={(e) => setForm({ ...form, descricao: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box", resize: "vertical" })} /></div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <Btn onClick={salvar} disabled={busy}>{busy ? "Salvando…" : editId ? "Salvar alterações" : "+ Cadastrar proposta"}</Btn>
+          {editId && <Btn kind="ghost" onClick={() => { setForm(vazio); setEditId(null); }}>Cancelar</Btn>}
+          {msg && <span style={{ fontSize: 12.5, color: msg.startsWith("✓") ? C.verde : C.vermelho }}>{msg}</span>}
+        </div>
+      </Card>
+
+      <Card title={`Propostas comerciais (${props.length})`}>
+        {props.length === 0 ? <div style={{ color: C.dim, fontSize: 13 }}>Nenhuma proposta cadastrada.</div>
+          : <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead><tr><Th>Cliente</Th><Th>Tipo</Th><Th>Un. neg.</Th><Th right>Valor</Th><Th>Data</Th><Th>Status</Th><Th /></tr></thead>
+            <tbody>{props.map((p) => { const si = stInfo(p.status); return (
+              <tr key={p.id}>
+                <Td><b>{p.cliente}</b>{p.codigo ? <span style={{ color: C.dim, fontSize: 11 }}> · {p.codigo}</span> : ""}<div style={{ fontSize: 11, color: C.dim }}>{(p.descricao || "").slice(0, 50)}</div></Td>
+                <Td style={{ fontSize: 12 }}>{p.tipo_obra}</Td>
+                <Td style={{ fontSize: 12 }}>{p.unidade_negocio}</Td>
+                <Td right color={C.laranja}>{fmtR(p.valor)}</Td>
+                <Td style={{ fontSize: 12 }}>{p.data_proposta ? p.data_proposta.split("-").reverse().join("/") : "—"}</Td>
+                <Td><span style={{ color: si[2], fontWeight: 700, fontSize: 11.5 }}>● {si[1]}</span></Td>
+                <Td><div style={{ display: "flex", gap: 5, justifyContent: "flex-end" }}>
+                  {p.obra_id ? <span style={{ fontSize: 11, color: C.verde }}>✓ projeto</span> : <>
+                    {podeConverter && <Btn small onClick={() => converter(p)} disabled={busy}>Tornar projeto</Btn>}
+                    <Btn small kind="ghost" onClick={() => editarProp(p)}>Editar</Btn>
+                    <button onClick={() => excluir(p)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 15 }}>×</button>
+                  </>}
+                </div></Td>
+              </tr>
+            ); })}</tbody>
+          </table>}
+        {!podeConverter && <div style={{ fontSize: 11, color: C.dim, marginTop: 10 }}>Apenas Diretoria ou Coord. de Planejamento podem converter propostas em projeto.</div>}
+      </Card>
+    </div>
+  );
+}
 
 /* ============================ Orçamentos (tab própria) ============================ */
 /* Consulta de memoriais por obra (cada EAP: tem memorial?, verba, abrir) + Construtor + Catálogo */

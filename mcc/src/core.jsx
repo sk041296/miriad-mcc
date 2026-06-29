@@ -80,6 +80,7 @@ export const criarRdoCompleto = (rdo, restricoes, rdo_id) => req("/api/data", { 
 export const editar = (t, id, patch) => req("/api/data", { method: "PATCH", body: JSON.stringify({ t, id, patch }) });
 export const aprovarOrdem = (tabela, id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "aprovar_ordem", tabela, id }) });
 export const sugerirComposicaoIA = (itens) => req("/api/sugerir-composicao", { method: "POST", body: JSON.stringify({ itens }) }).then((d) => d.composicoes || []);
+export const tornarProjeto = (id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "tornar_projeto", id }) });
 export const rejeitarOrdem = (tabela, id, motivo) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rejeitar_ordem", tabela, id, motivo }) });
 export const remover = (t, id) => req("/api/data", { method: "DELETE", body: JSON.stringify({ t, id }) });
 export const parseEapApi = (linhas, nomeObra) => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ linhas, nomeObra }) }).then((d) => d.eap);
@@ -304,7 +305,7 @@ export function papeisQuePodeCriar(criador) {
 export const PRECISA_DESIGNACAO = new Set(["sup_obras", "op_suprimentos", "op_planejamento", "op_orcamento"]);
 
 /* ===================== Acesso configurável por cargo (v9.3) ===================== */
-export const OP_IDS = ["rdo", "pos", "pmm", "smi", "ssi", "oc", "os", "prestadores", "novoprojeto", "metascusto", "orcamentos", "eap", "obras"];
+export const OP_IDS = ["rdo", "pos", "pmm", "smi", "ssi", "oc", "os", "prestadores", "novoprojeto", "metascusto", "orcamentos", "orccomercial", "eap", "obras"];
 export const FIN_IDS = ["premissas", "antecipacao", "comparativo", "sensibilidade", "resultado", "custos", "custosdir", "medprojetada"];
 const mapBool = (ids, val) => Object.fromEntries(ids.map((k) => [k, typeof val === "function" ? !!val(k) : !!val]));
 const inc = (papel, ...lista) => lista.includes(papel);

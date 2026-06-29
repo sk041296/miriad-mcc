@@ -340,6 +340,7 @@ const OP_ITENS = [
   { id: "novoprojeto", label: "Novo Projeto", nota: "Upload da EAP e abertura de projeto" },
   { id: "metascusto", label: "Metas de Custo", nota: "Verba por EAP × consumido" },
   { id: "orcamentos", label: "Orçamentos", nota: "Memorial executivo e composições" },
+  { id: "orccomercial", label: "Orçamento Comercial", nota: "Propostas e conversão em projeto" },
   { id: "eap", label: "EAP & Custos", nota: "Orçamento e curva de custos" },
   { id: "obras", label: "Obras", nota: "Cadastro e EAP das obras" },
 ];

@@ -1,5 +1,13 @@
 # Miriad Construction Control (MCC)
 
+## v10.32 — Tab "Orçamento Comercial" (propostas → projeto)
+- Nova aba no Operacional para propostas comerciais (separadas das obras).
+- Campos: cliente, código, tipo de obra, unidade de negócio (CAPEX/OPEX), valor, data, status (aberta/enviada/negociação/ganha/perdida), descrição.
+- Listagem com status do pipeline. Botão "Tornar projeto" (só Diretoria ou Coord. de Planejamento) cria a obra no sistema e marca a proposta como convertida.
+- Tabela orcamentos_comerciais + ação backend tornar_projeto.
+
+> **Migração:** rode `supabase/migration_v10_32.sql` (cria a tabela orcamentos_comerciais).
+
 ## v10.31 — Toggle no Desempenho Consolidado + nome da EAP ao clicar
 - O gráfico "Desempenho consolidado — empresa" agora tem o mesmo toggle (vs avanço / vs meta total). Resolve obras como ECOPARK/PMSP que apareciam com meta cinza gigante e realizado zero.
 - No dashboard de EAP & Custos, ao clicar numa barra, aparece o nome completo da EAP (código + descrição). O tooltip de hover também mostra o nome.
