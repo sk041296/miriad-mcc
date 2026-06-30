@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v10.35 — Verba genérica como fallback (Metas, alarmes e painel de furos)
+- Enquanto um item de EAP não tem memorial executivo, o sistema passa a usar a META DE CUSTO GENÉRICA (definida em EAP & Custos → "Definir meta de custo") como verba de referência.
+- O memorial executivo tem prioridade quando existe; na ausência dele, vale a meta genérica.
+- Vale para os três pontos: tela Metas de Custo, alarme ao lançar OC/OS, e painel "Custos fora da verba".
+- Em Metas de Custo, nova coluna "Origem" indica se a verba veio do memorial ou da meta genérica.
+- Itens sem memorial E sem meta continuam sem disparar alarme.
+
 ## v10.34 — Renomeada a tab "Orçamentos" para "Memorial Executivo"
 - A aba do construtor/consulta de memoriais agora se chama "Memorial Executivo" no menu lateral (antes "Orçamentos"), evitando confusão com "Orçamento Comercial".
 - Apenas troca de rótulo; rota e permissões inalteradas.

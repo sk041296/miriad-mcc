@@ -1111,6 +1111,17 @@ function metaItem(e) {
   return Number(e.valor_total) || 0; // sem meta definida → usa o contratado c/ desconto
 }
 
+// verba de referência para alarmes/metas: memorial tem prioridade;
+// na ausência dele, usa a meta de custo genérica (meta_valor ou meta_pct).
+// Retorna null quando não há nenhuma das duas (não dispara alarme).
+function verbaEfetiva(e) {
+  if (e.verba_contratacao != null && Number(e.verba_contratacao) > 0) return Number(e.verba_contratacao);
+  if (e.meta_valor != null) return Number(e.meta_valor) * (Number(e.qtde) || 0);
+  const csb = Number(e.custo_sem_bdi);
+  if (csb && e.meta_pct != null) return csb * (1 - (Number(e.desconto) || 0)) * (Number(e.meta_pct) || 0) * (Number(e.qtde) || 0);
+  return null;
+}
+
 function EapCustos({ obras, eapPorObra, ocs, contratos, rdos, onMudou }) {
   const [obraId, setObraId] = useState("");
   const [busca, setBusca] = useState("");
@@ -1378,7 +1389,7 @@ function consumidoPorEap(ocs, contratos, obraId) {
 /* Fatia B — checagem de estouro de verba ao lançar OC/OS. */
 function checarVerba({ eapItens, ocs, contratos, obraId, novosItens, ignorarOrigemId, ignorarTabela }) {
   const verbaDe = {};
-  (eapItens || []).forEach((i) => { if (i.verba_contratacao != null && Number(i.verba_contratacao) > 0) verbaDe[String(i.codigo).split(" ")[0].trim()] = Number(i.verba_contratacao); });
+  (eapItens || []).forEach((i) => { const v = verbaEfetiva(i); if (v != null && v > 0) verbaDe[String(i.codigo).split(" ")[0].trim()] = v; });
   const ocsF = (ocs || []).filter((o) => !(ignorarTabela === "ordens_compra" && o.id === ignorarOrigemId));
   const ctsF = (contratos || []).filter((c) => !(ignorarTabela === "contratos_servico" && c.id === ignorarOrigemId));
   const consumido = consumidoPorEap(ocsF, ctsF, obraId);
@@ -1419,15 +1430,16 @@ function MetasCusto({ obras, eapPorObra }) {
 
   const obra = obras.find((o) => o.id === obraId);
   const itens = obraId ? (eapPorObra[obraId] || []) : [];
-  const comVerba = itens.filter((i) => i.verba_contratacao != null && Number(i.verba_contratacao) > 0);
+  const comVerba = itens.filter((i) => verbaEfetiva(i) != null);
   const consumido = consumidoPorEap(ocs, contratos, obraId);
 
   const linhas = comVerba.map((i) => {
-    const verba = Number(i.verba_contratacao) || 0;
+    const verba = verbaEfetiva(i) || 0;
+    const origem = (i.verba_contratacao != null && Number(i.verba_contratacao) > 0) ? "memorial" : "meta";
     const gasto = consumido[String(i.codigo).split(" ")[0].trim()] || 0;
     const saldo = verba - gasto;
     const pct = verba > 0 ? gasto / verba : 0;
-    return { cod: i.codigo, desc: i.descricao, verba, gasto, saldo, pct };
+    return { cod: i.codigo, desc: i.descricao, verba, gasto, saldo, pct, origem };
   }).sort((a, b) => b.pct - a.pct);
 
   const totVerba = sum(linhas.map((l) => l.verba));
@@ -1437,7 +1449,7 @@ function MetasCusto({ obras, eapPorObra }) {
   const corPct = (pct) => pct > 1 ? C.vermelho : pct > 0.9 ? C.laranja : C.verde;
 
   return (
-    <Card title="◎ Metas de Custo por EAP (verba do memorial × consumido)">
+    <Card title="◎ Metas de Custo por EAP (verba × consumido)">
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", marginBottom: 14 }}>
         <div><Lbl>Obra</Lbl>
           <select value={obraId} onChange={(e) => setObraId(e.target.value)} style={inp({ width: 240 })}>
@@ -1447,9 +1459,9 @@ function MetasCusto({ obras, eapPorObra }) {
         </div>
       </div>
 
-      {!obraId ? <div style={{ color: C.dim, fontSize: 13 }}>Selecione uma obra para ver as metas de custo dos itens com memorial.</div>
+      {!obraId ? <div style={{ color: C.dim, fontSize: 13 }}>Selecione uma obra para ver as metas de custo dos itens.</div>
         : carregando ? <div style={{ color: C.dim }}>Carregando…</div>
-        : comVerba.length === 0 ? <div style={{ color: C.dim, fontSize: 13 }}>Nenhum item desta obra tem verba de contratação definida (memorial executivo). Crie memoriais na aba Novo Projeto.</div>
+        : comVerba.length === 0 ? <div style={{ color: C.dim, fontSize: 13 }}>Nenhum item desta obra tem verba definida. Defina memoriais (aba Memorial Executivo) ou uma meta de custo genérica (aba EAP & Custos → "Definir meta de custo").</div>
         : <>
           <div style={{ display: "flex", gap: 12, marginBottom: 14, flexWrap: "wrap" }}>
             <Kpi label="Verba total (itens c/ memorial)" value={fmtR(totVerba)} />
@@ -1459,11 +1471,12 @@ function MetasCusto({ obras, eapPorObra }) {
           </div>
 
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr><Th>EAP</Th><Th>Descrição</Th><Th right>Verba (s/BDI)</Th><Th right>Consumido</Th><Th right>Saldo</Th><Th right>% consumido</Th></tr></thead>
+            <thead><tr><Th>EAP</Th><Th>Descrição</Th><Th>Origem</Th><Th right>Verba (s/BDI)</Th><Th right>Consumido</Th><Th right>Saldo</Th><Th right>% consumido</Th></tr></thead>
             <tbody>{linhas.map((l) => (
               <tr key={l.cod} style={{ background: l.pct > 1 ? `${C.vermelho}0c` : "transparent" }}>
                 <Td><b>{l.cod}</b></Td>
                 <Td style={{ fontSize: 12 }}>{(l.desc || "").slice(0, 50)}</Td>
+                <Td><span style={{ fontSize: 10.5, fontWeight: 700, color: l.origem === "memorial" ? C.verde : C.dim }}>{l.origem === "memorial" ? "memorial" : "meta"}</span></Td>
                 <Td right>{fmtR(l.verba)}</Td>
                 <Td right color={C.laranja}>{fmtR(l.gasto)}</Td>
                 <Td right color={l.saldo < 0 ? C.vermelho : C.verde}>{fmtR(l.saldo)}</Td>
@@ -1471,6 +1484,7 @@ function MetasCusto({ obras, eapPorObra }) {
               </tr>
             ))}</tbody>
           </table>
+          <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>Origem "memorial" = verba do memorial executivo. Origem "meta" = meta de custo genérica (EAP & Custos). O memorial tem prioridade quando existe.</div>
         </>}
     </Card>
   );

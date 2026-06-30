@@ -381,13 +381,23 @@ function valorOrdemNaEap(ordem, cod, ehContrato) {
 
 /* Varre todas as obras e retorna as EAPs cujo consumido ultrapassou a verba,
    com o GRUPO de OCs/OSs que compõem o consumo daquela EAP. */
+// verba de referência: memorial tem prioridade; senão usa a meta de custo genérica.
+// Retorna null quando não há nenhuma das duas.
+export function verbaEfetivaItem(e) {
+  if (e.verba_contratacao != null && Number(e.verba_contratacao) > 0) return Number(e.verba_contratacao);
+  if (e.meta_valor != null) return Number(e.meta_valor) * (Number(e.qtde) || 0);
+  const csb = Number(e.custo_sem_bdi);
+  if (csb && e.meta_pct != null) return csb * (1 - (Number(e.desconto) || 0)) * (Number(e.meta_pct) || 0) * (Number(e.qtde) || 0);
+  return null;
+}
+
 export function furosDeVerba(obras, eapPorObra, ocs, contratos) {
   const furos = [];
   (obras || []).forEach((obra) => {
     const itens = (eapPorObra && eapPorObra[obra.id]) || [];
     const consumido = consumidoPorEapObra(ocs, contratos, obra.id);
     itens.forEach((i) => {
-      const verba = Number(i.verba_contratacao);
+      const verba = verbaEfetivaItem(i);
       if (!(verba > 0)) return;
       const cod = codEap(i.codigo);
       const gasto = consumido[cod] || 0;
