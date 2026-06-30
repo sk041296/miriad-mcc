@@ -129,8 +129,14 @@ export const numBR = (v) => { let s = String(v == null ? "" : v).replace(/[^\d.,
 // Ignora linhas de seção/observação e códigos SINAPI avulsos. Retorna [{codigo, descricao, unidade, qtde, valorTotal}].
 const _ehCodPlan = (c0) => /^\d+(\.\d+)+\.?$/.test(String(c0 == null ? "" : c0).replace(",", ".").trim());
 export function extrairItensPlanilha(arrayBuffer) {
-  const wb = XLSX.read(arrayBuffer, { type: "array" });
+  const wb = XLSX.read(arrayBuffer, { type: "array", cellDates: true });
   const NORM = (s) => String(s == null ? "" : s).trim().toUpperCase();
+  // Excel costuma converter códigos "S.N" (ex.: 4.1, 4.10) em datas (4/jan, 4/out).
+  // Recupera o código original como "dia.mês" a partir do objeto Date.
+  const recuperaCodData = (v) => {
+    if (v instanceof Date && !isNaN(v)) { const dia = v.getDate(), mes = v.getMonth() + 1; return `${dia}.${mes}`; }
+    return null;
+  };
   const ehItemHdr = (c) => c === "ITEM" || c === "ÍTEM" || c === "EAP" || (c.includes("EAP") && c.length <= 6);
   let melhores = [];
   for (const sn of wb.SheetNames) {
@@ -157,7 +163,10 @@ export function extrairItensPlanilha(arrayBuffer) {
     if (hdr < 0 || col.item == null || col.desc == null || col.unid == null || col.qtde == null) continue;
     const itens = [];
     for (let i = hdr + 1; i < grade.length; i++) {
-      const r = grade[i] || []; const c0 = String(r[col.item] == null ? "" : r[col.item]).trim();
+      const r = grade[i] || [];
+      const bruto = r[col.item];
+      // recupera código corrompido em data (4.1 -> 04/jan); senão usa o texto normal
+      const c0 = recuperaCodData(bruto) || String(bruto == null ? "" : bruto).trim();
       if (!_ehCodPlan(c0)) continue;                                   // só itens com código pontilhado (ITEM da EAP)
       const desc = String(r[col.desc] == null ? "" : r[col.desc]).trim();
       const unid = String(r[col.unid] == null ? "" : r[col.unid]).trim();

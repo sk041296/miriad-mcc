@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v10.38 — Import: recupera códigos que o Excel converteu em data
+- CAUSA: o Excel converte códigos "S.N" (ex.: 4.1, 4.10) em datas (4/jan, 4/out). O parser não reconhecia e DESCARTAVA esses itens — por isso só 9 de 21 itens da planilha de pintura eram importados.
+- CORREÇÃO: o parser agora lê a planilha com cellDates e, quando a célula ITEM é uma data, recupera o código como "dia.mês" (04/jan → 4.1). Os demais códigos seguem normais.
+- Resultado: a planilha de pintura passa a importar os 21 itens completos.
+- Duplicações REAIS na planilha (ex.: 4.17 em dois serviços) continuam aparecendo — agora a camada determinística (v10.36) avisa corretamente para você corrigir o código na origem.
+
 ## v10.37 — Correção do bug real de duplicação no import (parser)
 - CAUSA RAIZ: o casamento por descrição (casarEapImport) substituía o código explícito da planilha pelo código de OUTRO item com descrição idêntica. Ex.: item 7.10 (TUBO PVC 32mm) tinha a mesma descrição do 7.3, então era importado como "7.3" — gerando a falsa duplicação. A IA de conferência estava CERTA ao apontar.
 - CORREÇÃO: quando a planilha já traz um código pontilhado válido (ex.: 7.10), ele tem prioridade absoluta. O match por descrição só vale quando não há código válido na planilha.
