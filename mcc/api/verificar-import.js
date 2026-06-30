@@ -2,17 +2,17 @@
 // Camada de auditoria: NUNCA bloqueia o import. Tem orçamento de 5s por chamada (AbortController);
 // se estourar ou faltar chave, devolve {ok:null, indisponivel} e o cliente segue normalmente.
 import { sessao } from "./_lib.js";
-export const config = { maxDuration: 15 };
+export const config = { maxDuration: 30 };
 
-// modelo rápido primeiro (Haiku); cai para os modelos do parse-eap se indisponível.
+// modelo de verificação: Sonnet 4.6 (preciso e rápido), com fallbacks.
 const MODELOS = [
   process.env.ANTHROPIC_MODEL_VERIFICACAO,
-  "claude-haiku-4-5-20251001",
+  "claude-sonnet-4-6",
   "claude-sonnet-4-5-20250929",
-  "claude-3-5-haiku-20241022",
+  "claude-haiku-4-5-20251001",
 ].filter(Boolean);
 
-const TIMEOUT_MS = 5000;
+const TIMEOUT_MS = 12000;
 
 async function chamarRapido(prompt) {
   let ultimoErro = "";
@@ -64,29 +64,80 @@ export default async function handler(req, res) {
   }));
   const eapCods = Array.isArray(eapResumo) ? eapResumo.slice(0, 200).map((e) => `${e.codigo}: ${String(e.descricao || "").slice(0, 60)}`).join("\n") : "";
 
-  const prompt =
-`Você é um auditor de importação de planilhas de obra do sistema MCC (Miriad). Um parser extraiu os itens abaixo de uma planilha ${tipo === "osi" ? "de OS-i (contrato de serviço)" : "de SS-i (solicitação de serviço)"}${nomeObra ? ` da obra "${nomeObra}"` : ""}. Faça uma conferência RÁPIDA e aponte SOMENTE problemas claros de extração:
-- linha de cabeçalho/seção/subtotal/total capturada como item (ex.: descrição tipo "TOTAL GERAL", "SERVIÇOS PRELIMINARES" sem ser um serviço real);
-- unidade ausente ou implausível para a descrição;
-- quantidade ausente, zero, negativa ou absurda;
-- código (cod) que claramente não corresponde à descrição.
-Não invente problemas; se estiver coerente, aprove.
+  // ===== CAMADA 1 — DETERMINÍSTICA (fatos verificáveis, sem IA, nunca alucina) =====
+  const det = [];
+  // 1a. códigos duplicados (com os números de linha exatos)
+  const porCod = {};
+  lista.forEach((it) => { const c = String(it.cod || "").trim(); if (!c) return; (porCod[c] = porCod[c] || []).push(it.n); });
+  Object.entries(porCod).forEach(([cod, linhas]) => {
+    if (linhas.length > 1) det.push({ item: cod, problema: `código repetido nos itens ${linhas.join(", ")}` });
+  });
+  // 1b. quantidade ausente, zero ou negativa
+  lista.forEach((it) => {
+    const q = it.qtd == null ? null : Number(String(it.qtd).replace(",", "."));
+    if (q == null || isNaN(q) || q <= 0) det.push({ item: it.cod || `#${it.n}`, problema: `quantidade ausente ou inválida (${it.qtd})` });
+  });
+  // 1c. valor total ausente/zero (só OS-i)
+  if (tipo === "osi") lista.forEach((it) => {
+    const v = it.valor == null ? null : Number(String(it.valor).replace(",", "."));
+    if (v == null || isNaN(v) || v <= 0) det.push({ item: it.cod || `#${it.n}`, problema: `valor total ausente ou zero` });
+  });
 
-Responda SOMENTE em JSON válido, sem nenhum texto fora dele, no formato exato:
-{"ok": true, "resumo": "uma frase curta em português", "alertas": [{"item":"<cod>","problema":"<o que está errado, curto>"}]}
-Use ok=false apenas se houver pelo menos um alerta. Máximo 8 alertas.
+  // ===== CAMADA 2 — IA (Sonnet): só JULGAMENTO qualitativo, com regras estritas =====
+  const prompt =
+`Você é um auditor de importação de planilhas de obra do sistema MCC (Miriad). Um parser extraiu os itens abaixo de uma planilha ${tipo === "osi" ? "de OS-i (contrato de serviço)" : "de SS-i (solicitação de serviço)"}${nomeObra ? ` da obra "${nomeObra}"` : ""}.
+
+REGRAS ESTRITAS (siga à risca):
+- Aponte SOMENTE problemas de JULGAMENTO que você consiga verificar lendo a própria linha citada.
+- NÃO aponte códigos duplicados/repetidos — isso já é verificado por outro mecanismo. IGNORE qualquer suspeita de duplicação.
+- NÃO compare itens entre si nem invente relações ("igual ao item X", "mesmo serviço do item Y"). Avalie cada linha isoladamente.
+- Cada alerta DEVE citar o número "n" da linha exata e um fato presente nela.
+- Se não tiver certeza, NÃO aponte. Prefira aprovar a inventar.
+
+Tipos de problema que VOCÊ deve procurar (apenas estes):
+- descrição que é claramente cabeçalho/seção/total e não um serviço (ex.: "TOTAL GERAL", "SERVIÇOS PRELIMINARES");
+- unidade implausível para a descrição (ex.: tubo medido em "un" onde claramente seria "m");
+- ${tipo === "osi" ? "valor unitário (valor ÷ qtd) absurdamente baixo ou alto para o tipo de serviço descrito;" : "quantidade absurda para o serviço descrito;"}
+- código que claramente não corresponde à descrição, conferindo contra a EAP da obra (se fornecida).
+
+Responda SOMENTE em JSON válido, sem texto fora dele:
+{"ok": true, "resumo": "uma frase curta em português", "alertas": [{"item":"<cod>","problema":"<o que está errado, citando o item n>"}]}
+Máximo 6 alertas. Se nada qualitativo a apontar, retorne alertas vazio.
 
 ITENS EXTRAÍDOS (JSON):
 ${JSON.stringify(lista)}
 ${eapCods ? `\nEAP cadastrada da obra (codigo: descrição) para referência de coerência de código:\n${eapCods}` : ""}`;
 
+  let alertasIA = [];
+  let resumoIA = "";
+  let iaIndisponivel = false;
   try {
     const text = await chamarRapido(prompt);
     let parsed;
-    try { parsed = JSON.parse(text); } catch { return res.status(200).json({ ok: null, indisponivel: true, motivo: "resposta_invalida" }); }
-    const alertas = Array.isArray(parsed.alertas) ? parsed.alertas.slice(0, 8) : [];
-    return res.status(200).json({ ok: alertas.length === 0 && parsed.ok !== false, resumo: String(parsed.resumo || "").slice(0, 200), alertas, total: itens.length, conferidos: lista.length });
-  } catch (e) {
-    return res.status(200).json({ ok: null, indisponivel: true, motivo: e.message === "timeout" ? "timeout" : "erro" });
+    try { parsed = JSON.parse(text); alertasIA = Array.isArray(parsed.alertas) ? parsed.alertas : []; resumoIA = String(parsed.resumo || ""); }
+    catch { iaIndisponivel = true; }
+  } catch (e) { iaIndisponivel = true; }
+
+  // ===== COMBINA as duas camadas (determinística primeiro, depois IA) =====
+  // remove da IA qualquer alerta que mencione duplicação (defesa extra contra alucinação)
+  const alertasIAfiltrados = alertasIA.filter((a) => !/duplicad|repetid|igual ao|mesmo (serviço|item)/i.test(String(a.problema || "")));
+  const alertas = [...det, ...alertasIAfiltrados].slice(0, 10);
+
+  let resumo;
+  if (alertas.length === 0) resumo = "Importação consistente — nenhum problema detectado.";
+  else {
+    const partes = [];
+    if (det.length) partes.push(`${det.length} verificação(ões) automática(s)`);
+    if (alertasIAfiltrados.length) partes.push(`${alertasIAfiltrados.length} ponto(s) de revisão da IA`);
+    resumo = `${alertas.length} ponto(s) a revisar (${partes.join(" + ")}).`;
   }
+
+  return res.status(200).json({
+    ok: alertas.length === 0,
+    resumo,
+    alertas,
+    total: itens.length,
+    conferidos: lista.length,
+    ia_indisponivel: iaIndisponivel,
+  });
 }

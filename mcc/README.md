@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v10.36 — Verificação de import híbrida (determinística + IA Sonnet 4.6)
+- Corrige a IA de conferência que alucinava (apontava códigos duplicados inexistentes).
+- Camada 1 (determinística, sem IA): códigos duplicados, quantidade ausente/zero/negativa e valor total zero — fatos verificados por código, com os números de linha exatos. Nunca alucina.
+- Camada 2 (IA, Sonnet 4.6): só julgamento qualitativo (preço/unidade implausível, descrição que não bate). Proibida de apontar duplicação; avalia cada linha isoladamente.
+- Filtro extra remove qualquer alerta de duplicação que a IA insista em gerar.
+- Modelo trocado de Haiku para Sonnet 4.6 (mais preciso); timeout ampliado para evitar falhas.
+
 ## v10.35 — Verba genérica como fallback (Metas, alarmes e painel de furos)
 - Enquanto um item de EAP não tem memorial executivo, o sistema passa a usar a META DE CUSTO GENÉRICA (definida em EAP & Custos → "Definir meta de custo") como verba de referência.
 - O memorial executivo tem prioridade quando existe; na ausência dele, vale a meta genérica.
