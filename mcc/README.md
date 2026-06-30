@@ -1,5 +1,10 @@
 # Miriad Construction Control (MCC)
 
+## v10.37 — Correção do bug real de duplicação no import (parser)
+- CAUSA RAIZ: o casamento por descrição (casarEapImport) substituía o código explícito da planilha pelo código de OUTRO item com descrição idêntica. Ex.: item 7.10 (TUBO PVC 32mm) tinha a mesma descrição do 7.3, então era importado como "7.3" — gerando a falsa duplicação. A IA de conferência estava CERTA ao apontar.
+- CORREÇÃO: quando a planilha já traz um código pontilhado válido (ex.: 7.10), ele tem prioridade absoluta. O match por descrição só vale quando não há código válido na planilha.
+- Agora itens com descrições idênticas (comum em SINAPI) mantêm seus códigos corretos no import.
+
 ## v10.36 — Verificação de import híbrida (determinística + IA Sonnet 4.6)
 - Corrige a IA de conferência que alucinava (apontava códigos duplicados inexistentes).
 - Camada 1 (determinística, sem IA): códigos duplicados, quantidade ausente/zero/negativa e valor total zero — fatos verificados por código, com os números de linha exatos. Nunca alucina.

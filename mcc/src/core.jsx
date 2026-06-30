@@ -179,9 +179,14 @@ export function casarEapImport(eapItens, { item, cod, descricao }) {
     const hit = eapItens.find((e) => _normCod(e.codigo) === c);
     if (hit) return hit.codigo;
   }
+  // Se a planilha JÁ traz um código pontilhado válido (ex.: "7.10"), ele tem prioridade:
+  // não deixamos o match por descrição substituí-lo pelo código de OUTRO item que por acaso
+  // tenha a mesma descrição (caso de itens repetidos como TUBO 7.3 e 7.10). Mantemos o código da planilha.
+  const temCodValido = codigosImport.some((c) => /^\d+(\.\d+)*$/.test(c));
+  if (temCodValido) return null; // null => o chamador mantém o código original da planilha
   const d = _normTxt(descricao);
   if (d) {
-    // 2) descrição idêntica
+    // 2) descrição idêntica (só quando NÃO há código válido na planilha)
     const exato = eapItens.find((e) => _normTxt(e.descricao) === d);
     if (exato) return exato.codigo;
     // 3) contenção sem ambiguidade (uma única EAP contém/está contida na descrição importada)
