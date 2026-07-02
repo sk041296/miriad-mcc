@@ -21,6 +21,8 @@ const TABELAS = {
   catalogo_financeiro: { ordem: "codigo", asc: true },
   catalogo_mao_obra: { ordem: "prestador", asc: true },
   orcamentos_comerciais: { ordem: "criado_em", asc: false },
+  papeis_customizados: { ordem: "criado_em", asc: false },
+  acoes_usuario_pendentes: { ordem: "solicitado_em", asc: false },
   memoriais_custo: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   memoriais_itens: { ordem: "ordem", asc: true, filtro: "memorial_id" },
   usuarios: { ordem: "nome", asc: true },
@@ -32,6 +34,8 @@ const GERENCIA_USUARIOS = new Set(["ceo", "diretor", "coord_suprimentos", "coord
 const ADMIN_TOTAL     = new Set(["ceo", "diretor"]);
 const SUPRIMENTOS     = new Set(["op_suprimentos", "coord_suprimentos"]);
 const ALOCA_SUPERVISOR = new Set(["ceo", "diretor", "coord_planejamento"]);
+const GERENCIA_ORCCOM = new Set(["ceo", "diretor", "coord_planejamento"]);
+// coord_planejamento pode gerenciar usuários, mas suas ações de criar/excluir passam por aprovação de diretoria
 // papéis cujo acesso é restrito às obras em que foram designados
 const OBRA_SCOPED     = new Set(["sup_obras", "op_suprimentos", "op_planejamento", "op_orcamento"]);
 
@@ -94,7 +98,7 @@ function podeCriarPapel(criador, alvo) {
   if (criador === "ceo") return true;
   if (criador === "diretor") return alvo !== "diretor" && alvo !== "ceo";
   if (criador === "coord_suprimentos") return alvo === "op_suprimentos";
-  if (criador === "coord_planejamento") return alvo === "op_planejamento";
+  if (criador === "coord_planejamento") return alvo !== "diretor" && alvo !== "ceo";
   if (criador === "coord_obras") return alvo === "sup_obras";
   if (criador === "coord_orcamentos") return alvo === "op_orcamento";
   return false;
@@ -184,9 +188,9 @@ export default async function handler(req, res) {
     if (t === "aprovar_ordem" || t === "rejeitar_ordem") {
       const { tabela, id, motivo } = req.body || {};
       if (tabela !== "ordens_compra" && tabela !== "contratos_servico") return res.status(400).json({ error: "Tabela inválida" });
-      const ehSuprimentos = s.papel === "coord_suprimentos";
+      const ehSuprimentos = s.papel === "coord_suprimentos" || s.papel === "coord_planejamento";
       const ehDiretor = s.papel === "ceo" || s.papel === "diretor";
-      if (!ehSuprimentos && !ehDiretor) return res.status(403).json({ error: "Apenas Coord. de Suprimentos ou Diretoria podem aprovar/rejeitar." });
+      if (!ehSuprimentos && !ehDiretor) return res.status(403).json({ error: "Apenas Coord. de Suprimentos, Coord. de Planejamento ou Diretoria podem aprovar/rejeitar." });
       const { data: ordem } = await supabase.from(tabela).select("*").eq("id", id).maybeSingle();
       if (!ordem) return res.status(404).json({ error: "Ordem não encontrada" });
 
@@ -213,6 +217,40 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, status: temSup && temDir ? "aprovada" : "aguardando", ops_geradas: ops });
     }
 
+    // aprovar/rejeitar ações de usuário pendentes (só diretoria)
+    if (t === "decidir_acao_usuario") {
+      if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas Diretoria pode decidir ações de usuário." });
+      const { id, aprovar, motivo } = req.body || {};
+      const { data: acao } = await supabase.from("acoes_usuario_pendentes").select("*").eq("id", id).maybeSingle();
+      if (!acao) return res.status(404).json({ error: "Ação não encontrada." });
+      if (acao.status !== "aguardando") return res.status(400).json({ error: "Ação já decidida." });
+      if (!aprovar) {
+        await supabase.from("acoes_usuario_pendentes").update({ status: "rejeitada", decidido_por: s.id, decidido_em: new Date().toISOString(), motivo_rejeicao: motivo || null }).eq("id", id);
+        return res.status(200).json({ ok: true, status: "rejeitada" });
+      }
+      if (acao.tipo === "criar") {
+        const r = acao.payload || {};
+        const { hashSenha } = await import("./_lib.js");
+        const temSenha = !!r.senha;
+        const payload = { nome: r.nome, email: String(r.email).trim().toLowerCase(), papel: r.papel, senha_hash: temSenha ? hashSenha(r.senha) : null, senha_definida: temSenha };
+        const { data, error } = await supabase.from("usuarios").insert(payload).select("id,nome,email,papel").single();
+        if (error) return res.status(500).json({ error: error.message.includes("duplicate") ? "E-mail já cadastrado" : error.message });
+        if (Array.isArray(r.obras) && r.obras.length) await supabase.from("designacoes").insert(r.obras.map((oid) => ({ usuario_id: data.id, obra_id: oid, funcao: r.papel })));
+        const convite = temSenha ? null : emitirConvite(data);
+        await supabase.from("acoes_usuario_pendentes").update({ status: "aprovada", decidido_por: s.id, decidido_em: new Date().toISOString() }).eq("id", id);
+        return res.status(200).json({ ok: true, status: "aprovada", convite });
+      }
+      if (acao.tipo === "excluir") {
+        const uid = acao.payload?.id;
+        const { data: alvo } = await supabase.from("usuarios").select("papel").eq("id", uid).maybeSingle();
+        if (alvo && (alvo.papel === "ceo" || alvo.papel === "diretor")) return res.status(403).json({ error: "Não é possível excluir CEO/Diretor." });
+        await supabase.from("usuarios").delete().eq("id", uid);
+        await supabase.from("acoes_usuario_pendentes").update({ status: "aprovada", decidido_por: s.id, decidido_em: new Date().toISOString() }).eq("id", id);
+        return res.status(200).json({ ok: true, status: "aprovada" });
+      }
+      return res.status(400).json({ error: "Tipo de ação desconhecido." });
+    }
+
     // converter proposta comercial em projeto (obra)
     if (t === "tornar_projeto") {
       const ehDiretor = s.papel === "ceo" || s.papel === "diretor";
@@ -237,7 +275,8 @@ export default async function handler(req, res) {
       if (!ALOCA_SUPERVISOR.has(s.papel)) return res.status(403).json({ error: "Sem permissão para alocar supervisores." });
       const { obra_id, supervisor_id } = req.body;
       if (!obra_id || !supervisor_id) return res.status(400).json({ error: "Informe obra e supervisor." });
-      await supabase.from("designacoes").upsert({ usuario_id: supervisor_id, obra_id, funcao: "sup_obras" }, { onConflict: "usuario_id,obra_id" });
+      const { data: usuarioAloc } = await supabase.from("usuarios").select("papel").eq("id", supervisor_id).maybeSingle();
+      await supabase.from("designacoes").upsert({ usuario_id: supervisor_id, obra_id, funcao: usuarioAloc?.papel || "sup_obras" }, { onConflict: "usuario_id,obra_id" });
       const { data: sup } = await supabase.from("usuarios").select("nome,email").eq("id", supervisor_id).maybeSingle();
       const { data: obra } = await supabase.from("obras").select("codigo,nome").eq("id", obra_id).maybeSingle();
       let email = { ok: false, motivo: "sem_destinatario" };
@@ -402,7 +441,12 @@ export default async function handler(req, res) {
     if (t === "usuarios") {
       if (!GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
       if (!podeCriarPapel(s.papel, row.papel)) return res.status(403).json({ error: "Você não tem permissão para criar este papel de usuário." });
-      const { hashSenha } = await import("./_lib.js");
+      // coord_planejamento: criação vira ação pendente de aprovação da diretoria
+      if (s.papel === "coord_planejamento") {
+        const desc = `Criar usuário "${row.nome}" (${row.email}) como ${row.papel}`;
+        await supabase.from("acoes_usuario_pendentes").insert({ tipo: "criar", payload: row, descricao: desc, solicitado_por: s.id });
+        return res.status(200).json({ ok: true, pendente: true, mensagem: "Solicitação registrada. Aguardando aprovação da diretoria." });
+      }
       const temSenha = !!row.senha;
       const payload = { nome: row.nome, email: String(row.email).trim().toLowerCase(), papel: row.papel,
         senha_hash: temSenha ? hashSenha(row.senha) : null, senha_definida: temSenha };
@@ -477,6 +521,16 @@ export default async function handler(req, res) {
     const { t, id } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
     if (t === "usuarios") {
+      // coord_planejamento pode solicitar exclusão (exceto CEO/Diretor), mas passa por aprovação
+      if (s.papel === "coord_planejamento") {
+        if (id === s.id) return res.status(400).json({ error: "Não é possível excluir o próprio usuário." });
+        const { data: alvo } = await supabase.from("usuarios").select("nome,email,papel").eq("id", id).maybeSingle();
+        if (!alvo) return res.status(404).json({ error: "Usuário não encontrado." });
+        if (alvo.papel === "ceo" || alvo.papel === "diretor") return res.status(403).json({ error: "Coord. de Planejamento não pode excluir CEO ou Diretor." });
+        const desc = `Excluir usuário "${alvo.nome}" (${alvo.email}, ${alvo.papel})`;
+        await supabase.from("acoes_usuario_pendentes").insert({ tipo: "excluir", payload: { id }, descricao: desc, solicitado_por: s.id });
+        return res.status(200).json({ ok: true, pendente: true, mensagem: "Solicitação de exclusão registrada. Aguardando aprovação da diretoria." });
+      }
       if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas CEO/Diretor podem excluir usuários." });
       if (id === s.id) return res.status(400).json({ error: "Não é possível excluir o próprio usuário." });
       const { data: alvo } = await supabase.from("usuarios").select("papel").eq("id", id).maybeSingle();
@@ -488,6 +542,7 @@ export default async function handler(req, res) {
       if (alvo?.papel === "diretor" && s.papel !== "ceo") return res.status(403).json({ error: "Apenas o CEO pode excluir um Diretor." });
     }
     if (t === "designacoes" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
+    if (t === "orcamentos_comerciais" && !GERENCIA_ORCCOM.has(s.papel)) return res.status(403).json({ error: "Apenas Diretoria ou Coord. de Planejamento podem excluir propostas." });
     const { error } = await supabase.from(t).delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ok: true });

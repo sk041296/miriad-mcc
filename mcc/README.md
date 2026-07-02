@@ -1,5 +1,15 @@
 # Miriad Construction Control (MCC)
 
+## v10.39 — Permissões: planejamento, técnico de segurança, aprovações
+- **Aprovação por Planejamento:** OC/OS/SM/SS agora podem ser aprovadas (slot técnico) pelo Coord. de Planejamento OU Coord. de Suprimentos. Dupla aprovação = (Suprimentos OU Planejamento) + (Diretor OU CEO).
+- **Técnico de Segurança:** novo papel fixo, com acesso a painel + operacional.
+- **Alocação multi-cargo:** a tela de alocação passa a alocar também Técnico de Segurança e operadores (não só Supervisor). A designação registra o papel real. Liberado a Diretoria e Coord. de Planejamento.
+- **Excluir orçamento comercial:** botão restrito a Diretoria e Coord. de Planejamento (frontend + backend).
+- **Gestão de usuários pelo Planejamento:** Coord. de Planejamento pode solicitar criar/excluir usuários (exceto CEO/Diretor). A ação fica PENDENTE e só é executada após aprovação de um Diretor (card no Painel Gerencial).
+- **Papéis customizados:** base criada (tabela papeis_customizados) para variações de papéis-base. Tela de gestão virá em polimento.
+
+> **Migração:** rode `supabase/migration_v10_39.sql` (papeis_customizados + acoes_usuario_pendentes).
+
 ## v10.38 — Import: recupera códigos que o Excel converteu em data
 - CAUSA: o Excel converte códigos "S.N" (ex.: 4.1, 4.10) em datas (4/jan, 4/out). O parser não reconhecia e DESCARTAVA esses itens — por isso só 9 de 21 itens da planilha de pintura eram importados.
 - CORREÇÃO: o parser agora lê a planilha com cellDates e, quando a célula ITEM é uma data, recupera o código como "dia.mês" (04/jan → 4.1). Os demais códigos seguem normais.

@@ -72,9 +72,10 @@ export function AlocacaoSupervisor({ usuario }) {
   const [sel, setSel] = useState({});
   const [msg, setMsg] = useState(null);
 
+  const ALOCAVEIS = ["sup_obras", "tecnico_seguranca", "op_planejamento", "op_suprimentos", "op_orcamento"];
   const carregar = async () => {
     const [ob, us, dg] = await Promise.all([listar("obras"), listar("usuarios"), listar("designacoes")]);
-    setObras(ob); setSups(us.filter((u) => u.papel === "sup_obras")); setDesig(dg); setPronto(true);
+    setObras(ob); setSups(us.filter((u) => ALOCAVEIS.includes(u.papel))); setDesig(dg); setPronto(true);
   };
   useEffect(() => { carregar(); }, []);
   if (!pronto) return <div style={{ color: C.dim, padding: 20 }}>Carregando…</div>;

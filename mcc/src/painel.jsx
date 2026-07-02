@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie } from "recharts";
-import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip, listar, Btn, aprovarOrdem, rejeitarOrdem, furosDeVerba } from "./core.jsx";
+import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip, listar, Btn, aprovarOrdem, rejeitarOrdem, furosDeVerba, decidirAcaoUsuario } from "./core.jsx";
 import { observacoesPorItem, projecaoItem, dataProjetada } from "./produtividade.js";
 
 /* PAINEL GERAL — consolidação de todas as obras (restrito a gestores) */
@@ -39,6 +39,7 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes, usuario, ocs,
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <PendenciasAprovacao usuario={usuario} obras={obras} />
+      <PendenciasAcoesUsuario usuario={usuario} />
       <PainelFurosVerba usuario={usuario} obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} />
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Kpi dark label="Valor total dos contratos (à faturar)" value={fmtR(totalContrato)} sub={`${obras.length} obras · ${sum(dados.map((d) => d.nRdos))} RDOs`} />
@@ -162,7 +163,7 @@ function PendenciasAprovacao({ usuario, obras }) {
   const [ocs, setOcs] = useState([]);
   const [oss, setOss] = useState([]);
   const [busy, setBusy] = useState(null);
-  const ehSup = usuario && usuario.papel === "coord_suprimentos";
+  const ehSup = usuario && (usuario.papel === "coord_suprimentos" || usuario.papel === "coord_planejamento");
   const ehDir = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor");
   const podeVer = ehSup || ehDir;
 
@@ -290,6 +291,44 @@ function PainelFurosVerba({ usuario, obras, eapPorObra, ocs, contratos }) {
             </div>
           );
         })}
+      </div>
+    </Card>
+  );
+}
+
+/* Aprovação de ações de usuário solicitadas pelo Coord. de Planejamento (só diretoria) */
+function PendenciasAcoesUsuario({ usuario }) {
+  const [acoes, setAcoes] = useState([]);
+  const [busy, setBusy] = useState(null);
+  const ehDiretor = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor");
+  const carregar = () => listar("acoes_usuario_pendentes").then((xs) => setAcoes((xs || []).filter((a) => a.status === "aguardando"))).catch(() => setAcoes([]));
+  useEffect(() => { if (ehDiretor) carregar(); }, []);
+  if (!ehDiretor || acoes.length === 0) return null;
+
+  const decidir = async (a, aprovar) => {
+    if (!aprovar && !confirm("Rejeitar esta solicitação?")) return;
+    setBusy(a.id);
+    try { await decidirAcaoUsuario(a.id, aprovar); carregar(); }
+    catch (e) { alert("Erro: " + (e.message || e)); }
+    setBusy(null);
+  };
+
+  return (
+    <Card title={`⚠ Ações de usuário aguardando sua aprovação (${acoes.length})`}>
+      <div style={{ fontSize: 12, color: C.dim, marginBottom: 10 }}>Solicitações de criação/exclusão de usuário feitas pelo Coord. de Planejamento.</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {acoes.map((a) => (
+          <div key={a.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, padding: "10px 12px", border: `1px solid ${C.linha}`, borderRadius: 8 }}>
+            <div style={{ fontSize: 13 }}>
+              <span style={{ fontWeight: 700, color: a.tipo === "excluir" ? C.vermelho : C.verde }}>{a.tipo === "excluir" ? "Excluir" : "Criar"}</span>
+              <span> — {a.descricao}</span>
+            </div>
+            <div style={{ display: "flex", gap: 6, whiteSpace: "nowrap" }}>
+              <Btn small onClick={() => decidir(a, true)} disabled={busy === a.id}>Aprovar</Btn>
+              <Btn small kind="ghost" onClick={() => decidir(a, false)} disabled={busy === a.id}>Rejeitar</Btn>
+            </div>
+          </div>
+        ))}
       </div>
     </Card>
   );

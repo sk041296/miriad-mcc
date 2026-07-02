@@ -81,6 +81,7 @@ export const editar = (t, id, patch) => req("/api/data", { method: "PATCH", body
 export const aprovarOrdem = (tabela, id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "aprovar_ordem", tabela, id }) });
 export const sugerirComposicaoIA = (itens) => req("/api/sugerir-composicao", { method: "POST", body: JSON.stringify({ itens }) }).then((d) => d.composicoes || []);
 export const tornarProjeto = (id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "tornar_projeto", id }) });
+export const decidirAcaoUsuario = (id, aprovar, motivo) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "decidir_acao_usuario", id, aprovar, motivo }) });
 export const rejeitarOrdem = (tabela, id, motivo) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rejeitar_ordem", tabela, id, motivo }) });
 export const remover = (t, id) => req("/api/data", { method: "DELETE", body: JSON.stringify({ t, id }) });
 export const parseEapApi = (linhas, nomeObra) => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ linhas, nomeObra }) }).then((d) => d.eap);
@@ -280,6 +281,7 @@ export const PAPEIS = {
   coord_obras: "Coord. de Obras", coord_orcamentos: "Coord. de Orçamentos",
   op_suprimentos: "Operador de Suprimentos", op_planejamento: "Operador de Planejamento", op_orcamento: "Operador de Orçamento",
   financeiro: "Financeiro", sup_obras: "Supervisor de Obras",
+  tecnico_seguranca: "Técnico de Segurança",
 };
 export const SETOR_DE_PAPEL = {
   ceo: "direcao", diretor: "direcao",
@@ -288,6 +290,7 @@ export const SETOR_DE_PAPEL = {
   coord_obras: "obras", sup_obras: "obras",
   coord_orcamentos: "orcamentos", op_orcamento: "orcamentos",
   financeiro: "financeiro",
+  tecnico_seguranca: "obras",
 };
 /* permissões de acesso a módulos por papel */
 export const PERMS = {
@@ -302,6 +305,7 @@ export const PERMS = {
   op_suprimentos:     { operacional: 1 },
   financeiro:         { painel: 1, financeiro: 1 },
   sup_obras:          { operacional: 1 },
+  tecnico_seguranca:  { painel: 1, operacional: 1 },
 };
 export const pode = (papel, area) => !!(PERMS[papel] && PERMS[papel][area]);
 export const ehDirecao = (papel) => papel === "ceo" || papel === "diretor";
@@ -310,7 +314,7 @@ export function papeisQuePodeCriar(criador) {
   if (criador === "ceo") return Object.keys(PAPEIS);
   if (criador === "diretor") return Object.keys(PAPEIS).filter((p) => p !== "diretor" && p !== "ceo");
   if (criador === "coord_suprimentos") return ["op_suprimentos"];
-  if (criador === "coord_planejamento") return ["op_planejamento"];
+  if (criador === "coord_planejamento") return Object.keys(PAPEIS).filter((p) => p !== "diretor" && p !== "ceo");
   if (criador === "coord_obras") return ["sup_obras"];
   if (criador === "coord_orcamentos") return ["op_orcamento"];
   return [];

@@ -814,7 +814,7 @@ function OcLinhas({ itens, valor = [], onChange }) {
 function AprovacaoOrdem({ ordem, tabela, usuario, onMudou }) {
   const [busy, setBusy] = useState(false);
   const st = ordem.status_aprovacao || "aprovada";
-  const ehSup = usuario && usuario.papel === "coord_suprimentos";
+  const ehSup = usuario && (usuario.papel === "coord_suprimentos" || usuario.papel === "coord_planejamento");
   const ehDir = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor");
   const jaSup = !!ordem.aprov_suprimentos_por;
   const jaDir = !!ordem.aprov_diretor_por;
@@ -1634,7 +1634,7 @@ function OrcamentoComercial({ usuario, onConverteu }) {
         const acoesCard = (p) => p.obra_id ? <span style={{ fontSize: 11, color: C.verde }}>✓ projeto</span> : <>
           {podeConverter && <Btn small onClick={() => converter(p)} disabled={busy}>Tornar projeto</Btn>}
           <Btn small kind="ghost" onClick={() => editarProp(p)}>Editar</Btn>
-          <button onClick={() => excluir(p)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 15 }}>×</button>
+          {podeConverter && <button onClick={() => excluir(p)} title="Excluir proposta" style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 15 }}>×</button>}
         </>;
 
         return (
