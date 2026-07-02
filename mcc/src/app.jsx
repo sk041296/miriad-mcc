@@ -2,6 +2,7 @@ import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
   C, Btn, Card, inp, Lbl, listar, criar, criarUsuario, editar, remover, acaoData, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError,
   PAPEIS, PERMS, pode, ehDirecao, papeisQuePodeCriar, PRECISA_DESIGNACAO, SETOR_DE_PAPEL,
+  registrarPapeisCustom, nomePapel, PAPEIS_CUSTOM,
   OP_IDS, FIN_IDS, acessoDe, mapaAcessoPadrao, mesclarAcesso, getConfig, setConfig,
 } from "./core.jsx";
 import { ModuloFinanceiro } from "./financeiro.jsx";
@@ -151,8 +152,64 @@ function Login({ onEntrar }) {
 }
 
 /* ---------------- Gestão de usuários ---------------- */
+/* Gestão de papéis customizados (variações de um papel-base). Coord. de Planejamento e Diretoria. */
+function GerenciadorPapeis({ usuario, papeisCustom, onMudou }) {
+  const [aberto, setAberto] = useState(false);
+  const [nome, setNome] = useState("");
+  const [base, setBase] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState(null);
+  // bases disponíveis = papéis fixos que o usuário pode criar (nunca ceo/diretor)
+  const basesFixos = papeisQuePodeCriar(usuario.papel).filter((p) => PAPEIS[p] && p !== "ceo" && p !== "diretor");
+  useEffect(() => { if (!base && basesFixos.length) setBase(basesFixos[0]); }, [basesFixos.length]);
+
+  const criarPapel = async () => {
+    if (!nome.trim()) { setMsg({ t: "erro", x: "Informe o nome do papel." }); return; }
+    if (!base) { setMsg({ t: "erro", x: "Escolha o papel-base." }); return; }
+    setBusy(true); setMsg(null);
+    try {
+      await criar("papeis_customizados", { nome: nome.trim(), papel_base: base });
+      setNome(""); setMsg({ t: "ok", x: "Papel criado." }); onMudou && onMudou();
+    } catch (e) { setMsg({ t: "erro", x: e.message || String(e) }); }
+    setBusy(false);
+  };
+  const excluirPapel = async (p) => {
+    if (!confirm(`Excluir o papel "${p.nome}"? Usuários com este papel precisarão ser reatribuídos.`)) return;
+    try { await remover("papeis_customizados", p.id); onMudou && onMudou(); } catch (e) { alert(e.message); }
+  };
+
+  return (
+    <div style={{ border: `1px solid ${C.linha}`, borderRadius: 10, padding: 12, marginBottom: 16, background: "#fafafa" }}>
+      <div onClick={() => setAberto((a) => !a)} style={{ display: "flex", justifyContent: "space-between", cursor: "pointer", alignItems: "center" }}>
+        <b style={{ fontSize: 13 }}>{aberto ? "▾" : "▸"} Papéis customizados ({papeisCustom.length})</b>
+        <span style={{ fontSize: 11, color: C.dim }}>crie variações de um cargo existente</span>
+      </div>
+      {aberto && <div style={{ marginTop: 12 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 10 }}>
+          <div style={{ flex: 1, minWidth: 160 }}><Lbl>Nome do novo papel</Lbl><input value={nome} onChange={(e) => setNome(e.target.value)} placeholder="ex: Encarregado de Pintura" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div style={{ minWidth: 190 }}><Lbl>Herda permissões de</Lbl><select value={base} onChange={(e) => setBase(e.target.value)} style={inp({ width: "100%" })}>{basesFixos.map((p) => <option key={p} value={p}>{PAPEIS[p]}</option>)}</select></div>
+          <Btn onClick={criarPapel} disabled={busy}>{busy ? "Criando…" : "+ Criar papel"}</Btn>
+          {msg && <span style={{ fontSize: 12, color: msg.t === "ok" ? C.verde : C.vermelho }}>{msg.x}</span>}
+        </div>
+        {papeisCustom.length > 0 && <table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr><Th>Papel</Th><Th>Herda de</Th><Th /></tr></thead>
+          <tbody>{papeisCustom.map((p) => (
+            <tr key={p.id}>
+              <Td><b>{p.nome}</b></Td>
+              <Td style={{ fontSize: 12, color: C.dim }}>{PAPEIS[p.papel_base] || p.papel_base}</Td>
+              <Td><button onClick={() => excluirPapel(p)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 15 }}>×</button></Td>
+            </tr>
+          ))}</tbody>
+        </table>}
+        <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>O papel customizado herda as permissões do papel-base. Ele fica disponível no cadastro de usuários. As permissões finas podem ser ajustadas na aba de permissões por cargo.</div>
+      </div>}
+    </div>
+  );
+}
+
 function Usuarios({ usuario }) {
   const [lista, setLista] = useState([]); const [obras, setObras] = useState([]); const [designacoes, setDesignacoes] = useState([]);
+  const [papeisCustom, setPapeisCustom] = useState([]);
   const criaveis = papeisQuePodeCriar(usuario.papel);
   const vazio = { nome: "", email: "", papel: criaveis[0] || "sup_obras", obras: [] };
   const [u, setU] = useState(vazio);
@@ -160,12 +217,14 @@ function Usuarios({ usuario }) {
   const [convite, setConvite] = useState(null); const [expandido, setExpandido] = useState(null);
   const ehAdmin = usuario.papel === "ceo" || usuario.papel === "diretor";
   const ehCeo = usuario.papel === "ceo";
+  const podeGerirPapeis = usuario.papel === "ceo" || usuario.papel === "diretor" || usuario.papel === "coord_planejamento";
   const [edit, setEdit] = useState(null);
   const [testeBusy, setTesteBusy] = useState(false); const [testeMsg, setTesteMsg] = useState(null); const [testeSenha, setTesteSenha] = useState("Teste@123");
   const carregar = () => {
     listar("usuarios").then(setLista).catch(() => {});
     listar("obras").then(setObras).catch(() => {});
     listar("designacoes").then(setDesignacoes).catch(() => {});
+    listar("papeis_customizados").then((ps) => { setPapeisCustom(ps || []); registrarPapeisCustom(ps || []); }).catch(() => {});
   };
   useEffect(() => { carregar(); }, []);
   const precisaObra = PRECISA_DESIGNACAO.has(u.papel);
@@ -214,7 +273,7 @@ function Usuarios({ usuario }) {
     for (const pp of papeis) {
       const email = `teste.${pp}@miriad.test`;
       try {
-        await criarUsuario({ nome: `TESTE — ${PAPEIS[pp]}`, email, papel: pp, senha: testeSenha, obras: PRECISA_DESIGNACAO.has(pp) ? todasObras : [] });
+        await criarUsuario({ nome: `TESTE — ${nomePapel(pp)}`, email, papel: pp, senha: testeSenha, obras: PRECISA_DESIGNACAO.has(pp) ? todasObras : [] });
         criados++;
       } catch (e) { pulados++; }
     }
@@ -224,11 +283,12 @@ function Usuarios({ usuario }) {
 
   return (
     <Card title="Usuários e permissões">
+      {podeGerirPapeis && <GerenciadorPapeis usuario={usuario} papeisCustom={papeisCustom} onMudou={carregar} />}
       {criaveis.length === 0 ? <div style={{ fontSize: 13, color: C.dim }}>Seu papel não permite cadastrar usuários.</div> : <>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 8 }}>
           <div style={{ flex: 1, minWidth: 150 }}><Lbl>Nome</Lbl><input value={u.nome} onChange={(e) => setU({ ...u, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
           <div style={{ flex: 1, minWidth: 150 }}><Lbl>E-mail</Lbl><input value={u.email} onChange={(e) => setU({ ...u, email: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-          <div style={{ minWidth: 190 }}><Lbl>Papel</Lbl><select value={u.papel} onChange={(e) => setU({ ...u, papel: e.target.value, obras: [] })} style={inp({ width: "100%" })}>{criaveis.map((p) => <option key={p} value={p}>{PAPEIS[p]}</option>)}</select></div>
+          <div style={{ minWidth: 190 }}><Lbl>Papel</Lbl><select value={u.papel} onChange={(e) => setU({ ...u, papel: e.target.value, obras: [] })} style={inp({ width: "100%" })}>{criaveis.map((p) => <option key={p} value={p}>{nomePapel(p)}</option>)}</select></div>
           <Btn small disabled={busy || !u.nome || !u.email || (precisaObra && u.obras.length === 0)} onClick={salvar}>+ Criar e gerar convite</Btn>
         </div>
         {precisaObra && (
@@ -275,7 +335,7 @@ function Usuarios({ usuario }) {
             <tr>
               <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{x.nome}</td>
               <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}>{x.email}</td>
-              <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}><span style={{ background: corPapel(x.papel), color: "#fff", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{PAPEIS[x.papel] || x.papel}</span></td>
+              <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}` }}><span style={{ background: corPapel(x.papel), color: "#fff", borderRadius: 6, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{nomePapel(x.papel)}</span></td>
               <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, color: x.travado ? C.vermelho : x.senha_definida ? C.verde : C.amareloAlerta, fontWeight: 700 }}>{x.travado ? "bloqueado" : x.senha_definida ? "ativo" : "convite pendente"}</td>
               <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>
                 {scoped ? <button onClick={() => setExpandido(expandido === x.id ? null : x.id)} style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 6, padding: "2px 10px", fontSize: 11, cursor: "pointer", color: C.dim }}>{dos.length ? dos.map((d) => nomeObra(d.obra_id)).join(", ") : "designar"} ▾</button> : "—"}
@@ -293,7 +353,7 @@ function Usuarios({ usuario }) {
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
                   <div style={{ minWidth: 150 }}><Lbl>Nome</Lbl><input value={edit.nome} onChange={(e) => setEdit({ ...edit, nome: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
                   <div style={{ minWidth: 170 }}><Lbl>E-mail</Lbl><input value={edit.email} onChange={(e) => setEdit({ ...edit, email: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
-                  <div style={{ minWidth: 180 }}><Lbl>Papel</Lbl><select value={edit.papel} onChange={(e) => setEdit({ ...edit, papel: e.target.value })} style={inp({ width: "100%" })}>{criaveis.map((pp) => <option key={pp} value={pp}>{PAPEIS[pp]}</option>)}{!criaveis.includes(edit.papel) && <option value={edit.papel}>{PAPEIS[edit.papel]}</option>}</select></div>
+                  <div style={{ minWidth: 180 }}><Lbl>Papel</Lbl><select value={edit.papel} onChange={(e) => setEdit({ ...edit, papel: e.target.value })} style={inp({ width: "100%" })}>{criaveis.map((pp) => <option key={pp} value={pp}>{nomePapel(pp)}</option>)}{!criaveis.includes(edit.papel) && <option value={edit.papel}>{nomePapel(edit.papel)}</option>}</select></div>
                   <label style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, paddingBottom: 6 }}><input type="checkbox" checked={edit.ativo} onChange={(e) => setEdit({ ...edit, ativo: e.target.checked })} />Ativo</label>
                   <Btn small onClick={salvarEdicao}>Salvar</Btn>
                   <Btn small kind="ghost" onClick={() => setEdit(null)}>Cancelar</Btn>
@@ -424,7 +484,7 @@ function Permissoes({ acessoMap, onSaved }) {
       <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 10 }}>Usuários travados por não enviar RDO/SM-i/POS/PMM no prazo. Como CEO/Diretor, você pode destravar diretamente aqui (além dos coordenadores nas telas de cada documento).</div>
       {travados.length === 0 ? <div style={{ fontSize: 13, color: C.verde, fontWeight: 600 }}>✓ Nenhum usuário bloqueado no momento.</div> : travados.map((u) => (
         <div key={u.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "8px 12px", border: `1px solid ${C.vermelho}44`, borderRadius: 8, marginBottom: 6 }}>
-          <div style={{ fontSize: 13 }}><b>{u.nome}</b> <span style={{ color: C.dim }}>· {PAPEIS[u.papel] || u.papel}{u.travado_em ? ` · bloqueado em ${new Date(u.travado_em).toLocaleDateString("pt-BR")}` : ""}</span></div>
+          <div style={{ fontSize: 13 }}><b>{u.nome}</b> <span style={{ color: C.dim }}>· {nomePapel(u.papel)}{u.travado_em ? ` · bloqueado em ${new Date(u.travado_em).toLocaleDateString("pt-BR")}` : ""}</span></div>
           <Btn small onClick={() => destravar(u)}>Destravar</Btn>
         </div>
       ))}
@@ -505,7 +565,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
       {ehDir && <button onClick={() => { fecharEspeciais(); setPermsAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: permsAberto ? C.laranja : "transparent", color: permsAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🔑</span>Permissões</button>}
       <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
         <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
-        <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{PAPEIS[p] || p}</div>
+        <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{nomePapel(p)}</div>
         <button onClick={onSair} style={{ background: "transparent", border: "1px solid #444", color: "#aaa", borderRadius: 6, padding: "5px 12px", fontSize: 12, cursor: "pointer", width: "100%" }}>Sair</button>
       </div>
     </>
@@ -569,6 +629,7 @@ export default function App() {
   useEffect(() => {
     if (!usuario) { setAcessoMap(null); return; }
     getConfig("acesso").then((ov) => setAcessoMap(mesclarAcesso(mapaAcessoPadrao(), ov || {}))).catch(() => setAcessoMap(mapaAcessoPadrao()));
+    listar("papeis_customizados").then(registrarPapeisCustom).catch(() => {});
   }, [usuario]);
   if (conviteToken && !usuario) return <DefinirSenha token={conviteToken} onEntrar={setUsuario} />;
   if (!usuario) return <Login onEntrar={setUsuario} />;

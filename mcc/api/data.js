@@ -93,14 +93,15 @@ async function gerarOPsDaOrigem(supabase, tabela, origem) {
 }
 
 
-// quem pode criar qual papel
-function podeCriarPapel(criador, alvo) {
+// quem pode criar qual papel. Para papéis customizados (custom_*), valida contra o papel-base informado.
+function podeCriarPapel(criador, alvo, baseAlvo) {
+  const efetivo = (typeof alvo === "string" && alvo.startsWith("custom_") && baseAlvo) ? baseAlvo : alvo;
   if (criador === "ceo") return true;
-  if (criador === "diretor") return alvo !== "diretor" && alvo !== "ceo";
-  if (criador === "coord_suprimentos") return alvo === "op_suprimentos";
-  if (criador === "coord_planejamento") return alvo !== "diretor" && alvo !== "ceo";
-  if (criador === "coord_obras") return alvo === "sup_obras";
-  if (criador === "coord_orcamentos") return alvo === "op_orcamento";
+  if (criador === "diretor") return efetivo !== "diretor" && efetivo !== "ceo";
+  if (criador === "coord_suprimentos") return efetivo === "op_suprimentos";
+  if (criador === "coord_planejamento") return efetivo !== "diretor" && efetivo !== "ceo";
+  if (criador === "coord_obras") return efetivo === "sup_obras";
+  if (criador === "coord_orcamentos") return efetivo === "op_orcamento";
   return false;
 }
 
@@ -440,7 +441,13 @@ export default async function handler(req, res) {
     // criação de usuário: respeita quem-pode-criar-quem e gera convite (link p/ definir senha)
     if (t === "usuarios") {
       if (!GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
-      if (!podeCriarPapel(s.papel, row.papel)) return res.status(403).json({ error: "Você não tem permissão para criar este papel de usuário." });
+      let baseAlvo = null;
+      if (typeof row.papel === "string" && row.papel.startsWith("custom_")) {
+        const { data: pc } = await supabase.from("papeis_customizados").select("papel_base").eq("chave", row.papel).maybeSingle();
+        baseAlvo = pc?.papel_base || null;
+        if (!baseAlvo) return res.status(400).json({ error: "Papel customizado inválido." });
+      }
+      if (!podeCriarPapel(s.papel, row.papel, baseAlvo)) return res.status(403).json({ error: "Você não tem permissão para criar este papel de usuário." });
       // coord_planejamento: criação vira ação pendente de aprovação da diretoria
       if (s.papel === "coord_planejamento") {
         const desc = `Criar usuário "${row.nome}" (${row.email}) como ${row.papel}`;
@@ -487,6 +494,17 @@ export default async function handler(req, res) {
       // Se já nasce aprovada (abaixo do limite), gera OP imediatamente
       if (data.status_aprovacao === "aprovada") { try { await gerarOPsDaOrigem(supabase, t, data); } catch (_) {} }
       return res.status(200).json({ row: data });
+    }
+
+    // criação de papel customizado: só Coord. de Planejamento e Diretoria; gera chave "custom_*"
+    if (t === "papeis_customizados") {
+      if (!GERENCIA_ORCCOM.has(s.papel)) return res.status(403).json({ error: "Apenas Coord. de Planejamento ou Diretoria podem criar papéis." });
+      const nome = String(row.nome || "").trim();
+      if (!nome) return res.status(400).json({ error: "Informe o nome do papel." });
+      if (!row.papel_base) return res.status(400).json({ error: "Informe o papel-base." });
+      const slug = nome.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "_").replace(/^_+|_+$/g, "").slice(0, 40);
+      row.chave = "custom_" + (slug || Date.now());
+      row.criado_por = s.id;
     }
 
     const { data, error } = await supabase.from(t).insert(row).select().single();

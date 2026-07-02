@@ -307,17 +307,37 @@ export const PERMS = {
   sup_obras:          { operacional: 1 },
   tecnico_seguranca:  { painel: 1, operacional: 1 },
 };
-export const pode = (papel, area) => !!(PERMS[papel] && PERMS[papel][area]);
+export const pode = (papel, area) => { const p = PERMS[papel] || PERMS[PAPEIS_CUSTOM[papel] ? PAPEIS_CUSTOM[papel].papel_base : papel]; return !!(p && p[area]); };
 export const ehDirecao = (papel) => papel === "ceo" || papel === "diretor";
-/* quem pode criar qual papel (espelha o backend) */
+
+/* ===== Papéis customizados (dinâmicos, carregados do banco no boot) ===== */
+/* Cada um herda o comportamento de um papel-base fixo. Chave prefixada com "custom_". */
+export let PAPEIS_CUSTOM = {}; // { chave: { nome, papel_base } }
+export function registrarPapeisCustom(lista) {
+  PAPEIS_CUSTOM = {};
+  (lista || []).forEach((p) => { if (p && p.chave && p.papel_base) PAPEIS_CUSTOM[p.chave] = { nome: p.nome || p.chave, papel_base: p.papel_base }; });
+}
+// papel-base de um papel (o próprio, se for fixo)
+export const basePapel = (papel) => (PAPEIS_CUSTOM[papel] ? PAPEIS_CUSTOM[papel].papel_base : papel);
+// nome de exibição de qualquer papel (fixo ou customizado)
+export const nomePapel = (papel) => PAPEIS[papel] || (PAPEIS_CUSTOM[papel] ? PAPEIS_CUSTOM[papel].nome : papel);
+// permissões efetivas (customizado herda do base)
+export const permsDePapel = (papel) => PERMS[papel] || PERMS[basePapel(papel)] || {};
+// setor efetivo
+export const setorDePapel = (papel) => SETOR_DE_PAPEL[papel] || SETOR_DE_PAPEL[basePapel(papel)] || "obras";
+/* quem pode criar qual papel (espelha o backend). Inclui papéis customizados cujo base o criador pode criar. */
 export function papeisQuePodeCriar(criador) {
-  if (criador === "ceo") return Object.keys(PAPEIS);
-  if (criador === "diretor") return Object.keys(PAPEIS).filter((p) => p !== "diretor" && p !== "ceo");
-  if (criador === "coord_suprimentos") return ["op_suprimentos"];
-  if (criador === "coord_planejamento") return Object.keys(PAPEIS).filter((p) => p !== "diretor" && p !== "ceo");
-  if (criador === "coord_obras") return ["sup_obras"];
-  if (criador === "coord_orcamentos") return ["op_orcamento"];
-  return [];
+  let fixos;
+  if (criador === "ceo") fixos = Object.keys(PAPEIS);
+  else if (criador === "diretor") fixos = Object.keys(PAPEIS).filter((p) => p !== "diretor" && p !== "ceo");
+  else if (criador === "coord_suprimentos") fixos = ["op_suprimentos"];
+  else if (criador === "coord_planejamento") fixos = Object.keys(PAPEIS).filter((p) => p !== "diretor" && p !== "ceo");
+  else if (criador === "coord_obras") fixos = ["sup_obras"];
+  else if (criador === "coord_orcamentos") fixos = ["op_orcamento"];
+  else fixos = [];
+  // papéis customizados: disponíveis se o criador pode criar o papel-base
+  const custom = Object.keys(PAPEIS_CUSTOM).filter((ch) => fixos.includes(PAPEIS_CUSTOM[ch].papel_base));
+  return [...fixos, ...custom];
 }
 /* papéis cujo acesso é restrito às obras designadas */
 export const PRECISA_DESIGNACAO = new Set(["sup_obras", "op_suprimentos", "op_planejamento", "op_orcamento"]);

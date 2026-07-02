@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v10.40 — Papéis customizados (tela de gestão)
+- Nova seção "Papéis customizados" na aba Usuários (Coord. de Planejamento e Diretoria): criar variações de um cargo existente dando um nome e escolhendo o papel-base cujas permissões ele herda.
+- Papéis customizados aparecem no cadastro de usuários e em toda exibição (via nomePapel), e herdam permissões/setor do papel-base.
+- Backend: criação restrita, chave "custom_*" gerada automaticamente; validação de quem-pode-criar resolve o papel-base.
+- Completa a melhoria 2 da v10.39 (a base já existia; agora tem a interface).
+
 ## v10.39 — Permissões: planejamento, técnico de segurança, aprovações
 - **Aprovação por Planejamento:** OC/OS/SM/SS agora podem ser aprovadas (slot técnico) pelo Coord. de Planejamento OU Coord. de Suprimentos. Dupla aprovação = (Suprimentos OU Planejamento) + (Diretor OU CEO).
 - **Técnico de Segurança:** novo papel fixo, com acesso a painel + operacional.
