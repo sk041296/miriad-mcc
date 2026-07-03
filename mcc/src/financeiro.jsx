@@ -596,48 +596,99 @@ function MedicaoProjetada() {
     const eapPorObra = {};
     await Promise.all(obras.map(async (o) => { eapPorObra[o.id] = await listar("eap_itens", { obra_id: o.id }); }));
     const pmms = await listar("pmm");
-    setD({ obras, eapPorObra, pmms });
-  })().catch(() => setD({ obras: [], eapPorObra: {}, pmms: [] })); }, []);
+    const rdos = await listar("rdos").catch(() => []);
+    setD({ obras, eapPorObra, pmms, rdos });
+  })().catch(() => setD({ obras: [], eapPorObra: {}, pmms: [], rdos: [] })); }, []);
   if (!d) return <div style={{ color: C.dim, padding: 20 }}>Carregando medição projetada…</div>;
 
-  const { obras, eapPorObra, pmms } = d;
-  const mesesSet = new Set(); const porObra = {};
+  const { obras, eapPorObra, pmms, rdos } = d;
+
+  // ===== Janela deslizante: mês anterior + atual + 4 à frente (6 meses), a partir de hoje =====
+  const hoje = new Date();
+  const janela = [];
+  for (let off = -1; off <= 4; off++) {
+    const dt = new Date(hoje.getFullYear(), hoje.getMonth() + off, 1);
+    janela.push(`${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`);
+  }
+  const mesAtualYm = `${hoje.getFullYear()}-${String(hoje.getMonth() + 1).padStart(2, "0")}`;
+
+  // ===== Medição PREVISTA (PMM) por obra e mês =====
+  const porObra = {};
   pmms.forEach((pm) => {
     const ym = ymISO(pm.mes); if (!ym) return;
     const fin = resumoPmm(pm, eapPorObra[pm.obra_id] || []).financeiro;
     if (!fin) return;
-    mesesSet.add(ym);
     (porObra[pm.obra_id] = porObra[pm.obra_id] || {})[ym] = (porObra[pm.obra_id]?.[ym] || 0) + fin;
   });
-  const meses = [...mesesSet].sort();
+
+  // ===== Medição REAL (via RDO) por mês — para assertividade =====
+  // Para cada obra: valor contratado c/ BDI do item × fração de avanço físico do mês (RDO)
+  const realPorMes = {};
+  obras.forEach((o) => {
+    const itens = eapPorObra[o.id] || [];
+    const valEap = {}, qtdeContr = {};
+    itens.forEach((e) => {
+      const cod = String(e.codigo).split(" ")[0].trim();
+      const bdi = 1 + (Number(e.bdi) || 0);
+      valEap[cod] = (Number(e.valor_total) || 0); // já é o contratado; BDI tratado no PMM — usamos valor_total como base c/ contrato
+      qtdeContr[cod] = Number(e.qtde) || 0;
+    });
+    const avancoMes = {};
+    rdos.filter((r) => r.obra_id === o.id).forEach((r) => {
+      const m = ymISO(r.data); if (!m) return;
+      (r.atividades || []).forEach((a) => { const q = Number(a.qtde_dia ?? a.avanco) || 0; if (!q) return; const cod = String(a.eap).split(" ")[0].trim(); ((avancoMes[cod] = avancoMes[cod] || {})[m]) = ((avancoMes[cod] || {})[m] || 0) + q; });
+    });
+    Object.entries(avancoMes).forEach(([cod, mm]) => {
+      const val = valEap[cod] || 0, qc = qtdeContr[cod] || 0; if (!val || !qc) return;
+      Object.entries(mm).forEach(([m, q]) => { const frac = Math.min(q / qc, 1); realPorMes[m] = (realPorMes[m] || 0) + val * frac; });
+    });
+  });
+
   const obrasComMed = obras.filter((o) => porObra[o.id] && Object.keys(porObra[o.id]).length);
-  const totalObra = (o) => sum(meses.map((m) => porObra[o.id]?.[m] || 0));
+  const totalObra = (o) => sum(janela.map((m) => porObra[o.id]?.[m] || 0));
   const totalMes = (m) => sum(obrasComMed.map((o) => porObra[o.id]?.[m] || 0));
   const totalGeral = sum(obrasComMed.map((o) => totalObra(o)));
 
-  if (!meses.length) return (
+  const temAlgumDado = obrasComMed.length > 0;
+  if (!temAlgumDado) return (
     <Card title="Medição projetada — consolidada dos PMM"><div style={{ fontSize: 13, color: C.dim }}>
       Ainda não há PMM lançado. Conforme os Supervisores preenchem o Plano de Medição Mensal (PMM), a medição prevista de cada obra aparece aqui alocada por mês, com BDI.
     </div></Card>
   );
 
+  // ===== Indicadores =====
+  const idxAtual = janela.indexOf(mesAtualYm);
+  const mesAtualVal = totalMes(mesAtualYm);
+  const mesAntYm = janela[idxAtual - 1];
+  const mesAntVal = mesAntYm ? totalMes(mesAntYm) : 0;
+  const cresceRS = mesAtualVal - mesAntVal;
+  const crescePct = mesAntVal > 0 ? (cresceRS / mesAntVal) * 100 : null;
+
+  // assertividade do mês anterior (o último mês "fechado"): real ÷ previsto
+  const mesRefAssert = mesAntYm || mesAtualYm;
+  const previstoRef = totalMes(mesRefAssert);
+  const realRef = realPorMes[mesRefAssert] || 0;
+  const assertPct = previstoRef > 0 ? (realRef / previstoRef) * 100 : null;
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-        <Kpi dark label="Medição projetada total (c/ BDI)" value={fmtR(totalGeral)} accent={C.laranja} sub={`${obrasComMed.length} obras · ${meses.length} meses`} />
-        {meses.length > 0 && <Kpi label="Próximo mês" value={fmtR(totalMes(meses[0]))} accent={C.azul} sub={ymLabel(meses[0])} />}
+        <Kpi dark label="Medição projetada total (c/ BDI)" value={fmtR(totalGeral)} accent={C.laranja} sub={`${obrasComMed.length} obras · janela de ${janela.length} meses`} />
+        <Kpi label="Mês atual" value={fmtR(mesAtualVal)} accent={C.azul} sub={ymLabel(mesAtualYm)} />
+        <Kpi label="Crescimento mês a mês" value={crescePct == null ? "—" : `${crescePct >= 0 ? "+" : ""}${crescePct.toFixed(0)}%`} accent={cresceRS >= 0 ? C.verde : C.vermelho} sub={`${cresceRS >= 0 ? "+" : ""}${fmtK(cresceRS)} vs ${mesAntYm ? ymLabel(mesAntYm) : "—"}`} />
+        <Kpi label="Assertividade PMM × RDO" value={assertPct == null ? "—" : `${assertPct.toFixed(0)}%`} accent={assertPct == null ? C.dim : assertPct >= 90 && assertPct <= 110 ? C.verde : assertPct >= 70 ? C.laranja : C.vermelho} sub={`real ÷ previsto · ${ymLabel(mesRefAssert)}`} />
       </div>
-      <Card title="Medição projetada por obra e por mês (a partir dos PMM)">
-        <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>Cada célula é a soma dos PMM da obra naquele mês: valor contratado <b>com BDI</b> × % de avanço previsto de cada item da EAP. Mesma leitura da área de medições das Premissas.</div>
+      <Card title="Medição projetada por obra e por mês (janela móvel)">
+        <div style={{ fontSize: 11, color: C.dim, marginBottom: 10 }}>Janela deslizante: mês anterior, mês atual e 4 meses à frente — atualiza sozinha com o tempo. Cada célula é a soma dos PMM da obra naquele mês: valor contratado <b>com BDI</b> × % de avanço previsto de cada item da EAP.</div>
         <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
-          <thead><tr><Th>Obra</Th>{meses.map((m) => <Th key={m} right>{ymLabel(m)}</Th>)}<Th right>Total</Th></tr></thead>
+          <thead><tr><Th>Obra</Th>{janela.map((m) => <Th key={m} right style={m === mesAtualYm ? { color: C.laranja } : {}}>{ymLabel(m)}{m === mesAtualYm ? " ●" : ""}</Th>)}<Th right>Total</Th></tr></thead>
           <tbody>
             {obrasComMed.map((o) => (
               <tr key={o.id}><Td style={{ fontWeight: 600 }}>{o.codigo}</Td>
-                {meses.map((m) => { const v = porObra[o.id]?.[m] || 0; return <Td key={m} right color={v ? C.texto : C.dim}>{v ? fmt(v) : "—"}</Td>; })}
+                {janela.map((m) => { const v = porObra[o.id]?.[m] || 0; return <Td key={m} right color={v ? C.texto : C.dim}>{v ? fmt(v) : "—"}</Td>; })}
                 <Td right color={C.laranja} style={{ fontWeight: 700 }}>{fmt(totalObra(o))}</Td></tr>
             ))}
-            <tr style={{ background: C.preto }}><Td style={{ color: "#fff", fontWeight: 800 }}>TOTAL</Td>{meses.map((m) => <Td key={m} right style={{ color: "#fff", fontWeight: 800 }}>{fmt(totalMes(m))}</Td>)}<Td right style={{ color: C.verde, fontWeight: 800 }}>{fmt(totalGeral)}</Td></tr>
+            <tr style={{ background: C.preto }}><Td style={{ color: "#fff", fontWeight: 800 }}>TOTAL</Td>{janela.map((m) => <Td key={m} right style={{ color: "#fff", fontWeight: 800 }}>{fmt(totalMes(m))}</Td>)}<Td right style={{ color: C.verde, fontWeight: 800 }}>{fmt(totalGeral)}</Td></tr>
           </tbody>
         </table></div>
       </Card>

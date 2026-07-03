@@ -1,5 +1,13 @@
 # Miriad Construction Control (MCC)
 
+## v11.00 — Medição projetada: janela móvel + indicadores
+- A aba Medição Projetada deixa de ficar travada nos meses com PMM: agora mostra uma JANELA DESLIZANTE de 6 meses (mês anterior + atual + 4 à frente), calculada a partir da data de hoje e atualizada dinamicamente com o tempo. O mês atual é destacado.
+- Novos indicadores (KPIs):
+  - Mês atual (medição prevista do mês corrente).
+  - Crescimento mês a mês (% e R$ vs mês anterior).
+  - Assertividade PMM × RDO (total geral): medição real (via RDO: valor do item × fração de avanço físico) ÷ medição prevista (PMM) do mês de referência. Verde 90–110%, laranja 70–90%, vermelho abaixo.
+- Início do ciclo V11.
+
 ## v10.41 — Correção: EAP & Custos subcontava o realizado (divergência com o painel de furos)
 - CAUSA: realizadoPorItem (EAP & Custos) entrava no ramo de itens_eap mesmo quando os itens NÃO tinham eap_codigo próprio, e lia x.valor (inexistente) em vez de x.valor_total. Resultado: OCs cujo código está no nível da OC (o.eap_codigo) e cujos itens usam valor_total eram IGNORADAS — o realizado aparecia muito menor que o real.
 - Ex.: IFSC EAP 3.1.1.1.2 mostrava R$ 5.711 em EAP & Custos, mas o consumo real (e correto, já exibido no painel de furos) era R$ 45.640,87.
