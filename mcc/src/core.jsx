@@ -82,6 +82,7 @@ export const aprovarOrdem = (tabela, id) => req("/api/data", { method: "POST", b
 export const sugerirComposicaoIA = (itens) => req("/api/sugerir-composicao", { method: "POST", body: JSON.stringify({ itens }) }).then((d) => d.composicoes || []);
 export const tornarProjeto = (id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "tornar_projeto", id }) });
 export const decidirAcaoUsuario = (id, aprovar, motivo) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "decidir_acao_usuario", id, aprovar, motivo }) });
+export const converterGastoEscritorio = (dados) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "converter_gasto_escritorio", ...dados }) });
 export const rejeitarOrdem = (tabela, id, motivo) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rejeitar_ordem", tabela, id, motivo }) });
 export const remover = (t, id) => req("/api/data", { method: "DELETE", body: JSON.stringify({ t, id }) });
 export const parseEapApi = (linhas, nomeObra) => req("/api/parse-eap", { method: "POST", body: JSON.stringify({ linhas, nomeObra }) }).then((d) => d.eap);

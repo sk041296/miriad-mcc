@@ -1,5 +1,13 @@
 # Miriad Construction Control (MCC)
 
+## v11.01 — Centro de custo (gastos de escritório) + correção do delete de obras
+- **Bug corrigido:** excluir obra agora funciona. O backend remove as dependências (EAP, RDOs, PMM, OCs, OSs, designações, OPs, memoriais, etc.) antes de apagar a obra, evitando o erro de foreign key. Restrito a CEO/Diretor.
+- **Gastos de escritório (centro de custo):** nova tabela gastos_escritorio + unidades e descrições cadastráveis (semeadas com Sede/Filial/Fabril e Manutenção/Benfeitorias/Confraternizações/Consumíveis).
+- **Painel de gastos:** no Painel Geral, card "Gastos de escritório" com lançamento direto e visão consolidada — somas por unidade × mês, por descrição × mês, total acumulado, e lista de lançamentos.
+- **Backend pronto para conversão:** ação converter_gasto_escritorio (transforma uma SM/SS/OC/OS em gasto). Os botões nas 4 telas de solicitação virão em complemento.
+
+> **Migração:** rode `supabase/migration_v11_01.sql`.
+
 ## v11.00 — Medição projetada: janela móvel + indicadores
 - A aba Medição Projetada deixa de ficar travada nos meses com PMM: agora mostra uma JANELA DESLIZANTE de 6 meses (mês anterior + atual + 4 à frente), calculada a partir da data de hoje e atualizada dinamicamente com o tempo. O mês atual é destacado.
 - Novos indicadores (KPIs):

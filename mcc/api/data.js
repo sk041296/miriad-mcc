@@ -23,6 +23,9 @@ const TABELAS = {
   orcamentos_comerciais: { ordem: "criado_em", asc: false },
   papeis_customizados: { ordem: "criado_em", asc: false },
   acoes_usuario_pendentes: { ordem: "solicitado_em", asc: false },
+  gastos_escritorio: { ordem: "data", asc: false },
+  gastos_unidades: { ordem: "ordem", asc: true },
+  gastos_descricoes: { ordem: "ordem", asc: true },
   memoriais_custo: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   memoriais_itens: { ordem: "ordem", asc: true, filtro: "memorial_id" },
   usuarios: { ordem: "nome", asc: true },
@@ -250,6 +253,27 @@ export default async function handler(req, res) {
         return res.status(200).json({ ok: true, status: "aprovada" });
       }
       return res.status(400).json({ error: "Tipo de ação desconhecido." });
+    }
+
+    // converter uma solicitação (SM/SS/OC/OS) em gasto de escritório
+    if (t === "converter_gasto_escritorio") {
+      const { origem_tipo, origem_id, unidade, descricao, detalhe, valor, data } = req.body || {};
+      if (!unidade || !descricao) return res.status(400).json({ error: "Informe a unidade e a descrição do gasto." });
+      const gasto = {
+        unidade, descricao, detalhe: detalhe || null,
+        valor: Number(valor) || 0,
+        data: data || new Date().toISOString().slice(0, 10),
+        origem_tipo: origem_tipo || "manual", origem_id: origem_id || null,
+        criado_por: s.id,
+      };
+      const { data: novo, error } = await supabase.from("gastos_escritorio").insert(gasto).select().single();
+      if (error) return res.status(500).json({ error: error.message });
+      // se veio de uma solicitação, marca/remove a original conforme o tipo
+      if (origem_id && origem_tipo) {
+        const tabelaOrigem = { sm: "sm_itens", ss: "ss_itens", oc: "ordens_compra", os: "contratos_servico" }[origem_tipo];
+        if (tabelaOrigem) { try { await supabase.from(tabelaOrigem).delete().eq("id", origem_id); } catch (_) {} }
+      }
+      return res.status(200).json({ ok: true, gasto: novo });
     }
 
     // converter proposta comercial em projeto (obra)
@@ -561,6 +585,17 @@ export default async function handler(req, res) {
     }
     if (t === "designacoes" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     if (t === "orcamentos_comerciais" && !GERENCIA_ORCCOM.has(s.papel)) return res.status(403).json({ error: "Apenas Diretoria ou Coord. de Planejamento podem excluir propostas." });
+    // Excluir obra: remove as dependências antes (evita erro de foreign key)
+    if (t === "obras") {
+      if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas CEO/Diretor podem excluir obras." });
+      const dependentes = ["eap_itens", "rdos", "pos", "pmm", "sm_itens", "ss_itens", "ordens_compra", "contratos_servico", "designacoes", "ordens_pagamento", "memoriais_custo", "memoriais_itens", "boletins_medicao", "restricoes_material"];
+      for (const tab of dependentes) {
+        try { await supabase.from(tab).delete().eq("obra_id", id); } catch (_) {}
+      }
+      const { error: eObra } = await supabase.from("obras").delete().eq("id", id);
+      if (eObra) return res.status(500).json({ error: "Falha ao excluir obra: " + eObra.message });
+      return res.status(200).json({ ok: true });
+    }
     const { error } = await supabase.from(t).delete().eq("id", id);
     if (error) return res.status(500).json({ error: error.message });
     return res.status(200).json({ ok: true });

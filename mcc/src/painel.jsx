@@ -1,6 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, Cell, PieChart, Pie } from "recharts";
-import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip, listar, Btn, aprovarOrdem, rejeitarOrdem, furosDeVerba, decidirAcaoUsuario } from "./core.jsx";
+import { C, fmt, fmtR, fmtK, pct, sum, dataBR, hojeISO, FATOR_CLIMA, Card, Kpi, Th, Td, ChartTip, listar, criar, remover, inp, Lbl, Btn, aprovarOrdem, rejeitarOrdem, furosDeVerba, decidirAcaoUsuario } from "./core.jsx";
 import { observacoesPorItem, projecaoItem, dataProjetada } from "./produtividade.js";
 
 /* PAINEL GERAL — consolidação de todas as obras (restrito a gestores) */
@@ -41,6 +41,7 @@ export function PainelGeral({ obras, eapPorObra, rdos, restricoes, usuario, ocs,
       <PendenciasAprovacao usuario={usuario} obras={obras} />
       <PendenciasAcoesUsuario usuario={usuario} />
       <PainelFurosVerba usuario={usuario} obras={obras} eapPorObra={eapPorObra} ocs={ocs} contratos={contratos} />
+      <PainelGastosEscritorio usuario={usuario} />
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
         <Kpi dark label="Valor total dos contratos (à faturar)" value={fmtR(totalContrato)} sub={`${obras.length} obras · ${sum(dados.map((d) => d.nRdos))} RDOs`} />
         <Kpi label="Executado — reconhecido em RDO" value={fmtR(totalMed)} accent={C.verde} />
@@ -330,6 +331,115 @@ function PendenciasAcoesUsuario({ usuario }) {
           </div>
         ))}
       </div>
+    </Card>
+  );
+}
+
+/* ============================================================
+   Painel de Gastos de Escritório (centro de custo permanente)
+   Somas por unidade × mês, por descrição × mês, e acumulado.
+   ============================================================ */
+function PainelGastosEscritorio({ usuario }) {
+  const [gastos, setGastos] = useState(null);
+  const [novo, setNovo] = useState(null); // formulário de lançamento
+  const [unidades, setUnidades] = useState([]);
+  const [descricoes, setDescricoes] = useState([]);
+  const [busy, setBusy] = useState(false);
+
+  const carregar = () => {
+    listar("gastos_escritorio").then(setGastos).catch(() => setGastos([]));
+    listar("gastos_unidades").then((u) => setUnidades((u || []).filter((x) => x.ativo !== false))).catch(() => setUnidades([]));
+    listar("gastos_descricoes").then((d) => setDescricoes((d || []).filter((x) => x.ativo !== false))).catch(() => setDescricoes([]));
+  };
+  useEffect(() => { carregar(); }, []);
+  if (gastos === null) return null;
+
+  const ymDe = (d) => String(d || "").slice(0, 7);
+  const meses = [...new Set(gastos.map((g) => ymDe(g.data)).filter(Boolean))].sort();
+  const mesLabel = (ym) => { const [y, m] = ym.split("-"); return `${["jan","fev","mar","abr","mai","jun","jul","ago","set","out","nov","dez"][Number(m)-1]||"?"}/${y.slice(2)}`; };
+  const totalGeral = sum(gastos.map((g) => Number(g.valor) || 0));
+
+  const somaPor = (campo, valor, ym) => sum(gastos.filter((g) => g[campo] === valor && (!ym || ymDe(g.data) === ym)).map((g) => Number(g.valor) || 0));
+  const nomesUnid = unidades.length ? unidades.map((u) => u.nome) : [...new Set(gastos.map((g) => g.unidade))];
+  const nomesDesc = descricoes.length ? descricoes.map((d) => d.nome) : [...new Set(gastos.map((g) => g.descricao))];
+
+  const abrirNovo = () => setNovo({ unidade: nomesUnid[0] || "", descricao: nomesDesc[0] || "", detalhe: "", valor: "", data: hojeISO() });
+  const salvarNovo = async () => {
+    if (!novo.unidade || !novo.descricao) return;
+    setBusy(true);
+    try {
+      await criar("gastos_escritorio", { unidade: novo.unidade, descricao: novo.descricao, detalhe: novo.detalhe || null, valor: Number(String(novo.valor).replace(/\./g, "").replace(",", ".")) || 0, data: novo.data, origem_tipo: "manual" });
+      setNovo(null); carregar();
+    } catch (e) { alert(e.message); }
+    setBusy(false);
+  };
+  const excluir = async (g) => { if (!confirm("Excluir este gasto?")) return; await remover("gastos_escritorio", g.id); carregar(); };
+
+  return (
+    <Card title="🏢 Gastos de escritório (centro de custo)" right={<Btn small onClick={abrirNovo}>+ Lançar gasto</Btn>}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 14 }}>
+        <Kpi dark label="Total acumulado" value={fmtR(totalGeral)} accent={C.laranja} sub={`${gastos.length} lançamentos`} />
+        {nomesUnid.slice(0, 3).map((u) => <Kpi key={u} label={u.split(" - ")[0]} value={fmtR(somaPor("unidade", u))} sub={u.split(" - ")[1] || ""} />)}
+      </div>
+
+      {novo && (
+        <div style={{ border: `1px solid ${C.linha}`, borderRadius: 8, padding: 12, marginBottom: 14, background: "#fafafa" }}>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div><Lbl>Unidade</Lbl><select value={novo.unidade} onChange={(e) => setNovo({ ...novo, unidade: e.target.value })} style={inp({ minWidth: 180 })}>{nomesUnid.map((u) => <option key={u} value={u}>{u}</option>)}</select></div>
+            <div><Lbl>Descrição</Lbl><select value={novo.descricao} onChange={(e) => setNovo({ ...novo, descricao: e.target.value })} style={inp({ minWidth: 150 })}>{nomesDesc.map((d) => <option key={d} value={d}>{d}</option>)}</select></div>
+            <div style={{ flex: 1, minWidth: 140 }}><Lbl>Detalhe</Lbl><input value={novo.detalhe} onChange={(e) => setNovo({ ...novo, detalhe: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+            <div><Lbl>Valor (R$)</Lbl><input value={novo.valor} onChange={(e) => setNovo({ ...novo, valor: e.target.value })} placeholder="0,00" style={inp({ width: 110 })} /></div>
+            <div><Lbl>Data</Lbl><input type="date" value={novo.data} onChange={(e) => setNovo({ ...novo, data: e.target.value })} style={inp({ width: 150 })} /></div>
+            <Btn small onClick={salvarNovo} disabled={busy}>Salvar</Btn>
+            <Btn small kind="ghost" onClick={() => setNovo(null)}>Cancelar</Btn>
+          </div>
+        </div>
+      )}
+
+      {gastos.length === 0 ? <div style={{ fontSize: 13, color: C.dim }}>Nenhum gasto de escritório lançado ainda.</div> : <>
+        {/* Matriz Unidade × mês */}
+        <div style={{ fontSize: 12, fontWeight: 700, margin: "6px 0" }}>Por unidade × mês</div>
+        <div style={{ overflowX: "auto", marginBottom: 16 }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead><tr><Th>Unidade</Th>{meses.map((m) => <Th key={m} right>{mesLabel(m)}</Th>)}<Th right>Total</Th></tr></thead>
+          <tbody>
+            {nomesUnid.map((u) => (
+              <tr key={u}><Td style={{ fontWeight: 600 }}>{u}</Td>
+                {meses.map((m) => { const v = somaPor("unidade", u, m); return <Td key={m} right color={v ? C.texto : C.dim}>{v ? fmt(v) : "—"}</Td>; })}
+                <Td right color={C.laranja} style={{ fontWeight: 700 }}>{fmt(somaPor("unidade", u))}</Td></tr>
+            ))}
+          </tbody>
+        </table></div>
+
+        {/* Matriz Descrição × mês */}
+        <div style={{ fontSize: 12, fontWeight: 700, margin: "6px 0" }}>Por descrição × mês</div>
+        <div style={{ overflowX: "auto", marginBottom: 16 }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead><tr><Th>Descrição</Th>{meses.map((m) => <Th key={m} right>{mesLabel(m)}</Th>)}<Th right>Total</Th></tr></thead>
+          <tbody>
+            {nomesDesc.map((dsc) => (
+              <tr key={dsc}><Td style={{ fontWeight: 600 }}>{dsc}</Td>
+                {meses.map((m) => { const v = somaPor("descricao", dsc, m); return <Td key={m} right color={v ? C.texto : C.dim}>{v ? fmt(v) : "—"}</Td>; })}
+                <Td right color={C.laranja} style={{ fontWeight: 700 }}>{fmt(somaPor("descricao", dsc))}</Td></tr>
+            ))}
+            <tr style={{ background: C.preto }}><Td style={{ color: "#fff", fontWeight: 800 }}>TOTAL</Td>{meses.map((m) => <Td key={m} right style={{ color: "#fff", fontWeight: 800 }}>{fmt(sum(gastos.filter((g) => ymDe(g.data) === m).map((g) => Number(g.valor) || 0)))}</Td>)}<Td right style={{ color: C.verde, fontWeight: 800 }}>{fmt(totalGeral)}</Td></tr>
+          </tbody>
+        </table></div>
+
+        {/* Lançamentos recentes */}
+        <div style={{ fontSize: 12, fontWeight: 700, margin: "6px 0" }}>Lançamentos</div>
+        <div style={{ maxHeight: 260, overflow: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%" }}>
+          <thead><tr><Th>Data</Th><Th>Unidade</Th><Th>Descrição</Th><Th>Detalhe</Th><Th right>Valor</Th><Th /></tr></thead>
+          <tbody>{gastos.map((g) => (
+            <tr key={g.id}>
+              <Td style={{ fontSize: 12 }}>{g.data ? g.data.split("-").reverse().join("/") : "—"}</Td>
+              <Td style={{ fontSize: 12 }}>{g.unidade}</Td>
+              <Td style={{ fontSize: 12 }}>{g.descricao}</Td>
+              <Td style={{ fontSize: 12, color: C.dim }}>{(g.detalhe || "").slice(0, 40)}{g.origem_tipo && g.origem_tipo !== "manual" ? ` · via ${g.origem_tipo.toUpperCase()}` : ""}</Td>
+              <Td right color={C.laranja}>{fmtR(g.valor)}</Td>
+              <Td><button onClick={() => excluir(g)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 14 }}>×</button></Td>
+            </tr>
+          ))}</tbody>
+        </table></div>
+      </>}
     </Card>
   );
 }
