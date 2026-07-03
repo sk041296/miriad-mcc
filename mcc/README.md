@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v11.02 — Ordens de pagamento: valor correto + conferência de NF estruturada
+- **Bug corrigido:** OPs geradas de OS-i em "% de avanço" saíam com valor errado (o gerador lia o campo `valor` da parcela em vez de calcular `pct × valor da OS`), e várias parcelas em % colidiam gravando só uma OP. Agora o valor é calculado corretamente e cada parcela vira uma OP própria.
+- **Conferir NF virou um passo a passo:** o operador financeiro informa o nº da NF do fornecedor, o vencimento e o valor da NF; o sistema mostra o valor da OC/OS ao lado e sinaliza se confere (✓ / difere). Só libera a OP após confirmar que o valor bate.
+- **Devolver para suprimentos:** novo botão para devolver a OP quando houver divergência — a OP volta para "Pendente NF" com uma flag vermelha e o motivo registrado.
+
+> **Migração:** rode `supabase/migration_v11_02.sql` (colunas de divergência + recálculo das OPs de OS-i em % já geradas erradas — só mexe nas que ainda estão pendentes).
+
 ## v11.01 — Centro de custo (gastos de escritório) + correção do delete de obras
 - **Bug corrigido:** excluir obra agora funciona. O backend remove as dependências (EAP, RDOs, PMM, OCs, OSs, designações, OPs, memoriais, etc.) antes de apagar a obra, evitando o erro de foreign key. Restrito a CEO/Diretor.
 - **Gastos de escritório (centro de custo):** nova tabela gastos_escritorio + unidades e descrições cadastráveis (semeadas com Sede/Filial/Fabril e Manutenção/Benfeitorias/Confraternizações/Consumíveis).

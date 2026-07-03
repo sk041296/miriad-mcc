@@ -4,7 +4,7 @@ import {
   CartesianGrid, Tooltip, Legend, Cell, ReferenceLine,
 } from "recharts";
 import {
-  C, fmt, fmtK, fmtR, pct, sum, z8, Card, Btn, Kpi, Th, Td, Lbl, NumInput, ChartTip,
+  C, fmt, fmtK, fmtR, pct, sum, z8, Card, Btn, Kpi, Th, Td, Lbl, NumInput, ChartTip, inp,
   getFin, setFin, listar, criar, editar, hojeISO, addDiasISO, ymISO,
 } from "./core.jsx";
 import { resumoPmm } from "./pmm.jsx";
@@ -729,6 +729,7 @@ function KanbanOP() {
   const [filtroObra, setFiltroObra] = useState("");
   const [busy, setBusy] = useState(null);
   const [expand, setExpand] = useState({}); // chave "status:faixa" -> bool
+  const [modalOp, setModalOp] = useState(null); // { op, devolver? } -> modal Conferir NF / devolução
 
   const carregar = () => {
     Promise.all([listar("ordens_pagamento"), listar("obras"), listar("ordens_compra")])
@@ -778,15 +779,26 @@ function KanbanOP() {
     setBusy(null);
   };
 
-  const conferirNF = async (op) => {
-    const num = prompt("Número da NF:", op.nf_numero || "");
-    if (num === null) return;
-    const valStr = prompt("Valor da NF (R$):", op.nf_valor != null ? String(op.nf_valor) : String(op.valor || ""));
-    if (valStr === null) return;
-    const nfVal = Number(String(valStr).replace(/\./g, "").replace(",", ".")) || 0;
-    const dif = Math.abs(nfVal - (Number(op.valor) || 0));
-    if (dif > 0.01 && !confirm(`Valor da NF (${fmt(nfVal)}) difere do valor da OP (${fmt(op.valor)}) em ${fmt(dif)}.\n\nLiberar mesmo assim?`)) return;
-    await mover(op, "liberada", { nf_numero: num, nf_valor: nfVal, nf_conferida: true });
+  const liberarOp = async (op, dados) => {
+    await mover(op, "liberada", {
+      nf_numero: (dados.nf_numero || "").trim() || null,
+      nf_valor: Number(dados.nf_valor) || 0,
+      vencimento: dados.vencimento || op.vencimento || null,
+      nf_conferida: true,
+      divergencia: false,
+      divergencia_motivo: null,
+    });
+    setModalOp(null);
+  };
+
+  const devolverOp = async (op, motivo) => {
+    await mover(op, "pendente_nf", {
+      nf_conferida: false,
+      divergencia: true,
+      divergencia_motivo: (motivo || "").trim() || "Divergência apontada pelo financeiro",
+      divergencia_em: new Date().toISOString(),
+    });
+    setModalOp(null);
   };
 
   const vencido = (op) => op.status !== "paga" && op.vencimento && op.vencimento < hojeISO();
@@ -814,9 +826,13 @@ function KanbanOP() {
       {matDe(op) && <div style={{ fontSize: 11, color: "#475569", marginTop: 3, fontStyle: "italic" }}>Material: {matDe(op)}</div>}
       {op.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>{op.descricao}</div>}
       {op.nf_numero && <div style={{ fontSize: 11, color: "#2563eb", marginTop: 3 }}>NF {op.nf_numero}{op.nf_valor != null ? ` · ${fmt(op.nf_valor)}` : ""}</div>}
+      {op.divergencia && op.status !== "paga" && <div style={{ fontSize: 11, color: C.vermelho, marginTop: 4, fontWeight: 700, background: "#fdecec", border: `1px solid ${C.vermelho}22`, borderRadius: 6, padding: "4px 7px" }}>↩ Devolvida p/ suprimentos: {op.divergencia_motivo}</div>}
       {op.status === "paga" && op.data_pagamento && <div style={{ fontSize: 11, color: C.verde, marginTop: 3 }}>Pago em {op.data_pagamento.split("-").reverse().join("/")}</div>}
       <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
-        {sid === "pendente_nf" && <Btn small onClick={() => conferirNF(op)} disabled={busy === op.id}>Conferir NF</Btn>}
+        {sid === "pendente_nf" && <>
+          <Btn small onClick={() => setModalOp({ op })} disabled={busy === op.id}>Conferir NF</Btn>
+          <Btn small kind="ghost" onClick={() => setModalOp({ op, devolver: true })} disabled={busy === op.id}>↩ Devolver</Btn>
+        </>}
         {sid === "liberada" && <>
           <Btn small onClick={() => mover(op, "paga")} disabled={busy === op.id}>Marcar paga</Btn>
           <Btn small kind="ghost" onClick={() => mover(op, "pendente_nf", { nf_conferida: false })} disabled={busy === op.id}>← Pendente</Btn>
@@ -892,6 +908,115 @@ function KanbanOP() {
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, alignItems: "start" }}>
         {OP_COLS.map(([sid, slabel, scor]) => coluna(sid, slabel, scor))}
+      </div>
+
+      {modalOp && (
+        <ModalConferirNF
+          op={modalOp.op}
+          iniDevolver={!!modalOp.devolver}
+          nomeObra={nomeObra}
+          busy={busy === modalOp.op.id}
+          onClose={() => setModalOp(null)}
+          onLiberar={(dados) => liberarOp(modalOp.op, dados)}
+          onDevolver={(motivo) => devolverOp(modalOp.op, motivo)}
+        />
+      )}
+    </div>
+  );
+}
+
+/* Modal de conferência de NF: nº da NF -> vencimento -> confere valor com a OC/OS
+   -> libera a OP. Botão de devolver para suprimentos (com motivo) em caso de divergência. */
+function ModalConferirNF({ op, iniDevolver, nomeObra, busy, onClose, onLiberar, onDevolver }) {
+  const refVal = Number(op.valor) || 0;
+  const [nfNum, setNfNum] = useState(op.nf_numero || "");
+  const [venc, setVenc] = useState(op.vencimento ? String(op.vencimento).slice(0, 10) : "");
+  const [nfVal, setNfVal] = useState(op.nf_valor != null ? Number(op.nf_valor) : refVal);
+  const [confere, setConfere] = useState(false);
+  const [devolver, setDevolver] = useState(iniDevolver);
+  const [motivo, setMotivo] = useState("");
+
+  const dif = Math.abs((Number(nfVal) || 0) - refVal);
+  const bate = dif < 0.01;
+  const podeLiberar = nfNum.trim() && venc && bate && confere;
+
+  const overlay = { position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 1000, padding: 16 };
+  const box = { background: C.branco, borderRadius: 14, padding: 20, width: "100%", maxWidth: 440, boxShadow: "0 12px 40px rgba(0,0,0,.25)", maxHeight: "90vh", overflowY: "auto" };
+  const linhaInfo = { fontSize: 12, color: C.dim, display: "flex", justifyContent: "space-between", gap: 8, marginTop: 2 };
+
+  return (
+    <div style={overlay} onClick={onClose}>
+      <div style={box} onClick={(e) => e.stopPropagation()}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 4 }}>
+          <span style={{ fontWeight: 800, fontSize: 16, color: C.preto }}>{devolver ? "Devolver para suprimentos" : "Conferir NF"}</span>
+          <button onClick={onClose} style={{ background: "none", border: "none", fontSize: 18, color: C.dim, cursor: "pointer", lineHeight: 1 }}>✕</button>
+        </div>
+
+        {/* Cabeçalho da OP */}
+        <div style={{ background: C.cinza, borderRadius: 10, padding: "10px 12px", marginBottom: 16 }}>
+          <div style={{ fontWeight: 700, fontSize: 13 }}>{op.fornecedor || "—"}</div>
+          <div style={linhaInfo}><span>{nomeObra(op.obra_id)}{op.descricao ? ` · ${op.descricao}` : ""}</span></div>
+          <div style={{ ...linhaInfo, marginTop: 8 }}>
+            <span style={{ fontWeight: 700, color: C.texto }}>Valor da OC/OS</span>
+            <span style={{ fontWeight: 800, color: C.preto, fontSize: 15 }}>{fmtR(refVal)}</span>
+          </div>
+        </div>
+
+        {!devolver ? (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <Lbl>Número da NF do fornecedor</Lbl>
+              <input value={nfNum} onChange={(e) => setNfNum(e.target.value)} placeholder="ex.: 12345" style={inp({ width: "100%", boxSizing: "border-box" })} />
+            </div>
+            <div style={{ marginBottom: 12 }}>
+              <Lbl>Vencimento</Lbl>
+              <input type="date" value={venc} onChange={(e) => setVenc(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })} />
+            </div>
+            <div style={{ marginBottom: 6 }}>
+              <Lbl>Valor da NF (R$)</Lbl>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <NumInput value={nfVal} w={160} onChange={setNfVal} />
+                {bate
+                  ? <span style={{ fontSize: 12, fontWeight: 700, color: C.verde }}>✓ Confere com a OC/OS</span>
+                  : <span style={{ fontSize: 12, fontWeight: 700, color: C.amareloAlerta }}>Difere em {fmtR(dif)}</span>}
+              </div>
+            </div>
+
+            {bate ? (
+              <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, margin: "12px 0 4px", cursor: "pointer" }}>
+                <input type="checkbox" checked={confere} onChange={(e) => setConfere(e.target.checked)} style={{ width: 16, height: 16 }} />
+                Confirmo que o valor da NF confere com a OC/OS
+              </label>
+            ) : (
+              <div style={{ fontSize: 12, color: C.vermelho, background: "#fdecec", borderRadius: 8, padding: "8px 10px", margin: "12px 0 4px", fontWeight: 600 }}>
+                O valor da NF não confere com a OC/OS. Ajuste o valor ou devolva a OP para suprimentos.
+              </div>
+            )}
+
+            <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+              <Btn onClick={() => onLiberar({ nf_numero: nfNum, vencimento: venc, nf_valor: nfVal })} disabled={!podeLiberar || busy}>
+                {busy ? "Liberando…" : "Liberar ordem de pagamento"}
+              </Btn>
+              <Btn kind="ghost" onClick={() => setDevolver(true)} disabled={busy}>↩ Devolver p/ suprimentos</Btn>
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ marginBottom: 12 }}>
+              <Lbl>Motivo da devolução</Lbl>
+              <textarea value={motivo} onChange={(e) => setMotivo(e.target.value)} rows={3}
+                placeholder="ex.: valor da NF diverge da OS; falta anexo; fornecedor errado…"
+                style={inp({ width: "100%", boxSizing: "border-box", resize: "vertical", fontFamily: "inherit" })} />
+            </div>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 12 }}>
+              A OP volta para <b>Pendente NF</b> com a flag de divergência e o motivo registrado.
+            </div>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Btn onClick={() => onDevolver(motivo)} disabled={!motivo.trim() || busy}>{busy ? "Devolvendo…" : "Confirmar devolução"}</Btn>
+              {!iniDevolver && <Btn kind="ghost" onClick={() => setDevolver(false)} disabled={busy}>← Voltar</Btn>}
+            </div>
+          </>
+        )}
       </div>
     </div>
   );

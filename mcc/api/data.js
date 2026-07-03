@@ -69,25 +69,35 @@ async function gerarOPsDaOrigem(supabase, tabela, origem) {
     centro = ob?.centro_custo || null;
   }
   const cond = origem.condicao_pagamento || {};
+  const modoPct = cond.modo === "pct";            // OS-i "% de avanço": a parcela guarda só o pct
+  const totalOrigem = Number(origem.valor) || 0;
   let parcelas = Array.isArray(cond.parcelas) && cond.parcelas.length
     ? cond.parcelas
-    : [{ parcela: "1/1", valor: Number(origem.valor) || 0, vencimento: origem.data_faturamento || origem.data || null, obs: "" }];
+    : [{ parcela: "1/1", valor: totalOrigem, vencimento: origem.data_faturamento || origem.data || null, obs: "" }];
+  const nP = parcelas.length;
   const forn = origem.fornecedor || origem.empresa || origem.responsavel || null;
-  const cnpj = (origem.dados_oc && origem.dados_oc.cnpj) || null;
-  const linhas = parcelas.map((p) => ({
-    origem_tipo: tipo,
-    origem_id: origem.id,
-    obra_id: origem.obra_id || null,
-    numero: (origem.numero || "OC") + "-" + (p.parcela || "1/1"),
-    fornecedor: forn,
-    cnpj,
-    centro_custo: centro,
-    descricao: (tipo === "oc" ? "OC " : "OS ") + (origem.numero || "") + " · parcela " + (p.parcela || "1/1"),
-    valor: Number(p.valor) || 0,
-    vencimento: p.vencimento || null,
-    status: "pendente_nf",
-    payload: { parcela: p.parcela || "1/1", obs: p.obs || "", origem: tipo + "_aprovada" },
-  }));
+  const cnpj = (origem.dados_oc && origem.dados_oc.cnpj) || origem.cnpj || null;
+  const linhas = parcelas.map((p, i) => {
+    const chaveParc = p.parcela || `${i + 1}/${nP}`;   // chave única por parcela (evita colisão no índice)
+    // no modo "% de avanço" o valor absoluto é pct/100 × total da origem; senão usa o valor gravado na parcela.
+    const valorParc = modoPct
+      ? Math.round(((Number(p.pct) || 0) / 100) * totalOrigem * 100) / 100
+      : (Number(p.valor) || 0);
+    return {
+      origem_tipo: tipo,
+      origem_id: origem.id,
+      obra_id: origem.obra_id || null,
+      numero: (origem.numero || (tipo === "oc" ? "OC" : "OS")) + "-" + chaveParc,
+      fornecedor: forn,
+      cnpj,
+      centro_custo: centro,
+      descricao: (tipo === "oc" ? "OC " : "OS ") + (origem.numero || "") + " · parcela " + chaveParc,
+      valor: valorParc,
+      vencimento: p.vencimento || null,
+      status: "pendente_nf",
+      payload: { parcela: chaveParc, obs: p.obs || "", origem: tipo + "_aprovada" },
+    };
+  });
   // insere ignorando conflitos (idempotente)
   for (const l of linhas) {
     await supabase.from("ordens_pagamento").upsert(l, { onConflict: "origem_tipo,origem_id,(payload->>'parcela')", ignoreDuplicates: true });
