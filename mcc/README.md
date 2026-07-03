@@ -1,5 +1,10 @@
 # Miriad Construction Control (MCC)
 
+## v10.41 — Correção: EAP & Custos subcontava o realizado (divergência com o painel de furos)
+- CAUSA: realizadoPorItem (EAP & Custos) entrava no ramo de itens_eap mesmo quando os itens NÃO tinham eap_codigo próprio, e lia x.valor (inexistente) em vez de x.valor_total. Resultado: OCs cujo código está no nível da OC (o.eap_codigo) e cujos itens usam valor_total eram IGNORADAS — o realizado aparecia muito menor que o real.
+- Ex.: IFSC EAP 3.1.1.1.2 mostrava R$ 5.711 em EAP & Custos, mas o consumo real (e correto, já exibido no painel de furos) era R$ 45.640,87.
+- CORREÇÃO: realizadoPorItem agora usa a MESMA lógica robusta de consumidoPorEapObra (só distribui por item quando há eap_codigo nos itens; senão usa código+valor da OC inteira; fallback de valor para valor_total). As duas telas passam a mostrar o mesmo número.
+
 ## v10.40 — Papéis customizados (tela de gestão)
 - Nova seção "Papéis customizados" na aba Usuários (Coord. de Planejamento e Diretoria): criar variações de um cargo existente dando um nome e escolhendo o papel-base cujas permissões ele herda.
 - Papéis customizados aparecem no cadastro de usuários e em toda exibição (via nomePapel), e herdam permissões/setor do papel-base.

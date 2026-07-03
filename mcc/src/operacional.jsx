@@ -1092,13 +1092,14 @@ function realizadoPorItem(ocs, contratos, obraId) {
   const m = {};
   const add = (cod, val) => { const c = String(cod || "").split(" ")[0].trim(); if (!c) return; m[c] = (m[c] || 0) + (Number(val) || 0); };
   ocs.filter((o) => o.obra_id === obraId).forEach((o) => {
-    if (Array.isArray(o.itens_eap) && o.itens_eap.length) o.itens_eap.forEach((x) => add(x.eap_codigo, x.valor));
+    // só distribui por item se os itens tiverem eap_codigo próprio; senão usa o código e valor da OC inteira
+    if (Array.isArray(o.itens_eap) && o.itens_eap.length && o.itens_eap.some((x) => x.eap_codigo)) o.itens_eap.forEach((x) => add(x.eap_codigo, x.valor != null ? x.valor : x.valor_total));
     else add(o.eap_codigo, o.valor);
   });
   contratos.filter((c) => c.obra_id === obraId).forEach((c) => {
-    if (Array.isArray(c.itens_eap) && c.itens_eap.length) {
+    if (Array.isArray(c.itens_eap) && c.itens_eap.length && c.itens_eap.some((x) => x.eap_codigo)) {
       if (c.tipo === "direto") { const v = (Number(c.custo_mensal) || 0) * (Number(c.meses) || 0); const n = c.itens_eap.length || 1; c.itens_eap.forEach((x) => add(x.eap_codigo, v / n)); }
-      else c.itens_eap.forEach((x) => add(x.eap_codigo, x.valor));
+      else c.itens_eap.forEach((x) => add(x.eap_codigo, x.valor != null ? x.valor : x.valor_total));
     } else add(c.escopo_eap, c.valor);
   });
   return m;
