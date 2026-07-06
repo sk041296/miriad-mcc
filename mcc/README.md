@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v11.03 — Pendências por usuário, log de travamentos e SM-i sem necessidade
+- **Nova tela "Pendências e travamentos"** dentro da área de Usuários (aba no topo), visível para **CEO, Diretor e Coord. de Planejamento**. Mostra, por supervisor: pendências e tarefas com vencimento próximo (RDO, SM-i, POS, PMM, SS-i) com status colorido (em dia / vence em breve / atrasado) e prazo, além do **histórico de travamentos** de acesso — incluindo a tarefa que motivou cada bloqueio e quando/por quem foi destravado.
+- **Destravamento direto na tela:** botão "Destravar acesso" no card do usuário bloqueado — executável por CEO, Diretor e Coord. de Planejamento. Fecha o registro de travamento no log (quem e quando).
+- **SM-i "sem necessidade nesta semana":** novo botão na tela de SM-i para o supervisor declarar que não há SM-i a solicitar. O sistema **não trava** e mantém um **histórico visível** (para o supervisor na própria tela e para os gestores na tela de pendências), diferenciando "envio confirmado" de "sem necessidade".
+
+> **Migração:** rode `supabase/migration_v11_03.sql` (cria a tabela `travamentos` e adiciona `envio_semanal.sem_necessidade`).
+
 ## v11.02 — Ordens de pagamento: valor correto + conferência de NF estruturada
 - **Bug corrigido:** OPs geradas de OS-i em "% de avanço" saíam com valor errado (o gerador lia o campo `valor` da parcela em vez de calcular `pct × valor da OS`), e várias parcelas em % colidiam gravando só uma OP. Agora o valor é calculado corretamente e cada parcela vira uma OP própria.
 - **Conferir NF virou um passo a passo:** o operador financeiro informa o nº da NF do fornecedor, o vencimento e o valor da NF; o sistema mostra o valor da OC/OS ao lado e sinaliza se confere (✓ / difere). Só libera a OP após confirmar que o valor bate.

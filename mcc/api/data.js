@@ -28,6 +28,7 @@ const TABELAS = {
   gastos_descricoes: { ordem: "ordem", asc: true },
   memoriais_custo: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   memoriais_itens: { ordem: "ordem", asc: true, filtro: "memorial_id" },
+  travamentos: { ordem: "criado_em", asc: false },
   usuarios: { ordem: "nome", asc: true },
 };
 
@@ -56,6 +57,14 @@ function proximaSegundaISO(d = new Date()) {
 // primeiro dia do próximo mês (yyyy-mm-01)
 function proximoMesISO(d = new Date()) {
   const x = new Date(d.getFullYear(), d.getMonth() + 1, 1); return x.toISOString().slice(0, 10);
+}
+
+// registra um travamento no log (idempotente: não duplica se já há um aberto para o mesmo motivo/semana)
+async function registrarTravamento(supabase, usuario_id, tipo, motivo, ref) {
+  const { data: aberto } = await supabase.from("travamentos")
+    .select("id").eq("usuario_id", usuario_id).eq("tipo", tipo).eq("ref", ref).is("destravado_em", null).limit(1);
+  if (aberto && aberto.length) return;
+  await supabase.from("travamentos").insert({ usuario_id, tipo, motivo, ref });
 }
 
 // Gera as Ordens de Pagamento (uma por parcela) a partir de uma OC/OS aprovada.
@@ -178,6 +187,58 @@ export default async function handler(req, res) {
         (r.atividades || []).forEach((a) => { if (a && a.eap != null) acum[a.eap] = (acum[a.eap] || 0) + (Number(a.qtde_dia ?? a.avanco) || 0); });
       });
       return res.status(200).json({ acum, maxNumero });
+    }
+
+    // pendências e travamentos por usuário (Diretoria / Coord. de Planejamento)
+    if (t === "pendencias_usuarios") {
+      if (!ALOCA_SUPERVISOR.has(s.papel)) return res.status(403).json({ error: "Acesso restrito." });
+      const DIA = 86400000;
+      const agora = new Date();
+      const isoD = (d) => d.toISOString().slice(0, 10);
+      const ontem = isoD(new Date(agora.getTime() - DIA));
+      const segSemana = mondayISO();                 // segunda desta semana (ref do envio SM-i)
+      const proxSeg = proximaSegundaISO();           // POS da próxima semana
+      const proxMes = proximoMesISO();               // PMM do próximo mês
+      const [{ data: usuarios }, { data: desig }, { data: obras }, { data: pos }, { data: pmm }, { data: ss }, { data: envio }, { data: rdosOntem }, { data: travs }] = await Promise.all([
+        supabase.from("usuarios").select("id,nome,email,papel,travado,travado_em,ativo"),
+        supabase.from("designacoes").select("usuario_id,obra_id"),
+        supabase.from("obras").select("id,codigo"),
+        supabase.from("pos").select("supervisor_id,semana"),
+        supabase.from("pmm").select("supervisor_id,mes"),
+        supabase.from("ss_itens").select("solicitante_id,status,criado_em"),
+        supabase.from("envio_semanal").select("usuario_id,semana,sem_necessidade,confirmado_em"),
+        supabase.from("rdos").select("obra_id,data").gte("data", ontem),
+        supabase.from("travamentos").select("*").order("criado_em", { ascending: false }),
+      ]);
+      const codObra = (id) => (obras || []).find((o) => o.id === id)?.codigo || "—";
+      const nomeU = (id) => (usuarios || []).find((u) => u.id === id)?.nome || "—";
+      const prazoSMi = new Date(segSemana + "T00:00:00"); prazoSMi.setHours(23, 59, 59, 0);            // segunda 23:59
+      const prazoPOS = (() => { const g = new Date(segSemana + "T00:00:00"); g.setDate(g.getDate() + 4); g.setHours(23, 59, 59, 0); return g; })(); // sexta 23:59
+      const prazoPMM = new Date(agora.getFullYear(), agora.getMonth(), 25, 23, 59, 59);
+      const statusDe = (prazo) => { const dt = prazo.getTime() - agora.getTime(); if (dt < 0) return "atrasado"; if (dt <= 2 * DIA) return "proximo"; return "ok"; };
+      const sups = (usuarios || []).filter((u) => u.papel === "sup_obras");
+      const linhas = sups.map((u) => {
+        const obrasU = (desig || []).filter((d) => d.usuario_id === u.id).map((d) => d.obra_id);
+        const pend = [];
+        if (obrasU.length) {
+          const semRdo = obrasU.filter((oid) => !(rdosOntem || []).some((r) => r.obra_id === oid && String(r.data).slice(0, 10) === ontem));
+          if (semRdo.length) pend.push({ area: "rdo", titulo: "RDO de ontem", detalhe: `${semRdo.length} obra(s) sem RDO de ${ontem.split("-").reverse().join("/")}`, prazo: null, status: "atrasado" });
+          if (!(envio || []).some((e) => e.usuario_id === u.id && String(e.semana).slice(0, 10) === segSemana))
+            pend.push({ area: "smi", titulo: "Envio semanal de SM-i", detalhe: "envio da semana não confirmado", prazo: prazoSMi.toISOString(), status: statusDe(prazoSMi) });
+          if (!(pos || []).some((p) => p.supervisor_id === u.id && String(p.semana).slice(0, 10) === proxSeg))
+            pend.push({ area: "pos", titulo: "POS da próxima semana", detalhe: "ainda não enviado", prazo: prazoPOS.toISOString(), status: statusDe(prazoPOS) });
+          if (!(pmm || []).some((p) => p.supervisor_id === u.id && String(p.mes).slice(0, 10) === proxMes))
+            pend.push({ area: "pmm", titulo: "PMM do próximo mês", detalhe: "ainda não enviado", prazo: prazoPMM.toISOString(), status: statusDe(prazoPMM) });
+        }
+        const ssVelhas = (ss || []).filter((x) => x.solicitante_id === u.id && !["baixada", "cancelada"].includes(x.status) && (agora - new Date(x.criado_em)) / DIA >= 60);
+        if (ssVelhas.length) pend.push({ area: "ssi", titulo: "SS-i pendente", detalhe: `${ssVelhas.length} solicitação(ões) aberta(s) há mais de 60 dias`, prazo: null, status: "atrasado" });
+        const meusTrav = (travs || []).filter((x) => x.usuario_id === u.id).slice(0, 20).map((x) => ({
+          tipo: x.tipo, motivo: x.motivo, ref: x.ref, criado_em: x.criado_em,
+          destravado_em: x.destravado_em, destravado_por_nome: x.destravado_por ? nomeU(x.destravado_por) : null,
+        }));
+        return { id: u.id, nome: u.nome, email: u.email, papel: u.papel, obras: obrasU.map(codObra), travado: !!u.travado, travado_em: u.travado_em, pendencias: pend, travamentos: meusTrav };
+      });
+      return res.status(200).json({ rows: linhas });
     }
 
     const cfg = TABELAS[t];
@@ -336,9 +397,26 @@ export default async function handler(req, res) {
     // ---- conformidade semanal de envio das SM-is (Supervisor de Obras) ----
     if (t === "confirmar_envio") {
       const semana = mondayISO();
-      const { error } = await supabase.from("envio_semanal").upsert({ usuario_id: s.id, semana, confirmado_em: new Date().toISOString() }, { onConflict: "usuario_id,semana" });
+      const { error } = await supabase.from("envio_semanal").upsert({ usuario_id: s.id, semana, sem_necessidade: false, confirmado_em: new Date().toISOString() }, { onConflict: "usuario_id,semana" });
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, semana });
+    }
+    // ---- Supervisor declara que não há necessidade de SM-is nesta semana (não trava; fica no histórico) ----
+    if (t === "sm_sem_necessidade") {
+      const semana = mondayISO();
+      const { error } = await supabase.from("envio_semanal").upsert({ usuario_id: s.id, semana, sem_necessidade: true, confirmado_em: new Date().toISOString() }, { onConflict: "usuario_id,semana" });
+      if (error) return res.status(500).json({ error: error.message });
+      return res.status(200).json({ ok: true, semana, sem_necessidade: true });
+    }
+    // ---- destravar acesso de um usuário (CEO / Diretor / Coord. de Planejamento) ----
+    if (t === "destravar_usuario") {
+      if (!ALOCA_SUPERVISOR.has(s.papel)) return res.status(403).json({ error: "Apenas CEO, Diretor ou Coord. de Planejamento podem destravar acessos." });
+      const { id } = req.body;
+      if (!id) return res.status(400).json({ error: "id obrigatório" });
+      const { error } = await supabase.from("usuarios").update({ travado: false, travado_em: null }).eq("id", id);
+      if (error) return res.status(500).json({ error: error.message });
+      await supabase.from("travamentos").update({ destravado_em: new Date().toISOString(), destravado_por: s.id }).eq("usuario_id", id).is("destravado_em", null);
+      return res.status(200).json({ ok: true });
     }
     // ---- reset de senha (CEO/Diretor): invalida a senha e gera novo convite ----
     if (t === "resetar_senha") {
@@ -363,6 +441,7 @@ export default async function handler(req, res) {
       let travado = false;
       if (s.papel === "sup_obras" && !preenchido && agora > trava) {
         await supabase.from("usuarios").update({ travado: true, travado_em: agora.toISOString() }).eq("id", s.id);
+        await registrarTravamento(supabase, s.id, "pmm", `PMM do mês ${alvoMes} não planejado até o prazo (dia 25 + 24h).`, alvoMes);
         travado = true;
       }
       return res.status(200).json({ mes: alvoMes, preenchido, atrasado: !preenchido && agora > prazo, travado, prazo: prazo.toISOString() });
@@ -380,6 +459,7 @@ export default async function handler(req, res) {
       let travado = false;
       if (s.papel === "sup_obras" && !preenchido && agora > trava) {
         await supabase.from("usuarios").update({ travado: true, travado_em: agora.toISOString() }).eq("id", s.id);
+        await registrarTravamento(supabase, s.id, "pos", `POS da semana ${alvoSemana} não enviado até o prazo (sexta + 24h).`, alvoSemana);
         travado = true;
       }
       return res.status(200).json({ semana: alvoSemana, preenchido, atrasado: !preenchido && agora > sexta, travado, prazo: sexta.toISOString() });
@@ -395,6 +475,7 @@ export default async function handler(req, res) {
       let travado = false;
       if (s.papel === "sup_obras" && !confirmado && agora > trava) {
         await supabase.from("usuarios").update({ travado: true, travado_em: agora.toISOString() }).eq("id", s.id);
+        await registrarTravamento(supabase, s.id, "sm", `Envio semanal de SM-i (semana ${semana}) não confirmado até o prazo (segunda + 24h).`, semana);
         travado = true;
       }
       return res.status(200).json({ semana, confirmado, atrasado: !confirmado && agora > prazo, travado, prazo: prazo.toISOString() });

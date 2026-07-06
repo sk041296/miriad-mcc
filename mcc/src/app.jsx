@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import {
-  C, Btn, Card, inp, Lbl, listar, criar, criarUsuario, editar, remover, acaoData, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError,
+  C, Btn, Card, inp, Lbl, listar, criar, criarUsuario, editar, remover, acaoData, apiAuth, getToken, getUser, setSessao, limparSessao, AuthError, pendenciasUsuarios, destravarUsuario,
   PAPEIS, PERMS, pode, ehDirecao, papeisQuePodeCriar, PRECISA_DESIGNACAO, SETOR_DE_PAPEL,
   registrarPapeisCustom, nomePapel, PAPEIS_CUSTOM,
   OP_IDS, FIN_IDS, acessoDe, mapaAcessoPadrao, mesclarAcesso, getConfig, setConfig,
@@ -218,6 +218,8 @@ function Usuarios({ usuario }) {
   const ehAdmin = usuario.papel === "ceo" || usuario.papel === "diretor";
   const ehCeo = usuario.papel === "ceo";
   const podeGerirPapeis = usuario.papel === "ceo" || usuario.papel === "diretor" || usuario.papel === "coord_planejamento";
+  const podeVerPendencias = ehAdmin || usuario.papel === "coord_planejamento";
+  const [aba, setAba] = useState("usuarios");
   const [edit, setEdit] = useState(null);
   const [testeBusy, setTesteBusy] = useState(false); const [testeMsg, setTesteMsg] = useState(null); const [testeSenha, setTesteSenha] = useState("Teste@123");
   const carregar = () => {
@@ -283,6 +285,14 @@ function Usuarios({ usuario }) {
 
   return (
     <Card title="Usuários e permissões">
+      {podeVerPendencias && (
+        <div style={{ display: "flex", gap: 8, marginBottom: 14, borderBottom: `1px solid ${C.linha}`, paddingBottom: 12 }}>
+          <button onClick={() => setAba("usuarios")} style={abaBtn(aba === "usuarios")}>Usuários</button>
+          <button onClick={() => setAba("pendencias")} style={abaBtn(aba === "pendencias")}>Pendências e travamentos</button>
+        </div>
+      )}
+      {aba === "pendencias" && <PendenciasUsuarios usuario={usuario} />}
+      {aba === "usuarios" && (<>
       {podeGerirPapeis && <GerenciadorPapeis usuario={usuario} papeisCustom={papeisCustom} onMudou={carregar} />}
       {criaveis.length === 0 ? <div style={{ fontSize: 13, color: C.dim }}>Seu papel não permite cadastrar usuários.</div> : <>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 8 }}>
@@ -370,7 +380,85 @@ function Usuarios({ usuario }) {
             )}
           </React.Fragment>;
         })}</tbody></table>
+      </>)}
     </Card>
+  );
+}
+
+/* ---------------- Pendências e travamentos por usuário (Diretoria / Coord. Planejamento) ---------------- */
+function abaBtn(on) {
+  return { border: `1.5px solid ${on ? C.laranja : C.linha}`, background: on ? C.laranjaClaro : "#fff", color: on ? C.preto : C.dim, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" };
+}
+function PendenciasUsuarios({ usuario }) {
+  const [linhas, setLinhas] = useState(null);
+  const [busy, setBusy] = useState(null);
+  const carregar = () => pendenciasUsuarios().then(setLinhas).catch(() => setLinhas([]));
+  useEffect(() => { carregar(); }, []);
+  const destravar = async (u) => {
+    if (!confirm(`Destravar o acesso de ${u.nome}? O usuário voltará a poder enviar normalmente.`)) return;
+    setBusy(u.id);
+    try { await destravarUsuario(u.id); await carregar(); } catch (e) { alert(e.message); } finally { setBusy(null); }
+  };
+  if (linhas === null) return <div style={{ color: C.dim, padding: 16 }}>Carregando pendências…</div>;
+  const corStatus = (st) => st === "atrasado" ? C.vermelho : st === "proximo" ? C.amareloAlerta : C.verde;
+  const rotStatus = (st) => st === "atrasado" ? "atrasado" : st === "proximo" ? "vence em breve" : "em dia";
+  const dataBR = (iso) => iso ? new Date(iso).toLocaleDateString("pt-BR") : "—";
+  const dtHora = (iso) => iso ? new Date(iso).toLocaleString("pt-BR") : "—";
+  const temAlgo = (l) => l.travado || l.pendencias.length || l.travamentos.some((t) => !t.destravado_em);
+  const comAlgo = linhas.filter(temAlgo);
+  const emDia = linhas.filter((l) => !temAlgo(l));
+  const areaLabel = { rdo: "RDO", smi: "SM-i", pos: "POS", pmm: "PMM", ssi: "SS-i" };
+  const tipoLabel = { sm: "SM-i", pos: "POS", pmm: "PMM", rdo: "RDO", ssi: "SS-i" };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontSize: 12.5, color: C.dim }}>Pendências e prazos dos supervisores de obra, com o histórico de travamentos de acesso e a tarefa que motivou cada um. Como Diretoria/Coord. de Planejamento, você pode destravar o acesso diretamente aqui.</div>
+      {comAlgo.length === 0 && <div style={{ fontSize: 13, color: C.verde, fontWeight: 600 }}>✓ Nenhum supervisor com pendências, travamentos ou bloqueios no momento.</div>}
+      {comAlgo.map((l) => (
+        <div key={l.id} style={{ border: `1px solid ${l.travado ? C.vermelho : C.linha}`, borderRadius: 12, padding: 14, background: l.travado ? `${C.vermelho}08` : "#fff" }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+            <div>
+              <span style={{ fontWeight: 800, fontSize: 14 }}>{l.nome}</span>
+              <span style={{ fontSize: 12, color: C.dim }}> · {l.obras.join(", ") || "sem obra designada"}</span>
+              {l.travado && <span style={{ marginLeft: 8, background: C.vermelho, color: "#fff", borderRadius: 6, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>🔒 bloqueado{l.travado_em ? ` em ${dataBR(l.travado_em)}` : ""}</span>}
+            </div>
+            {l.travado && <Btn small disabled={busy === l.id} onClick={() => destravar(l)}>{busy === l.id ? "Destravando…" : "Destravar acesso"}</Btn>}
+          </div>
+          {l.pendencias.length > 0 ? (
+            <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 6 }}>
+              {l.pendencias.map((p, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", gap: 10, background: C.cinza, borderRadius: 8, padding: "7px 10px", flexWrap: "wrap" }}>
+                  <span style={{ background: corStatus(p.status), color: "#fff", borderRadius: 5, padding: "2px 8px", fontSize: 10.5, fontWeight: 700, minWidth: 96, textAlign: "center" }}>{rotStatus(p.status)}</span>
+                  <span style={{ fontWeight: 700, fontSize: 12.5 }}>{areaLabel[p.area] || p.area}</span>
+                  <span style={{ fontSize: 12, color: C.texto }}>{p.titulo} — {p.detalhe}</span>
+                  {p.prazo && <span style={{ marginLeft: "auto", fontSize: 11.5, color: C.dim }}>prazo {dataBR(p.prazo)}</span>}
+                </div>
+              ))}
+            </div>
+          ) : <div style={{ marginTop: 8, fontSize: 12, color: C.verde }}>✓ Sem pendências de envio.</div>}
+          {l.travamentos.length > 0 && (
+            <details style={{ marginTop: 10 }}>
+              <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.dim }}>Histórico de travamentos ({l.travamentos.length})</summary>
+              <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 6 }}>
+                {l.travamentos.map((t, i) => (
+                  <div key={i} style={{ fontSize: 11.5, color: C.texto, borderLeft: `3px solid ${t.destravado_em ? C.verde : C.vermelho}`, paddingLeft: 10 }}>
+                    <b>{tipoLabel[t.tipo] || t.tipo}</b> · {dtHora(t.criado_em)} — {t.motivo}
+                    {t.destravado_em
+                      ? <span style={{ color: C.verde }}> · destravado em {dtHora(t.destravado_em)}{t.destravado_por_nome ? ` por ${t.destravado_por_nome}` : ""}</span>
+                      : <span style={{ color: C.vermelho, fontWeight: 700 }}> · em aberto</span>}
+                  </div>
+                ))}
+              </div>
+            </details>
+          )}
+        </div>
+      ))}
+      {emDia.length > 0 && (
+        <details>
+          <summary style={{ cursor: "pointer", fontSize: 12, color: C.dim }}>Supervisores em dia ({emDia.length})</summary>
+          <div style={{ marginTop: 6, fontSize: 12.5, color: C.texto }}>{emDia.map((l) => l.nome).join(" · ")}</div>
+        </details>
+      )}
+    </div>
   );
 }
 

@@ -211,23 +211,54 @@ function PainelDiretoria({ sms, obras }) {
 }
 
 /* ---- Aviso semanal + travamento na tela do Supervisor de Obras ---- */
-function AvisoEnvioSupervisor({ onState }) {
-  const [c, setC] = useState(null); const [busy, setBusy] = useState(false);
+function AvisoEnvioSupervisor({ usuario, onState }) {
+  const [c, setC] = useState(null); const [busy, setBusy] = useState(false); const [envios, setEnvios] = useState([]);
+  const semanaAtual = mondayOf(new Date()).toISOString().slice(0, 10);
   const checar = () => acaoData({ t: "sm_compliance" }).then((d) => { setC(d); onState && onState(d); }).catch(() => {});
-  useEffect(() => { checar(); }, []);
-  const confirmar = async () => { setBusy(true); try { await acaoData({ t: "confirmar_envio" }); await checar(); } finally { setBusy(false); } };
+  const carregarHist = () => listar("envio_semanal").then((rows) => setEnvios((rows || []).filter((e) => e.usuario_id === usuario?.id))).catch(() => {});
+  useEffect(() => { checar(); carregarHist(); }, []);
+  const confirmar = async () => { setBusy(true); try { await acaoData({ t: "confirmar_envio" }); await checar(); await carregarHist(); } finally { setBusy(false); } };
+  const semNecessidade = async () => { setBusy(true); try { await acaoData({ t: "sm_sem_necessidade" }); await checar(); await carregarHist(); } finally { setBusy(false); } };
   if (!c) return null;
+  const meuDaSemana = envios.find((e) => String(e.semana).slice(0, 10) === semanaAtual);
+  const semLabel = (e) => e.sem_necessidade ? "Sem necessidade de SM-i" : "Envio confirmado";
+  const hist = envios.length > 0 && (
+    <details style={{ marginTop: 8 }}>
+      <summary style={{ cursor: "pointer", fontSize: 12, fontWeight: 700, color: C.dim }}>Histórico de semanas ({envios.length})</summary>
+      <div style={{ marginTop: 6, display: "flex", flexDirection: "column", gap: 4 }}>
+        {envios.slice(0, 10).map((e) => (
+          <div key={e.id} style={{ fontSize: 11.5, color: C.texto, display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontFamily: "ui-monospace,monospace", color: C.dim }}>{String(e.semana).slice(0, 10).split("-").reverse().join("/")}</span>
+            <span style={{ background: e.sem_necessidade ? `${C.amareloAlerta}22` : `${C.verde}18`, color: e.sem_necessidade ? C.amareloAlerta : C.verde, borderRadius: 5, padding: "1px 8px", fontWeight: 700 }}>{semLabel(e)}</span>
+          </div>
+        ))}
+      </div>
+    </details>
+  );
   if (c.travado) return (
     <div style={{ background: C.vermelho, color: "#fff", borderRadius: 10, padding: 18 }}>
       <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>🔒 Seu acesso de envio está bloqueado</div>
-      <div style={{ fontSize: 13, opacity: 0.95 }}>As SM-is desta semana não foram enviadas nem confirmadas dentro do prazo (segunda-feira + 24h). Procure seu Coordenador de Obras para alinhar e liberar o acesso.</div>
+      <div style={{ fontSize: 13, opacity: 0.95 }}>As SM-is desta semana não foram enviadas nem confirmadas dentro do prazo (segunda-feira + 24h). Procure seu Coordenador de Obras ou a Diretoria para liberar o acesso.</div>
     </div>
   );
-  if (c.confirmado) return <div style={{ background: `${C.verde}12`, border: `1px solid ${C.verde}55`, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: C.verde, fontWeight: 700 }}>✓ Envio da semana confirmado.</div>;
+  if (c.confirmado) return (
+    <div>
+      <div style={{ background: `${C.verde}12`, border: `1px solid ${C.verde}55`, borderRadius: 8, padding: "8px 12px", fontSize: 12.5, color: meuDaSemana?.sem_necessidade ? C.amareloAlerta : C.verde, fontWeight: 700 }}>
+        {meuDaSemana?.sem_necessidade ? "✓ Semana marcada como “sem necessidade de SM-i”. Registrado no histórico." : "✓ Envio da semana confirmado."}
+      </div>
+      {hist}
+    </div>
+  );
   return (
-    <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}66`, borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
-      <div style={{ fontSize: 13, color: C.texto }}><b style={{ color: C.vermelho }}>⚠ {c.atrasado ? "Envio em atraso!" : "Atenção ao prazo de envio"}</b> — envie até <b>segunda-feira</b> as SM-is dos materiais que precisam chegar na próxima semana. Se nada for necessário, confirme abaixo. O atraso por mais de 24h bloqueia seu envio e aciona o Coordenador de Obras.</div>
-      <Btn small disabled={busy} onClick={confirmar}>Confirmar envio da semana</Btn>
+    <div>
+      <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}66`, borderRadius: 8, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+        <div style={{ fontSize: 13, color: C.texto }}><b style={{ color: C.vermelho }}>⚠ {c.atrasado ? "Envio em atraso!" : "Atenção ao prazo de envio"}</b> — envie até <b>segunda-feira</b> as SM-is dos materiais que precisam chegar na próxima semana. Se nada for necessário, use “sem necessidade”. O atraso por mais de 24h bloqueia seu envio e aciona o Coordenador de Obras.</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn small disabled={busy} onClick={confirmar}>Confirmar envio da semana</Btn>
+          <Btn small kind="ghost" disabled={busy} onClick={semNecessidade}>Sem necessidade de SM-is nesta semana</Btn>
+        </div>
+      </div>
+      {hist}
     </div>
   );
 }
@@ -271,7 +302,7 @@ export function SmI({ usuario, obras, eapPorObra, colaboradores = [], acesso, on
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-      {ehSup && <AvisoEnvioSupervisor onState={setCompSup} />}
+      {ehSup && <AvisoEnvioSupervisor usuario={usuario} onState={setCompSup} />}
       {podeCriar && !(ehSup && compSup?.travado) && <FormSmI obras={obras} eapPorObra={eapPorObra} usuario={usuario} onCriou={carregar} />}
 
       {gestor && <PainelDiretoria sms={sms} obras={obras} />}
