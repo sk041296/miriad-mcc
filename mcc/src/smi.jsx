@@ -148,8 +148,30 @@ function Coluna({ titulo, cor, lista, ...props }) {
   );
 }
 
-/* ---- Painel do Coordenador de Obras: conformidade + autorização de emergenciais ---- */
-function PainelCoordObras({ usuario, sms, obras, onMudou }) {
+/* ---- Autorização de SM-is emergenciais (Coord. Obras/Suprimentos/Planejamento + Diretoria) ---- */
+function PainelAutorizaEmergSm({ usuario, sms, obras, onMudou }) {
+  const [usuarios, setUsuarios] = useState([]);
+  useEffect(() => { listar("usuarios").then(setUsuarios).catch(() => {}); }, []);
+  const emergPend = sms.filter((s) => s.emergencial && !s.autorizada_emergencial && s.status !== "cancelada");
+  const autorizar = async (sm) => { try { await editar("sm_itens", sm.id, { autorizada_emergencial: true, autorizada_por: usuario.id }); onMudou(); } catch (e) { alert(e.message); } };
+  const descartar = async (sm) => { if (!confirm("Descartar esta SM-i emergencial? Ela será cancelada e não irá ao Suprimentos.")) return; try { await editar("sm_itens", sm.id, { status: "cancelada" }); onMudou(); } catch (e) { alert(e.message); } };
+  const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
+  if (emergPend.length === 0) return null;
+  return (
+    <Card title={`SM-is emergenciais aguardando autorização (${emergPend.length})`}>
+      {emergPend.map((sm) => {
+        const sol = usuarios.find((u) => u.id === sm.solicitante_id)?.nome || "—";
+        return <div key={sm.id} style={{ border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: 10, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+          <div style={{ fontSize: 13 }}><b>{nomeObra(sm.obra_id)}</b> · {sol} · necessário {sm.data_necessidade ? dataBR(sm.data_necessidade) : "—"}<div style={{ fontSize: 12, color: C.dim }}>{(sm.itens || []).map((i) => `${i.eap_codigo} ${i.material} (${fmt(i.quantidade)} ${i.unidade})`).join(" · ")}</div></div>
+          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}><Btn small kind="ghost" onClick={() => descartar(sm)}>Descartar</Btn><Btn small onClick={() => autorizar(sm)}>Autorizar p/ Suprimentos</Btn></div>
+        </div>;
+      })}
+    </Card>
+  );
+}
+
+/* ---- Conformidade de envio dos Supervisores (Coord. de Obras + Diretoria) ---- */
+function PainelConformidadeSm({ obras }) {
   const [usuarios, setUsuarios] = useState([]);
   const [envios, setEnvios] = useState([]);
   const recarregar = () => { listar("usuarios").then(setUsuarios).catch(() => {}); listar("envio_semanal").then(setEnvios).catch(() => {}); };
@@ -159,36 +181,18 @@ function PainelCoordObras({ usuario, sms, obras, onMudou }) {
   const confirmou = (uid) => envios.some((e) => e.usuario_id === uid && String(e.semana).slice(0, 10) === semana);
   const destravar = async (u) => { try { await editar("usuarios", u.id, { travado: false, travado_em: null }); recarregar(); } catch (e) { alert(e.message); } };
   const pendentes = sups.filter((u) => !confirmou(u.id) && !u.travado);
-  const emergPend = sms.filter((s) => s.emergencial && !s.autorizada_emergencial && s.status !== "cancelada");
-  const autorizar = async (sm) => { try { await editar("sm_itens", sm.id, { autorizada_emergencial: true, autorizada_por: usuario.id }); onMudou(); } catch (e) { alert(e.message); } };
-  const descartar = async (sm) => { if (!confirm("Descartar esta SM-i emergencial? Ela será cancelada e não irá ao Suprimentos.")) return; try { await editar("sm_itens", sm.id, { status: "cancelada" }); onMudou(); } catch (e) { alert(e.message); } };
-  const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
-
   return (
-    <>
-      {emergPend.length > 0 && (
-        <Card title={`SM-is emergenciais aguardando sua autorização (${emergPend.length})`}>
-          {emergPend.map((sm) => {
-            const sol = usuarios.find((u) => u.id === sm.solicitante_id)?.nome || "—";
-            return <div key={sm.id} style={{ border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: 10, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
-              <div style={{ fontSize: 13 }}><b>{nomeObra(sm.obra_id)}</b> · {sol} · necessário {sm.data_necessidade ? dataBR(sm.data_necessidade) : "—"}<div style={{ fontSize: 12, color: C.dim }}>{(sm.itens || []).map((i) => `${i.eap_codigo} ${i.material} (${fmt(i.quantidade)} ${i.unidade})`).join(" · ")}</div></div>
-              <div style={{ display: "flex", gap: 6, flexShrink: 0 }}><Btn small kind="ghost" onClick={() => descartar(sm)}>Descartar</Btn><Btn small onClick={() => autorizar(sm)}>Autorizar p/ Suprimentos</Btn></div>
-            </div>;
-          })}
-        </Card>
-      )}
-      <Card title="Conformidade de envio dos Supervisores (semana atual)" right={<span style={{ fontSize: 12, color: pendentes.length ? C.vermelho : C.verde, fontWeight: 700 }}>{pendentes.length ? `${pendentes.length} pendente(s)` : "todos em dia"}</span>}>
-        <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>O envio das SM-is da próxima semana deve ser confirmado até a segunda-feira. Supervisores travados perderam o prazo por mais de 24h — use “Destravar” após alinhar.</div>
-        <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Supervisor", "Status da semana", "Ação"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
-          <tbody>{sups.map((u) => {
-            const st = u.travado ? { t: "bloqueado", c: C.vermelho } : confirmou(u.id) ? { t: "confirmado", c: C.verde } : { t: "pendente", c: C.amareloAlerta };
-            return <tr key={u.id}><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{u.nome}</td>
-              <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, color: st.c, fontWeight: 700 }}>{st.t}</td>
-              <td style={{ padding: "7px 10px", borderBottom: `1px solid ${C.linha}` }}>{u.travado ? <Btn small kind="ghost" onClick={() => destravar(u)}>Destravar</Btn> : "—"}</td></tr>;
-          })}
-          {sups.length === 0 && <tr><td colSpan={3} style={{ padding: 12, color: C.dim, fontSize: 13 }}>Nenhum supervisor cadastrado.</td></tr>}</tbody></table>
-      </Card>
-    </>
+    <Card title="Conformidade de envio dos Supervisores (semana atual)" right={<span style={{ fontSize: 12, color: pendentes.length ? C.vermelho : C.verde, fontWeight: 700 }}>{pendentes.length ? `${pendentes.length} pendente(s)` : "todos em dia"}</span>}>
+      <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>O envio das SM-is da próxima semana deve ser confirmado até a segunda-feira. Supervisores travados perderam o prazo por mais de 24h — use “Destravar” após alinhar.</div>
+      <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr style={{ background: C.preto }}>{["Supervisor", "Status da semana", "Ação"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+        <tbody>{sups.map((u) => {
+          const st = u.travado ? { t: "bloqueado", c: C.vermelho } : confirmou(u.id) ? { t: "confirmado", c: C.verde } : { t: "pendente", c: C.amareloAlerta };
+          return <tr key={u.id}><td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{u.nome}</td>
+            <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, color: st.c, fontWeight: 700 }}>{st.t}</td>
+            <td style={{ padding: "7px 10px", borderBottom: `1px solid ${C.linha}` }}>{u.travado ? <Btn small kind="ghost" onClick={() => destravar(u)}>Destravar</Btn> : "—"}</td></tr>;
+        })}
+        {sups.length === 0 && <tr><td colSpan={3} style={{ padding: 12, color: C.dim, fontSize: 13 }}>Nenhum supervisor cadastrado.</td></tr>}</tbody></table>
+    </Card>
   );
 }
 
@@ -306,7 +310,8 @@ export function SmI({ usuario, obras, eapPorObra, colaboradores = [], acesso, on
       {podeCriar && !(ehSup && compSup?.travado) && <FormSmI obras={obras} eapPorObra={eapPorObra} usuario={usuario} onCriou={carregar} />}
 
       {gestor && <PainelDiretoria sms={sms} obras={obras} />}
-      {(ehCoordObras || gestor) && <PainelCoordObras usuario={usuario} sms={sms} obras={obras} onMudou={carregar} />}
+      {(ehCoordObras || ehCoord || ehCoordPlan || gestor) && <PainelAutorizaEmergSm usuario={usuario} sms={sms} obras={obras} onMudou={carregar} />}
+      {(ehCoordObras || gestor) && <PainelConformidadeSm obras={obras} />}
 
       {(ehOperador || ehCoord || gestor) && urgentes.length > 0 && (
         <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: "10px 14px" }}>

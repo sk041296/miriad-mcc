@@ -172,11 +172,56 @@ function MultiEapPicker({ itens, valor = [], onChange, comValor = true, labelVal
 }
 
 const DRAFT = "mcc_rdo_draft_v1";
+
+// normalização acento/caixa para buscas
+const normTxt = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+// dropdown multisseleção de funcionários com busca (ordenado por função, depois nome)
+function FuncionariosPicker({ funcionarios, selectedIds, onChange, placeholder = "Selecionar funcionários…" }) {
+  const [open, setOpen] = useState(false);
+  const [q, setQ] = useState("");
+  const ordenados = useMemo(() => [...funcionarios].sort((a, b) =>
+    (a.atribuicao || "").localeCompare(b.atribuicao || "", "pt-BR") || (a.nome || "").localeCompare(b.nome || "", "pt-BR")
+  ), [funcionarios]);
+  const nq = normTxt(q);
+  const filtrados = nq ? ordenados.filter((f) => normTxt(f.nome).includes(nq) || normTxt(f.atribuicao).includes(nq)) : ordenados;
+  const sel = funcionarios.filter((f) => selectedIds.includes(f.id));
+  const toggle = (id) => onChange(selectedIds.includes(id) ? selectedIds.filter((x) => x !== id) : [...selectedIds, id]);
+  return (
+    <div style={{ position: "relative" }}>
+      <button type="button" onClick={() => setOpen((o) => !o)} style={inp({ width: "100%", boxSizing: "border-box", textAlign: "left", cursor: "pointer", display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8 })}>
+        <span style={{ color: sel.length ? C.texto : C.dim, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{sel.length ? `${sel.length} funcionário(s) selecionado(s)` : placeholder}</span>
+        <span style={{ color: C.dim }}>▾</span>
+      </button>
+      {sel.length > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 5, marginTop: 6 }}>
+          {sel.map((f) => <span key={f.id} style={{ background: C.laranjaClaro, border: `1px solid ${C.laranja}`, borderRadius: 20, padding: "2px 8px", fontSize: 11, fontWeight: 700, display: "inline-flex", alignItems: "center", gap: 6 }}>{f.nome}<button type="button" onClick={() => toggle(f.id)} style={{ background: "none", border: "none", color: C.vermelho, cursor: "pointer", fontSize: 12, padding: 0, lineHeight: 1 }}>✕</button></span>)}
+        </div>
+      )}
+      {open && (<>
+        <div onClick={() => setOpen(false)} style={{ position: "fixed", inset: 0, zIndex: 40 }} />
+        <div style={{ position: "absolute", zIndex: 41, top: "calc(100% + 4px)", left: 0, right: 0, background: "#fff", border: `1px solid ${C.linha}`, borderRadius: 10, boxShadow: "0 12px 30px rgba(0,0,0,.18)", overflow: "hidden" }}>
+          <div style={{ padding: 8, borderBottom: `1px solid ${C.linha}` }}>
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nome ou função…" style={inp({ width: "100%", boxSizing: "border-box", fontSize: 13 })} />
+          </div>
+          <div style={{ maxHeight: 220, overflowY: "auto" }}>
+            {filtrados.length === 0 && <div style={{ padding: 10, fontSize: 12, color: C.dim }}>{funcionarios.length === 0 ? "Cadastre funcionários no menu Cadastros." : "Nenhum funcionário encontrado."}</div>}
+            {filtrados.map((f) => <label key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 10px", cursor: "pointer", background: selectedIds.includes(f.id) ? C.laranjaClaro : "transparent" }}>
+              <input type="checkbox" checked={selectedIds.includes(f.id)} onChange={() => toggle(f.id)} style={{ accentColor: C.laranja }} />
+              <span style={{ fontSize: 12.5, fontWeight: 600 }}>{f.nome}</span><span style={{ fontSize: 11, color: C.dim, marginLeft: "auto" }}>{f.atribuicao}</span>
+            </label>)}
+          </div>
+        </div>
+      </>)}
+    </div>
+  );
+}
+
 function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restricoes = [], onMudou }) {
   const novaAtv = () => ({ k: uid(), eapId: "", qtde: 0, comentarios: "", funcionarioIds: [] });
   const [resumoObra, setResumoObra] = useState({ acum: {}, maxNumero: 0 });
   const novaRestr = () => ({ k: uid(), eapId: "", material: "", dataSolicitacao: hojeISO() });
-  const vazio = (obraId) => ({ obraId: obraId || obras[0]?.id || "", numero: "", data: hojeISO(), clima: CLIMAS[0], efetivo: 0, ocorrencias: "", comentarios: "", atividades: [novaAtv()], equipe: [], restricoes: [], fotos: [], semAtividades: false });
+  const vazio = (obraId) => ({ obraId: obraId || obras[0]?.id || "", numero: "", data: hojeISO(), clima: CLIMAS[0], efetivo: 0, ocorrencias: "", comentarios: "", atividades: [novaAtv()], equipe: [], equipeObraIds: [], restricoes: [], fotos: [], semAtividades: false });
   const [form, setForm] = useState(() => { try { const d = JSON.parse(localStorage.getItem(DRAFT)); if (d?.atividades) return { fotos: [], ...d }; } catch {} return vazio(); });
   const [salvando, setSalvando] = useState(false); const [msg, setMsg] = useState(null);
   const [enviandoFoto, setEnviandoFoto] = useState(false);
@@ -197,7 +242,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
     const restricoesForm = restrDoRdo.map((x) => ({ k: uid(), eapId: acharId(x.eap_codigo), material: x.material, dataSolicitacao: x.data_solicitacao || hojeISO() }));
     setForm({ obraId: r.obra_id, numero: r.numero || "", data: (r.data || "").slice(0, 10), clima: r.clima || CLIMAS[0],
       efetivo: r.efetivo || 0, ocorrencias: r.ocorrencias || "", comentarios: r.comentarios || "",
-      atividades: atividades.length ? atividades : [novaAtv()], equipe: r.equipe || [], restricoes: restricoesForm, fotos: r.fotos || [] });
+      atividades: atividades.length ? atividades : [novaAtv()], equipe: r.equipe || [], equipeObraIds: r.payload?.equipeObraIds || [], restricoes: restricoesForm, fotos: r.fotos || [] });
     setEditandoId(r.id); setMsg(null);
     topoRef.current?.scrollIntoView({ behavior: "smooth", block: "start" });
   };
@@ -242,7 +287,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
       setMsg({ tipo: "ok", txt: `Atividade não descrita "${codigo}" criada e marcada na EAP para consulta posterior.` });
     } catch (e) { alert(e.message); }
   };
-  const efetivoCalc = new Set(form.atividades.flatMap((a) => a.funcionarioIds)).size || form.efetivo;
+  const efetivoCalc = new Set([...form.atividades.flatMap((a) => a.funcionarioIds), ...(form.equipeObraIds || [])]).size || form.efetivo;
 
   const salvar = async () => {
     if (semEap) return;
@@ -261,7 +306,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
           medicao: Number(a.qtde) * valorUnit(it), comentarios: a.comentarios,
           funcionarios: a.funcionarioIds.map((id) => { const f = funcionarios.find((x) => x.id === id); return f ? { nome: f.nome, atribuicao: f.atribuicao } : null; }).filter(Boolean) };
       });
-      const equipe = [...new Set(form.atividades.flatMap((a) => a.funcionarioIds))].map((id) => { const f = funcionarios.find((x) => x.id === id); return f ? { ocupacao: f.atribuicao, nome: f.nome } : null; }).filter(Boolean);
+      const equipe = [...new Set([...form.atividades.flatMap((a) => a.funcionarioIds), ...(form.equipeObraIds || [])])].map((id) => { const f = funcionarios.find((x) => x.id === id); return f ? { ocupacao: f.atribuicao, nome: f.nome } : null; }).filter(Boolean);
       const rdo = { obra_id: form.obraId, numero: form.numero || null, data: form.data, usuario_id: usuario.id, responsavel_nome: usuario.nome,
         clima: form.clima, efetivo: form.semAtividades ? 0 : efetivoCalc, ocorrencias: form.ocorrencias, comentarios: form.comentarios,
         atividades: form.semAtividades ? [] : atividades, equipe: form.semAtividades ? [] : equipe, sem_atividades: !!form.semAtividades,
@@ -353,17 +398,23 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
                   <div><Lbl>Comentários da atividade</Lbl><textarea rows={2} value={a.comentarios} onChange={(e) => upAtv(a.k, { comentarios: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box", resize: "vertical" })} /></div>
                   <div><Lbl>Funcionários na atividade</Lbl>
-                    <div style={{ maxHeight: 110, overflowY: "auto", border: `1px solid ${C.linha}`, borderRadius: 8 }}>
-                      {funcionarios.length === 0 && <div style={{ padding: 8, fontSize: 12, color: C.dim }}>Cadastre funcionários no menu Cadastros.</div>}
-                      {funcionarios.map((f) => <label key={f.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "4px 8px", cursor: "pointer", background: a.funcionarioIds.includes(f.id) ? C.laranjaClaro : "transparent" }}>
-                        <input type="checkbox" checked={a.funcionarioIds.includes(f.id)} onChange={() => upAtv(a.k, { funcionarioIds: a.funcionarioIds.includes(f.id) ? a.funcionarioIds.filter((x) => x !== f.id) : [...a.funcionarioIds, f.id] })} style={{ accentColor: C.laranja }} />
-                        <span style={{ fontSize: 12, fontWeight: 600 }}>{f.nome}</span><span style={{ fontSize: 11, color: C.dim }}>{f.atribuicao}</span></label>)}
-                    </div></div>
+                    <FuncionariosPicker funcionarios={funcionarios} selectedIds={a.funcionarioIds} onChange={(ids) => upAtv(a.k, { funcionarioIds: ids })} />
+                  </div>
                 </div>
               </div>
             );
           })}
           <Btn kind="ghost" small onClick={() => setForm((f) => ({ ...f, atividades: [...f.atividades, novaAtv()] }))}>+ Adicionar atividade</Btn>
+
+          {!form.semAtividades && (
+            <div style={{ marginTop: 14, border: `1px solid ${C.linha}`, borderRadius: 10, padding: 14, background: C.cinza }}>
+              <div style={{ fontWeight: 800, fontSize: 12, color: C.preto, marginBottom: 4, textTransform: "uppercase", letterSpacing: ".05em" }}>👷 Equipe presente na obra</div>
+              <div style={{ fontSize: 11, color: C.dim, marginBottom: 8 }}>Funcionários presentes na obra hoje que não estão vinculados a uma atividade específica. Entram no efetivo e na equipe do RDO.</div>
+              <div style={{ maxWidth: 420 }}>
+                <FuncionariosPicker funcionarios={funcionarios} selectedIds={form.equipeObraIds || []} onChange={(ids) => setForm((f) => ({ ...f, equipeObraIds: ids }))} placeholder="Alocar funcionários na obra…" />
+              </div>
+            </div>
+          )}
 
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginTop: 14 }}>
             <div><Lbl>Comentários gerais (sai no PDF do cliente)</Lbl><textarea rows={2} value={form.comentarios} onChange={(e) => setForm({ ...form, comentarios: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box", resize: "vertical" })} /></div>
@@ -390,7 +441,7 @@ function RdoI({ usuario, obras, eapPorObra, rdos, funcionarios, contratos, restr
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
               <div style={{ fontWeight: 800, fontSize: 12, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em" }}>📷 Fotos do dia</div>
               <Btn small kind="ghost" disabled={enviandoFoto} onClick={() => fotoRef.current?.click()}>{enviandoFoto ? "Enviando…" : "+ Adicionar fotos"}</Btn>
-              <input ref={fotoRef} type="file" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) adicionarFotos([...e.target.files]); e.target.value = ""; }} />
+              <input ref={fotoRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { if (e.target.files?.length) adicionarFotos([...e.target.files]); e.target.value = ""; }} />
             </div>
             {(form.fotos || []).length === 0 && <div style={{ fontSize: 12, color: C.dim }}>Anexe fotos da obra e selecione a qual item da EAP cada uma se refere.</div>}
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: 12 }}>
@@ -1037,6 +1088,7 @@ function Prestadores({ obras, funcionarios, contratos, onMudou }) {
   const vazio = { nome: "", atribuicao: ATRIBUICOES[0], vinculo: "direto", obra_id: "", custo_mensal: 0, contrato_id: "" };
   const [f, setF] = useState(vazio);
   const [filtro, setFiltro] = useState("todos");
+  const [busca, setBusca] = useState("");
   const [busy, setBusy] = useState(false);
   const [customAtribs, setCustomAtribs] = useState([]);
   useEffect(() => { getConfig("atribuicoes").then((v) => setCustomAtribs(Array.isArray(v) ? v : [])).catch(() => {}); }, []);
@@ -1049,7 +1101,8 @@ function Prestadores({ obras, funcionarios, contratos, onMudou }) {
     setF((s) => ({ ...s, atribuicao: nova }));
   };
   const salvar = async () => { setBusy(true); try { await criar("funcionarios", { ...f, obra_id: f.obra_id || null, contrato_id: f.contrato_id || null, custo_mensal: Number(f.custo_mensal) || null }); setF({ ...vazio, vinculo: f.vinculo, obra_id: f.obra_id }); onMudou(); } catch (e) { alert(e.message); } finally { setBusy(false); } };
-  const lista = funcionarios.filter((x) => filtro === "todos" || (x.vinculo || "direto") === filtro);
+  const nb = normTxt(busca);
+  const lista = funcionarios.filter((x) => (filtro === "todos" || (x.vinculo || "direto") === filtro) && (!nb || normTxt(x.nome).includes(nb) || normTxt(x.atribuicao).includes(nb)));
   const diretos = funcionarios.filter((x) => (x.vinculo || "direto") === "direto");
   const indiretos = funcionarios.filter((x) => x.vinculo === "indireto");
   const custoDiretos = sum(diretos.map((x) => x.custo_mensal));
@@ -1072,12 +1125,15 @@ function Prestadores({ obras, funcionarios, contratos, onMudou }) {
         </div>
       </Card>
       <Card title={`Prestadores (${lista.length})`} right={
-        <div style={{ display: "flex", gap: 4 }}>{["todos", "direto", "indireto"].map((v) => <button key={v} onClick={() => setFiltro(v)} style={{ background: filtro === v ? C.preto : C.branco, color: filtro === v ? "#fff" : C.dim, border: `1px solid ${filtro === v ? C.preto : C.linha}`, borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{v}</button>)}</div>}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar nome ou função…" style={inp({ width: 210, fontSize: 12 })} />
+          <div style={{ display: "flex", gap: 4 }}>{["todos", "direto", "indireto"].map((v) => <button key={v} onClick={() => setFiltro(v)} style={{ background: filtro === v ? C.preto : C.branco, color: filtro === v ? "#fff" : C.dim, border: `1px solid ${filtro === v ? C.preto : C.linha}`, borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{v}</button>)}</div>
+        </div>}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Nome</Th><Th>Atribuição</Th><Th>Vínculo</Th><Th>Obra</Th><Th>Contrato</Th><Th right>Custo mensal</Th><Th /></tr></thead>
           <tbody>{lista.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const c = contratos.find((y) => y.id === x.contrato_id); return (
             <tr key={x.id}><Td style={{ fontWeight: 600 }}>{x.nome}</Td><Td>{x.atribuicao}</Td>
               <Td><span style={{ background: (x.vinculo || "direto") === "direto" ? C.laranja : C.cinza2, color: (x.vinculo || "direto") === "direto" ? "#fff" : C.dim, borderRadius: 5, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>{x.vinculo || "direto"}</span></Td>
-              <Td>{o?.codigo || "—"}</Td><Td style={{ fontSize: 12 }}>{c ? (c.empresa || c.responsavel) : "—"}</Td><Td right>{x.custo_mensal ? fmtR(x.custo_mensal) : "—"}</Td>
+              <Td><select value={x.obra_id || ""} onChange={async (e) => { try { await editar("funcionarios", x.id, { obra_id: e.target.value || null }); onMudou(); } catch (err) { alert(err.message); } }} style={inp({ fontSize: 12, padding: "3px 6px" })}><option value="">—</option>{obras.map((ob) => <option key={ob.id} value={ob.id}>{ob.codigo}</option>)}</select></Td><Td style={{ fontSize: 12 }}>{c ? (c.empresa || c.responsavel) : "—"}</Td><Td right>{x.custo_mensal ? fmtR(x.custo_mensal) : "—"}</Td>
               <Td><button onClick={async () => { if (confirm("Excluir prestador?")) { await remover("funcionarios", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>
           ); })}
             {lista.length === 0 && <tr><Td colSpan={7} color={C.dim} style={{ padding: 14 }}>Nenhum prestador cadastrado.</Td></tr>}</tbody></table>
@@ -2444,7 +2500,7 @@ function Obras({ obras, eapPorObra, onMudou }) {
       {obras.map((o) => (
         <Card key={o.id} title={`${o.codigo} · ${o.nome}`} right={<div style={{ display: "flex", gap: 8 }}>
           <Btn kind="ghost" small onClick={() => setEditObra({ id: o.id, codigo: o.codigo, nome: o.nome, contratante: o.contratante || "", contrato: o.contrato || "", local: o.local || "", cno: o.cno || "", centro_custo: o.centro_custo || "", prazo_dias: o.prazo_dias || "", data_inicio: o.data_inicio ? String(o.data_inicio).slice(0, 10) : "" })}>✎ Editar</Btn>
-          <Btn kind="danger" small onClick={async () => { if (confirm(`Excluir ${o.codigo} e todos os dados?`)) { await remover("obras", o.id); onMudou(); } }}>Excluir</Btn>
+          <Btn kind="danger" small onClick={async () => { if (!confirm(`Excluir ${o.codigo} e todos os dados?`)) return; try { await remover("obras", o.id); onMudou(); } catch (e) { alert("Não foi possível excluir a obra: " + e.message); } }}>Excluir</Btn>
         </div>}>
           {editObra?.id === o.id && (
             <div style={{ border: `2px solid ${C.laranja}`, borderRadius: 10, padding: 14, marginBottom: 12, background: C.laranjaClaro }}>

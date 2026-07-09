@@ -248,8 +248,9 @@ export default async function handler(req, res) {
     if (cfg.filtro && req.query[cfg.filtro]) q = q.eq(cfg.filtro, req.query[cfg.filtro]);
     if (t === "rdos" && req.query.desde) q = q.gte("data", req.query.desde);
     if (obrasPermitidas && TEM_OBRA_ID.has(t)) q = q.in(t === "obras" ? "id" : "obra_id", obrasPermitidas);
-    // emergenciais só aparecem para Suprimentos depois de autorizadas pelo Coord. de Obras
-    if (t === "sm_itens" && SUPRIMENTOS.has(s.papel)) q = q.or("emergencial.eq.false,autorizada_emergencial.eq.true");
+    // emergenciais só aparecem para o OPERADOR de Suprimentos depois de autorizadas;
+    // o Coordenador de Suprimentos precisa vê-las pendentes para autorizar.
+    if (t === "sm_itens" && s.papel === "op_suprimentos") q = q.or("emergencial.eq.false,autorizada_emergencial.eq.true");
     if (t === "ss_itens" && SUPRIMENTOS.has(s.papel)) q = q.or("emergencial.eq.false,autorizada_emergencial.eq.true");
     const { data, error } = await q.limit(20000);
     if (error) return res.status(500).json({ error: error.message });
@@ -676,12 +677,28 @@ export default async function handler(req, res) {
     }
     if (t === "designacoes" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     if (t === "orcamentos_comerciais" && !GERENCIA_ORCCOM.has(s.papel)) return res.status(403).json({ error: "Apenas Diretoria ou Coord. de Planejamento podem excluir propostas." });
-    // Excluir obra: remove as dependências antes (evita erro de foreign key)
+    // Excluir obra: remove/desvincula as dependências antes (evita erro de foreign key)
     if (t === "obras") {
       if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas CEO/Diretor podem excluir obras." });
-      const dependentes = ["eap_itens", "rdos", "pos", "pmm", "sm_itens", "ss_itens", "ordens_compra", "contratos_servico", "designacoes", "ordens_pagamento", "memoriais_custo", "memoriais_itens", "boletins_medicao", "restricoes_material"];
+      // 1) desvincula a proposta comercial de origem (FK RESTRICT — não apaga a proposta)
+      try { await supabase.from("orcamentos_comerciais").update({ obra_id: null }).eq("obra_id", id); } catch (_) {}
+      // 2) memoriais: apaga os itens (por memorial) antes dos cabeçalhos
+      try {
+        const { data: mems } = await supabase.from("memoriais_custo").select("id").eq("obra_id", id);
+        const memIds = (mems || []).map((m) => m.id);
+        if (memIds.length) await supabase.from("memoriais_itens").delete().in("memorial_id", memIds);
+      } catch (_) {}
+      // 3) desvincula funcionários (obra e contrato) para não violar FK ao apagar contratos
+      try {
+        const { data: cts } = await supabase.from("contratos_servico").select("id").eq("obra_id", id);
+        const ctIds = (cts || []).map((c) => c.id);
+        await supabase.from("funcionarios").update({ obra_id: null, contrato_id: null }).eq("obra_id", id);
+        if (ctIds.length) await supabase.from("funcionarios").update({ contrato_id: null }).in("contrato_id", ctIds);
+      } catch (_) {}
+      const dependentes = ["eap_itens", "rdos", "pos", "pmm", "sm_itens", "ss_itens", "ordens_compra", "contratos_servico", "designacoes", "ordens_pagamento", "boletins_medicao", "restricoes_material", "memoriais_custo"];
       for (const tab of dependentes) {
-        try { await supabase.from(tab).delete().eq("obra_id", id); } catch (_) {}
+        const { error: eDep } = await supabase.from(tab).delete().eq("obra_id", id);
+        if (eDep) return res.status(500).json({ error: `Falha ao excluir dependência (${tab}): ${eDep.message}` });
       }
       const { error: eObra } = await supabase.from("obras").delete().eq("id", id);
       if (eObra) return res.status(500).json({ error: "Falha ao excluir obra: " + eObra.message });

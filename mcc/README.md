@@ -1,5 +1,13 @@
 # Miriad Construction Control (MCC)
 
+## v11.04 — Melhorias no RDO, funcionários, SM-i emergencial e exclusão de obras
+- **RDO · dropdown de funcionários:** o campo "Funcionários na atividade" virou um menu suspenso com busca por nome ou função, com chips dos selecionados. Funções listadas em ordem alfabética.
+- **RDO · equipe presente na obra:** novo seletor para alocar funcionários na obra do dia, além da alocação por atividade — entra no efetivo e na equipe do RDO.
+- **SM-i emergencial:** Coordenador de Suprimentos e Coordenador de Planejamento agora também autorizam SM-is emergenciais (antes só Coord. de Obras); ao autorizar, a SM-i passa a aparecer na tela de Suprimentos.
+- **Exclusão de obras corrigida:** removidos os bloqueios de chave estrangeira (propostas comerciais, memoriais e funcionários vinculados) e os erros agora aparecem para o usuário em vez de falhar em silêncio.
+- **Cadastro de funcionários:** buscador com reconhecimento de palavra (nome/função, sem depender de acento) e a obra do funcionário agora pode ser realocada direto na lista.
+- **MCC mobile · fotos do RDO:** as fotos agora podem ser escolhidas da galeria do celular (antes abria direto a câmera).
+
 ## v11.03 — Pendências por usuário, log de travamentos e SM-i sem necessidade
 - **Nova tela "Pendências e travamentos"** dentro da área de Usuários (aba no topo), visível para **CEO, Diretor e Coord. de Planejamento**. Mostra, por supervisor: pendências e tarefas com vencimento próximo (RDO, SM-i, POS, PMM, SS-i) com status colorido (em dia / vence em breve / atrasado) e prazo, além do **histórico de travamentos** de acesso — incluindo a tarefa que motivou cada bloqueio e quando/por quem foi destravado.
 - **Destravamento direto na tela:** botão "Destravar acesso" no card do usuário bloqueado — executável por CEO, Diretor e Coord. de Planejamento. Fecha o registro de travamento no log (quem e quando).
