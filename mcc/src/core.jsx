@@ -79,6 +79,8 @@ export const criarObraComEap = (obra, itens) => req("/api/data", { method: "POST
 export const criarRdoCompleto = (rdo, restricoes, rdo_id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rdo_completo", rdo, restricoes, rdo_id }) }).then((d) => d.row);
 export const editar = (t, id, patch) => req("/api/data", { method: "PATCH", body: JSON.stringify({ t, id, patch }) });
 export const aprovarOrdem = (tabela, id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "aprovar_ordem", tabela, id }) });
+export const aprovarBmp = (id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "aprovar_bmp", id }) }).then((d) => d);
+export const rejeitarBmp = (id, motivo) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "rejeitar_bmp", id, motivo }) }).then((d) => d);
 export const sugerirComposicaoIA = (itens) => req("/api/sugerir-composicao", { method: "POST", body: JSON.stringify({ itens }) }).then((d) => d.composicoes || []);
 export const tornarProjeto = (id) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "tornar_projeto", id }) });
 export const decidirAcaoUsuario = (id, aprovar, motivo) => req("/api/data", { method: "POST", body: JSON.stringify({ t: "decidir_acao_usuario", id, aprovar, motivo }) });

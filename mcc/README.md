@@ -1,5 +1,14 @@
 # Miriad Construction Control (MCC)
 
+## v11.05 — Boletim de Medição (BMP) vira Ordem de Pagamento
+- **Aprovar e gerar OP:** na tela Medições (BMP), cada boletim emitido agora lista com status (aguardando aprovação / aprovado / rejeitado). Coord. de Obras, Coord. de Planejamento ou Diretoria podem **Aprovar e gerar OP** — o sistema cria a OP no financeiro (coluna Pendente NF) pelo **valor líquido medido** (já descontada a retenção). Também dá para **Rejeitar** com motivo.
+- **PDF do boletim para envio manual:** botão **PDF** gera o Boletim de Medição no papel timbrado da Miriad (itens medidos, retenção e líquido a faturar), para envio manual ao prestador emitir a NF. Sem envio automático por e-mail nesta versão.
+- A OP nasce idempotente (não duplica se o boletim for aprovado de novo) e carrega o vínculo com o boletim de origem.
+
+> **Migração:** rode `supabase/migration_v11_05.sql` (colunas de aprovação em `boletins_medicao`).
+>
+> **Atenção:** a aprovação da OS-i continua gerando OPs pelas parcelas da condição de pagamento. Se você passar a pagar por medição (BMP), evite usar as duas fontes para o mesmo contrato para não gerar OPs em duplicidade.
+
 ## v11.04 — Melhorias no RDO, funcionários, SM-i emergencial e exclusão de obras
 - **RDO · dropdown de funcionários:** o campo "Funcionários na atividade" virou um menu suspenso com busca por nome ou função, com chips dos selecionados. Funções listadas em ordem alfabética.
 - **RDO · equipe presente na obra:** novo seletor para alocar funcionários na obra do dia, além da alocação por atividade — entra no efetivo e na equipe do RDO.

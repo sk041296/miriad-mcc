@@ -293,6 +293,43 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true, status: temSup && temDir ? "aprovada" : "aguardando", ops_geradas: ops });
     }
 
+    // aprovar/rejeitar um Boletim de Medição (BMP) — ao aprovar, gera a OP pelo líquido medido
+    if (t === "aprovar_bmp" || t === "rejeitar_bmp") {
+      const { id, motivo } = req.body || {};
+      if (!["ceo", "diretor", "coord_planejamento", "coord_obras"].includes(s.papel))
+        return res.status(403).json({ error: "Apenas Coord. de Obras, Coord. de Planejamento ou Diretoria podem aprovar boletins." });
+      const { data: bmp } = await supabase.from("boletins_medicao").select("*").eq("id", id).maybeSingle();
+      if (!bmp) return res.status(404).json({ error: "Boletim não encontrado." });
+      if (t === "rejeitar_bmp") {
+        await supabase.from("boletins_medicao").update({ status: "rejeitado", aprovado_por: s.id, aprovado_em: new Date().toISOString(), rejeicao_motivo: motivo || null }).eq("id", id);
+        return res.status(200).json({ ok: true, status: "rejeitado" });
+      }
+      if (bmp.status === "aprovado" && bmp.op_gerada) return res.status(200).json({ ok: true, status: "aprovado", ja: true, op_valor: Number(bmp.liquido) || 0 });
+      await supabase.from("boletins_medicao").update({ status: "aprovado", aprovado_por: s.id, aprovado_em: new Date().toISOString(), op_gerada: true }).eq("id", id);
+      // dados do contrato/obra para compor a OP
+      const { data: ct } = await supabase.from("contratos_servico").select("empresa,responsavel,cnpj,numero").eq("id", bmp.contrato_id).maybeSingle();
+      let centro = null;
+      if (bmp.obra_id) { const { data: ob } = await supabase.from("obras").select("centro_custo").eq("id", bmp.obra_id).maybeSingle(); centro = ob?.centro_custo || null; }
+      const liquido = Number(bmp.liquido) || 0;
+      const chaveParc = "BMP-" + (bmp.numero || "1");
+      const op = {
+        origem_tipo: "bmp",
+        origem_id: bmp.id,
+        obra_id: bmp.obra_id || null,
+        numero: (ct?.numero || "OS") + "-" + chaveParc,
+        fornecedor: ct?.empresa || ct?.responsavel || null,
+        cnpj: ct?.cnpj || null,
+        centro_custo: centro,
+        descricao: "Medição (BMP) nº " + (bmp.numero || "") + " · " + (ct?.empresa || ct?.responsavel || ""),
+        valor: liquido,
+        vencimento: null,
+        status: "pendente_nf",
+        payload: { parcela: chaveParc, obs: bmp.observacao || "", origem: "bmp_aprovada", boletim_id: bmp.id },
+      };
+      await supabase.from("ordens_pagamento").upsert(op, { onConflict: "origem_tipo,origem_id,(payload->>'parcela')", ignoreDuplicates: true });
+      return res.status(200).json({ ok: true, status: "aprovado", op_valor: liquido });
+    }
+
     // aprovar/rejeitar ações de usuário pendentes (só diretoria)
     if (t === "decidir_acao_usuario") {
       if (!ADMIN_TOTAL.has(s.papel)) return res.status(403).json({ error: "Apenas Diretoria pode decidir ações de usuário." });

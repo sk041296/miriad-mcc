@@ -1,12 +1,16 @@
 import React, { useState, useEffect } from "react";
-import { C, fmt, fmtR, pct, sum, dataBR, Card, Btn, Lbl, inp, NumInput, listar, criar, uploadFoto } from "./core.jsx";
+import { C, fmt, fmtR, pct, sum, dataBR, Card, Btn, Lbl, inp, NumInput, listar, criar, uploadFoto, aprovarBmp, rejeitarBmp } from "./core.jsx";
+import { gerarPdfBMP } from "./pdf.js";
 
 const podeMedir = (p) => ["sup_obras", "coord_planejamento", "ceo", "diretor"].includes(p);
+const podeAprovarBmpFn = (p) => ["ceo", "diretor", "coord_planejamento", "coord_obras"].includes(p);
 
 export function BMPMedicoes({ usuario }) {
   const [d, setD] = useState(null);
   const [medindo, setMedindo] = useState(null); // contrato em medição
   const [aberto, setAberto] = useState({});
+  const [busy, setBusy] = useState(null);
+  const podeAprovarBmp = podeAprovarBmpFn(usuario.papel);
 
   const carregar = async () => {
     const [contratos, obras, boletins] = await Promise.all([listar("contratos_servico"), listar("obras"), listar("boletins_medicao")]);
@@ -15,6 +19,18 @@ export function BMPMedicoes({ usuario }) {
     setD({ contratos, obras, boletins, eapPorObra });
   };
   useEffect(() => { carregar(); }, []);
+  const aprovar = async (b) => {
+    if (!confirm(`Aprovar o boletim nº ${b.numero} e gerar a OP de ${fmtR(b.liquido)} no financeiro?`)) return;
+    setBusy(b.id);
+    try { const r = await aprovarBmp(b.id); await carregar(); alert(`Boletim aprovado! OP de ${fmtR(r.op_valor != null ? r.op_valor : b.liquido)} gerada no financeiro (Pendente NF). Use “PDF” para enviar a medição ao prestador.`); }
+    catch (e) { alert(e.message); } finally { setBusy(null); }
+  };
+  const rejeitar = async (b) => {
+    const m = prompt("Motivo da rejeição (opcional):", ""); if (m === null) return;
+    setBusy(b.id);
+    try { await rejeitarBmp(b.id, m); await carregar(); } catch (e) { alert(e.message); } finally { setBusy(null); }
+  };
+  const baixarPdf = (b, ct, o) => gerarPdfBMP(b, ct, o, usuario.nome);
   if (!d) return <div style={{ color: C.dim, padding: 20 }}>Carregando contratos…</div>;
   const { contratos, obras, boletins, eapPorObra } = d;
   const obraDe = (id) => obras.find((o) => o.id === id);
@@ -26,7 +42,7 @@ export function BMPMedicoes({ usuario }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
       <Card title="Medições de prestadores (BMP) — OS-is vigentes">
-        <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 12 }}>Cada cartão é um contrato de serviço (OS-i). Clique em <b>Gerar medição</b> para medir o avanço do prestador. A medição segue para aprovação (Coord. de Obras, Planejamento e Diretor de Engenharia) na próxima etapa.</div>
+        <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 12 }}>Cada cartão é um contrato de serviço (OS-i). Clique em <b>Gerar medição</b> para medir o avanço do prestador. Ao ser <b>aprovada</b> (Coord. de Obras, Planejamento ou Diretoria), a medição gera automaticamente a <b>OP no financeiro</b> (pelo líquido) e disponibiliza o <b>PDF</b> para envio manual ao prestador.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
           {contratos.map((ct) => {
             const o = obraDe(ct.obra_id);
@@ -59,7 +75,30 @@ export function BMPMedicoes({ usuario }) {
                       {itens.length === 0 && <tr><td colSpan={4} style={{ ...tdb, color: C.dim }}>Contrato sem itens de EAP detalhados.</td></tr>}</tbody>
                   </table>
                 )}
-                {bmpDoContrato(ct.id).length > 0 && <div style={{ fontSize: 11, color: C.dim, marginTop: 8 }}>{bmpDoContrato(ct.id).length} boletim(ns) emitido(s).</div>}
+                {(() => {
+                  const lista = boletins.filter((b) => b.contrato_id === ct.id).sort((a, b) => (a.numero || 0) - (b.numero || 0));
+                  if (!lista.length) return null;
+                  const stBadge = (st) => st === "aprovado" ? { t: "aprovado · OP gerada", c: C.verde } : st === "rejeitado" ? { t: "rejeitado", c: C.vermelho } : { t: "aguardando aprovação", c: C.amareloAlerta };
+                  return (
+                    <div style={{ marginTop: 10, borderTop: `1px solid ${C.linha}`, paddingTop: 8 }}>
+                      <div style={{ fontSize: 10.5, color: C.dim, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>Boletins emitidos</div>
+                      {lista.map((b) => { const st = stBadge(b.status); return (
+                        <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "6px 0", borderBottom: `1px solid ${C.linha}` }}>
+                          <span style={{ fontSize: 12, fontWeight: 700 }}>Nº {b.numero}</span>
+                          <span style={{ fontSize: 12, color: C.verde, fontWeight: 700 }}>{fmtR(b.liquido)}</span>
+                          <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: st.c, borderRadius: 5, padding: "1px 7px" }}>{st.t}</span>
+                          <div style={{ marginLeft: "auto", display: "flex", gap: 5 }}>
+                            <Btn small kind="ghost" onClick={() => baixarPdf(b, ct, o)}>PDF</Btn>
+                            {b.status === "aguardando_aprovacao" && podeAprovarBmp && <>
+                              <Btn small kind="ghost" disabled={busy === b.id} onClick={() => rejeitar(b)}>Rejeitar</Btn>
+                              <Btn small disabled={busy === b.id} onClick={() => aprovar(b)}>{busy === b.id ? "…" : "Aprovar e gerar OP"}</Btn>
+                            </>}
+                          </div>
+                        </div>
+                      ); })}
+                    </div>
+                  );
+                })()}
               </div>
             );
           })}
@@ -150,7 +189,7 @@ function ModalMedicao({ contrato, obra, eap, usuario, numero, onFechar, onGerou 
               ); })}</tbody>
               <tfoot><tr style={{ background: C.cinza }}><td style={{ ...tdb, fontWeight: 800 }}>TOTAL</td><td style={tdb} /><td style={{ ...tdb, textAlign: "right", fontWeight: 800 }}>{fmt(totBruto)}</td><td style={{ ...tdb, textAlign: "right", fontWeight: 800 }}>{fmt(totRet)}</td><td style={{ ...tdb, textAlign: "right", fontWeight: 800, color: C.verde }}>{fmt(totLiq)}</td></tr></tfoot>
             </table>
-            <div style={{ fontSize: 12, color: C.dim, marginBottom: 14 }}>Ao gerar, a medição fica <b>aguardando aprovação</b> (Coord. de Obras, Planejamento e Diretor de Engenharia). Após aprovada, o prestador será comunicado por e-mail para emitir a NF (etapa v10.2).</div>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 14 }}>Ao gerar, a medição fica <b>aguardando aprovação</b> (Coord. de Obras, Planejamento ou Diretoria). Depois de aprovada, o sistema gera a <b>OP no financeiro</b> pelo líquido e o <b>PDF do boletim</b> fica disponível para envio manual ao prestador emitir a NF.</div>
             <div style={{ display: "flex", justifyContent: "space-between" }}>
               <Btn kind="ghost" onClick={() => setEtapa("preencher")}>← Voltar e ajustar</Btn>
               <Btn onClick={gerar} disabled={busy}>{busy ? "Gerando…" : "Gerar medição"}</Btn>

@@ -149,6 +149,76 @@ export function gerarPdfMedicao(obra, linhas, periodo, usuarioNome) {
 }
 
 /* ================================================================
+   PDF do BOLETIM DE MEDIÇÃO DE PRESTADOR (BMP) — para envio manual ao
+   prestador emitir a NF sobre o líquido medido. Papel timbrado Miriad.
+   ================================================================ */
+export function gerarPdfBMP(bmp, contrato, obra, usuarioNome) {
+  const fmtBR = (v) => (Number(v) || 0).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const itens = bmp.itens || [];
+  const prestador = contrato?.empresa || contrato?.responsavel || "—";
+  const corpo = itens.map((it) => `
+    <tr>
+      <td>${it.eap_codigo || ""}</td>
+      <td>${it.descricao || ""}${it.comentario ? `<br><span style="color:#b26a00;font-size:8.5px">⚠ ${it.comentario}</span>` : ""}</td>
+      <td style="text-align:center">${it.unidade || ""}</td>
+      <td style="text-align:right">${fmtBR(it.qtde_avancada)}</td>
+      <td style="text-align:right">${((Number(it.pct) || 0) * 100).toFixed(1)}%</td>
+      <td style="text-align:right">${fmtBR(it.valor_medido)}</td>
+      <td style="text-align:right">${it.retencao_valor ? fmtBR(it.retencao_valor) : "—"}</td>
+      <td style="text-align:right">${fmtBR(it.liquido)}</td>
+    </tr>`).join("");
+
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+  <title>BMP ${bmp.numero || ""} — ${obra?.codigo || ""}</title>
+  <style>
+    @page { size: A4 portrait; margin: 12mm 10mm; }
+    * { font-family: Arial, Helvetica, sans-serif; color: #1c1c1c; }
+    body { margin: 0; font-size: 10px; }
+    .header img { width: 100%; max-width: 780px; display: block; margin: 0 auto 6px; }
+    .titulo { text-align: center; font-size: 15px; font-weight: 800; color: #c21000; letter-spacing: .04em; margin: 6px 0 10px; }
+    table { width: 100%; border-collapse: collapse; margin-bottom: 10px; }
+    th, td { border: 1px solid #c9c9c9; padding: 3px 6px; font-size: 9.5px; vertical-align: top; }
+    th { background: #141414; color: #fff; text-transform: uppercase; font-size: 8.5px; letter-spacing: .03em; }
+    .infogrid td:nth-child(odd) { background: #f3f3f1; font-weight: 700; width: 16%; }
+    .tot td { background: #f37335; color: #fff; font-weight: 800; font-size: 10.5px; }
+    .tot2 td { background: #141414; color: #fff; font-weight: 800; font-size: 10.5px; }
+    .obs { font-size: 10px; margin: 6px 0 4px; }
+    .nota { font-size: 9.5px; color: #555; margin-top: 10px; }
+    .assin { margin-top: 34px; display: flex; justify-content: space-between; font-size: 11px; }
+    .assin div { width: 45%; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
+  </style></head><body>
+    <div class="header"><img src="${TIMBRADO_HEADER}" alt="Miriad"></div>
+    <div class="titulo">BOLETIM DE MEDIÇÃO DE PRESTADOR (BMP) Nº ${bmp.numero || ""}</div>
+    <table class="infogrid">
+      <tr><td>Obra</td><td>${obra?.codigo || ""}</td><td>Prestador</td><td>${prestador}</td></tr>
+      <tr><td>Contrato (OS-i)</td><td>${fmtBR(contrato?.valor)}</td><td>Emitido em</td><td>${dataBR((bmp.criado_em || new Date().toISOString()))}</td></tr>
+    </table>
+    <table>
+      <thead><tr>
+        <th>EAP</th><th>Descrição</th><th style="text-align:center">Unid.</th>
+        <th style="text-align:right">Qtde medida</th><th style="text-align:right">% avanço</th>
+        <th style="text-align:right">Valor medido</th><th style="text-align:right">Retenção</th><th style="text-align:right">Líquido</th>
+      </tr></thead>
+      <tbody>
+        ${corpo || '<tr><td colspan="8">Sem itens medidos.</td></tr>'}
+        <tr class="tot"><td colspan="5" style="text-align:right">TOTAL MEDIDO · RETENÇÃO</td>
+          <td style="text-align:right">${fmtBR(bmp.total)}</td><td style="text-align:right">${fmtBR(bmp.retencao)}</td><td style="text-align:right"></td></tr>
+        <tr class="tot2"><td colspan="7" style="text-align:right">VALOR LÍQUIDO A FATURAR</td>
+          <td style="text-align:right">${fmtBR(bmp.liquido)}</td></tr>
+      </tbody>
+    </table>
+    ${bmp.observacao ? `<div class="obs"><b>Observação:</b> ${bmp.observacao}</div>` : ""}
+    <div class="nota">Solicitamos a emissão da Nota Fiscal referente a esta medição no valor líquido de <b>R$ ${fmtBR(bmp.liquido)}</b>. A retenção técnica, quando houver, será liberada conforme condições contratuais.</div>
+    <div class="assin"><div>Responsável MIRIAD<br>${usuarioNome || ""}</div><div>Ciente — PRESTADOR<br>${prestador}</div></div>
+    <script>window.onload=()=>{setTimeout(()=>window.print(),350)}</script>
+  </body></html>`;
+
+  const w = window.open("", "_blank");
+  if (!w) { alert("Permita pop-ups para gerar o PDF do boletim."); return; }
+  w.document.write(html); w.document.close();
+}
+
+/* ================================================================
    PDF da ORDEM DE COMPRA (OC-i) — para envio ao fornecedor.
    Replica o padrão da Miriad: cabeçalho da empresa, dados do fornecedor,
    pedido (cada material vinculado a uma atividade da EAP), condição de
