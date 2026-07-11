@@ -1,5 +1,8 @@
 # Miriad Construction Control (MCC)
 
+## v11.11 — Hotfix: aba Custos Fixos não aparecia no menu
+- A aba **Custos Fixos** (v11.09) não surgia no menu do Financeiro porque o item novo não estava no `FIN_IDS` (base da matriz de permissões por cargo). Como o item nunca era concedido por padrão, o menu o filtrava. Incluídos `op` (Ordens de Pagamento) e `custosfixos` no `FIN_IDS` — agora ambos são liberados por padrão para CEO/Diretor/Financeiro, sem precisar reconfigurar a tela de Permissões. Correção só de frontend, sem migração.
+
 ## v11.10 — Folha de Pagamento (v1: Colaboradores + Folha CLT + Resumo)
 - Nova seção **Folha de Pagamento** (menu lateral), restrita a CEO, Diretor e Financeiro.
 - **Colaboradores:** cadastro com nome, CPF, cargo/área, tipo de contrato (CLT/Estagiário/MEI-Sócio/Prestador), salário base, horas mensais, VT/dia, auxílio alimentação, adicionais (periculosidade/insalubridade) e admissão. Busca por nome/cargo/área e ativar/inativar.
