@@ -6,6 +6,7 @@ import {
   OP_IDS, FIN_IDS, acessoDe, mapaAcessoPadrao, mesclarAcesso, getConfig, setConfig,
 } from "./core.jsx";
 import { ModuloFinanceiro } from "./financeiro.jsx";
+import { ModuloRH } from "./rh.jsx";
 import { ModuloOperacional } from "./operacional.jsx";
 import { PainelGeral } from "./painel.jsx";
 import { Ranking } from "./ranking.jsx";
@@ -602,17 +603,19 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
   const [meusAberto, setMeusAberto] = useState(false);
   const [alocAberto, setAlocAberto] = useState(false);
   const [bmpAberto, setBmpAberto] = useState(false);
+  const [folhaAberta, setFolhaAberta] = useState(false);
   const ehDir = p === "ceo" || p === "diretor";
+  const podeFolha = ehDir || p === "financeiro";
   const ehSupObras = p === "sup_obras";
   const podeAlocar = ehDir || p === "coord_planejamento";
   const podeBmp = ehSupObras || p === "coord_planejamento" || ehDir;
   const mobile = useIsMobile();
   const [drawer, setDrawer] = useState(false);
 
-  const fecharEspeciais = () => { setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setMeusAberto(false); setAlocAberto(false); setBmpAberto(false); };
+  const fecharEspeciais = () => { setUsuariosAberto(false); setRankingAberto(false); setGerencialAberto(false); setPermsAberto(false); setMeusAberto(false); setAlocAberto(false); setBmpAberto(false); setFolhaAberta(false); };
   const abrir = (sec, tab) => { setSecao(sec); if (tab) { if (sec === "operacional") setOpTab(tab); if (sec === "financeiro") setFinTab(tab); } fecharEspeciais(); setDrawer(false); };
   const tabDe = (sec) => sec === "operacional" ? opTab : sec === "financeiro" ? finTab : null;
-  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && !permsAberto && !meusAberto && !alocAberto && !bmpAberto && secao === sec && (!tab || tabDe(sec) === tab);
+  const ativo = (sec, tab) => !usuariosAberto && !rankingAberto && !gerencialAberto && !permsAberto && !meusAberto && !alocAberto && !bmpAberto && !folhaAberta && secao === sec && (!tab || tabDe(sec) === tab);
 
   const botao = (sec, tab, label, icone, nota) => (
     <button key={(tab || sec)} onClick={() => abrir(sec, tab)}
@@ -624,7 +627,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
 
   const tituloOp = OP_ITENS.find((i) => i.id === opTab);
   const tituloFin = FIN_ITENS.find((i) => i.id === finTab);
-  const titulo = bmpAberto ? "Medições de prestadores (BMP)" : meusAberto ? "Meus Projetos" : alocAberto ? "Alocação de Supervisores" : permsAberto ? "Permissões por cargo" : gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
+  const titulo = folhaAberta ? "Folha de Pagamento" : bmpAberto ? "Medições de prestadores (BMP)" : meusAberto ? "Meus Projetos" : alocAberto ? "Alocação de Supervisores" : permsAberto ? "Permissões por cargo" : gerencialAberto ? "Painel Gerencial" : rankingAberto ? "Ranking de Supervisores" : usuariosAberto ? "Usuários e permissões" : secao === "painel" ? "Painel Geral" : secao === "financeiro" ? `Financeiro · ${tituloFin?.label || ""}` : `Operacional · ${tituloOp?.label || ""}`;
 
   const navInterno = (
     <>
@@ -652,6 +655,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
       {A.ranking && ehDir && <button onClick={() => { fecharEspeciais(); setRankingAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: rankingAberto ? C.laranja : "transparent", color: rankingAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🏆</span>Ranking</button>}
       {A.usuarios && pode(p, "usuarios") && <button onClick={() => { fecharEspeciais(); setUsuariosAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: usuariosAberto ? C.laranja : "transparent", color: usuariosAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>⚙</span>Usuários</button>}
       {ehDir && <button onClick={() => { fecharEspeciais(); setPermsAberto(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: permsAberto ? C.laranja : "transparent", color: permsAberto ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🔑</span>Permissões</button>}
+      {podeFolha && <button onClick={() => { fecharEspeciais(); setFolhaAberta(true); setDrawer(false); }} style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: folhaAberta ? C.laranja : "transparent", color: folhaAberta ? "#fff" : "#999", border: "none", borderRadius: 8, padding: "10px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}><span style={{ width: 18, textAlign: "center" }}>🧾</span>Folha de Pagamento</button>}
       <div style={{ borderTop: "1px solid #333", marginTop: 10, paddingTop: 12 }}>
         <div style={{ color: "#fff", fontSize: 13, fontWeight: 700 }}>{usuario.nome}</div>
         <div style={{ color: "#888", fontSize: 11, marginBottom: 8 }}>{nomePapel(p)}</div>
@@ -661,8 +665,9 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
   );
 
   const conteudo = (
-    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}-${permsAberto}-${meusAberto}-${alocAberto}-${bmpAberto}`} className="mcc-fade">
-      {bmpAberto && podeBmp ? <BMPMedicoes usuario={usuario} />
+    <div key={`${secao}-${opTab}-${finTab}-${usuariosAberto}-${rankingAberto}-${gerencialAberto}-${permsAberto}-${meusAberto}-${alocAberto}-${bmpAberto}-${folhaAberta}`} className="mcc-fade">
+      {folhaAberta && podeFolha ? <ModuloRH usuario={usuario} />
+        : bmpAberto && podeBmp ? <BMPMedicoes usuario={usuario} />
         : meusAberto && ehSupObras ? <MeusProjetos usuario={usuario} />
         : alocAberto && podeAlocar ? <AlocacaoSupervisor usuario={usuario} />
         : permsAberto && ehDir ? <Permissoes acessoMap={acessoMap} onSaved={setAcessoMap} />

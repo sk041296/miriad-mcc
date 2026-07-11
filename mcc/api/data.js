@@ -30,8 +30,12 @@ const TABELAS = {
   memoriais_itens: { ordem: "ordem", asc: true, filtro: "memorial_id" },
   travamentos: { ordem: "criado_em", asc: false },
   custos_fixos: { ordem: "descricao", asc: true },
+  rh_colaboradores: { ordem: "nome", asc: true },
+  rh_folha: { ordem: "criado_em", asc: false, filtro: "mes" },
   usuarios: { ordem: "nome", asc: true },
 };
+const RH_TABELAS = new Set(["rh_colaboradores", "rh_folha"]);
+const RH_ROLES = new Set(["ceo", "diretor", "financeiro"]);
 
 // Grupos de papéis
 const VE_FINANCEIRO   = new Set(["ceo", "diretor", "financeiro"]);
@@ -244,6 +248,7 @@ export default async function handler(req, res) {
 
     const cfg = TABELAS[t];
     if (!cfg) return res.status(400).json({ error: "Recurso não permitido" });
+    if (RH_TABELAS.has(t) && !RH_ROLES.has(s.papel)) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
     if (t === "usuarios" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     let q = supabase.from(t).select(t === "usuarios" ? "id,nome,email,papel,ativo,criado_em,obra_id,senha_definida,travado" : "*").order(cfg.ordem, { ascending: cfg.asc });
     if (cfg.filtro && req.query[cfg.filtro]) q = q.eq(cfg.filtro, req.query[cfg.filtro]);
@@ -260,6 +265,7 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     const { t, row, obra, itens } = req.body || {};
+    if (RH_TABELAS.has(t) && !RH_ROLES.has(s.papel)) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
 
     // alocação de supervisor numa obra + e-mail de comunicação
     if (t === "aprovar_ordem" || t === "rejeitar_ordem") {
@@ -699,6 +705,7 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     const { t, id, patch } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
+    if (RH_TABELAS.has(t) && !RH_ROLES.has(s.papel)) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
     if (t === "usuarios") {
       if (!GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
       // coordenadores só podem (des)travar ou (in)ativar; editar cadastro é CEO/Diretor
@@ -722,6 +729,7 @@ export default async function handler(req, res) {
   if (req.method === "DELETE") {
     const { t, id } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
+    if (RH_TABELAS.has(t) && !RH_ROLES.has(s.papel)) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
     if (t === "usuarios") {
       // coord_planejamento pode solicitar exclusão (exceto CEO/Diretor), mas passa por aprovação
       if (s.papel === "coord_planejamento") {

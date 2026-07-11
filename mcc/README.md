@@ -1,5 +1,15 @@
 # Miriad Construction Control (MCC)
 
+## v11.10 — Folha de Pagamento (v1: Colaboradores + Folha CLT + Resumo)
+- Nova seção **Folha de Pagamento** (menu lateral), restrita a CEO, Diretor e Financeiro.
+- **Colaboradores:** cadastro com nome, CPF, cargo/área, tipo de contrato (CLT/Estagiário/MEI-Sócio/Prestador), salário base, horas mensais, VT/dia, auxílio alimentação, adicionais (periculosidade/insalubridade) e admissão. Busca por nome/cargo/área e ativar/inativar.
+- **Folha CLT:** por mês, monta a folha dos CLT ativos. Cada linha (expansível) permite lançar horas extras (50%/100%), salário família, auxílio alimentação, faltas, adiantamento, descontos e outros. **INSS e IRRF são calculados** pelas tabelas de referência 2025 e **podem ser ajustados manualmente** por linha. Mostra proventos, INSS, IRRF e líquido por colaborador e o total do mês. Salva por (mês, colaborador).
+- **Resumo mensal:** consolida bruto, descontos e líquido da Folha CLT por mês.
+
+> **Migração:** rode `supabase/migration_v11_10.sql` (tabelas `rh_colaboradores` e `rh_folha`).
+>
+> **Importante:** INSS/IRRF usam tabelas de referência 2025 como cálculo-base editável — confira contra a folha oficial da contabilidade. As folhas de Estagiário, MEI/Sócios e Prestadores, benefícios (seguro/odonto), horas extras/banco de horas e demais controles da planilha RH entram nas próximas etapas.
+
 ## v11.09 — Tab Custos Fixos (vira OP automaticamente todo mês)
 - Nova aba **Custos Fixos** no Financeiro. O financeiro cadastra o custo fixo (descrição, **conta contábil do plano de contas**, fornecedor, valor mensal, dia de vencimento e obra/centro opcional) e o sistema **gera uma OP por mês** no Kanban de Ordens de Pagamento (coluna Pendente NF), com vencimento no dia informado.
 - **Conta contábil por lista suspensa das contas de DESPESA** do plano oficial da Miriad (grupo 3030202 Despesas Gerais e Administrativas — aluguel, energia, água, contabilidade, softwares, seguros, etc. — além de pessoal administrativo), usando **exatamente o código do plano de contas** e mostrando a natureza (Despesa Fixa / Pessoal / Imposto).
