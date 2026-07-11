@@ -1,5 +1,8 @@
 # Miriad Construction Control (MCC)
 
+## v11.07 — Hotfix: tela de BMP (tela preta)
+- Corrigido o travamento da tela de **Boletins de Medição (BMP)** introduzido na v11.06: a função de normalização usada na nova busca (`normTxt`) não existia no módulo do BMP, causando erro de runtime e tela preta. Agora está definida no próprio módulo. Sem outras mudanças de comportamento.
+
 ## v11.06 — Performance/usabilidade + PDF de RDO em lote
 - **Ordens de Pagamento:** novo campo de busca (fornecedor, material, NF, centro de custo) e as faixas de vencimento passam a vir **recolhidas por padrão** (sintéticas, com contagem e total) — abre a faixa desejada, e a busca abre tudo automaticamente. Bem mais leve com muitos registros.
 - **Cadastro de prestadores:** a lista agora renderiza os primeiros 50 com botão “Mostrar mais” (a busca por nome/função já existente continua valendo), evitando travar com muitos cadastros.

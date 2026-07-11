@@ -2,6 +2,9 @@ import React, { useState, useEffect } from "react";
 import { C, fmt, fmtR, pct, sum, dataBR, Card, Btn, Lbl, inp, NumInput, listar, criar, uploadFoto, aprovarBmp, rejeitarBmp } from "./core.jsx";
 import { gerarPdfBMP } from "./pdf.js";
 
+// normalização acento/caixa para as buscas do módulo BMP
+const normTxt = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
 const podeMedir = (p) => ["sup_obras", "coord_planejamento", "ceo", "diretor"].includes(p);
 const podeAprovarBmpFn = (p) => ["ceo", "diretor", "coord_planejamento", "coord_obras"].includes(p);
 
