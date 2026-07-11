@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v11.06 — Performance/usabilidade + PDF de RDO em lote
+- **Ordens de Pagamento:** novo campo de busca (fornecedor, material, NF, centro de custo) e as faixas de vencimento passam a vir **recolhidas por padrão** (sintéticas, com contagem e total) — abre a faixa desejada, e a busca abre tudo automaticamente. Bem mais leve com muitos registros.
+- **Cadastro de prestadores:** a lista agora renderiza os primeiros 50 com botão “Mostrar mais” (a busca por nome/função já existente continua valendo), evitando travar com muitos cadastros.
+- **Painel Geral · Custos fora da verba:** filtro por obra e limite de itens exibidos com “Mostrar mais”.
+- **Boletins de medição (BMP):** nova barra de **segmentação por obra + busca + período**. Por padrão cada contrato mostra só os **5 boletins mais recentes**; a busca/período localizam os antigos e listam todos de um intervalo.
+- **RDO-i · PDF em lote:** dentro de uma obra, selecione uma **faixa de datas** e gere de uma vez um único arquivo com **uma página por RDO** do período (Salvar como PDF na impressão).
+
 ## v11.05 — Boletim de Medição (BMP) vira Ordem de Pagamento
 - **Aprovar e gerar OP:** na tela Medições (BMP), cada boletim emitido agora lista com status (aguardando aprovação / aprovado / rejeitado). Coord. de Obras, Coord. de Planejamento ou Diretoria podem **Aprovar e gerar OP** — o sistema cria a OP no financeiro (coluna Pendente NF) pelo **valor líquido medido** (já descontada a retenção). Também dá para **Rejeitar** com motivo.
 - **PDF do boletim para envio manual:** botão **PDF** gera o Boletim de Medição no papel timbrado da Miriad (itens medidos, retenção e líquido a faturar), para envio manual ao prestador emitir a NF. Sem envio automático por e-mail nesta versão.

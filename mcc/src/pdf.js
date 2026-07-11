@@ -4,21 +4,7 @@ import { LOGO_FULL } from "./logo.js";
 
 /* Geração do PDF do RDO no papel timbrado da Miriad (via janela de impressão do navegador).
    IMPORTANTE: as restrições de material NÃO entram aqui — são internas, não vão ao cliente. */
-export function gerarPdfRdo(rdo, obra, usuarioNome, funcao) {
-  const climaLinha = rdo.clima || "—";
-  const atividades = (rdo.atividades || []).map((a) => `
-    <tr>
-      <td>${a.eap || ""}</td>
-      <td>${a.descricao || ""}</td>
-      <td style="text-align:right">${a.qtde_dia != null ? Number(a.qtde_dia).toLocaleString("pt-BR") + " " + (a.unidade || "") : ""}</td>
-      <td style="text-align:right">${a.pct_acum != null ? (a.pct_acum * 100).toFixed(1) + "%" : (a.pct_dia != null ? (a.pct_dia * 100).toFixed(1) + "%" : "")}</td>
-    </tr>`).join("");
-  const equipe = (rdo.equipe || []).map((m) => `
-    <tr><td>${m.ocupacao || ""}</td><td>${m.nome || ""}</td><td style="text-align:center">${m.he_inicio || ""} – ${m.he_fim || ""}</td></tr>`).join("");
-
-  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
-  <title>RDO ${rdo.numero || ""} — ${obra.codigo || ""}</title>
-  <style>
+const ESTILO_RDO = `
     @page { size: A4; margin: 14mm 12mm; }
     * { font-family: Arial, Helvetica, sans-serif; color: #1c1c1c; }
     body { margin: 0; font-size: 11px; }
@@ -31,8 +17,20 @@ export function gerarPdfRdo(rdo, obra, usuarioNome, funcao) {
     .sec { background: #f37335; color: #fff; font-weight: 800; padding: 4px 8px; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; margin: 4px 0; }
     .assin { margin-top: 36px; display: flex; justify-content: space-between; font-size: 11px; }
     .assin div { width: 45%; border-top: 1px solid #333; padding-top: 4px; text-align: center; }
-    .obs { border: 1px solid #c9c9c9; padding: 6px 8px; min-height: 28px; font-size: 10.5px; white-space: pre-wrap; }
-  </style></head><body>
+    .obs { border: 1px solid #c9c9c9; padding: 6px 8px; min-height: 28px; font-size: 10.5px; white-space: pre-wrap; }`;
+
+function corpoRdoHtml(rdo, obra, usuarioNome, funcao) {
+  const climaLinha = rdo.clima || "—";
+  const atividades = (rdo.atividades || []).map((a) => `
+    <tr>
+      <td>${a.eap || ""}</td>
+      <td>${a.descricao || ""}</td>
+      <td style="text-align:right">${a.qtde_dia != null ? Number(a.qtde_dia).toLocaleString("pt-BR") + " " + (a.unidade || "") : ""}</td>
+      <td style="text-align:right">${a.pct_acum != null ? (a.pct_acum * 100).toFixed(1) + "%" : (a.pct_dia != null ? (a.pct_dia * 100).toFixed(1) + "%" : "")}</td>
+    </tr>`).join("");
+  const equipe = (rdo.equipe || []).map((m) => `
+    <tr><td>${m.ocupacao || ""}</td><td>${m.nome || ""}</td><td style="text-align:center">${m.he_inicio || ""} – ${m.he_fim || ""}</td></tr>`).join("");
+  return `
     <div class="header"><img src="${TIMBRADO_HEADER}" alt="Miriad"></div>
     <div class="titulo">RELATÓRIO DIÁRIO DE OBRA — RDO ${rdo.numero || ""}</div>
     <table class="infogrid">
@@ -65,14 +63,36 @@ export function gerarPdfRdo(rdo, obra, usuarioNome, funcao) {
       <div style="border-top:1px solid #141414;width:280px;margin:3px auto 0;padding-top:4px;font-size:10px;color:#333">
         <b>Emitido por:</b> ${(usuarioNome || rdo.responsavel_nome || "").replace(/</g, "&lt;")} — ${(funcao || "Supervisor de Obras").replace(/</g, "&lt;")}
       </div>
-      <div style="font-size:8.5px;color:#888;margin-top:2px">Assinatura digital gerada pelo MCC${rdo.numero ? ` — RDO nº ${rdo.numero}` : ""}${rdo.data ? ` — ${String(rdo.data).slice(0,10).split("-").reverse().join("/")}` : ""}</div>
+      <div style="font-size:8.5px;color:#888;margin-top:2px">Assinatura digital gerada pelo MCC${rdo.numero ? ` — RDO nº ${rdo.numero}` : ""}${rdo.data ? ` — ${String(rdo.data).slice(0, 10).split("-").reverse().join("/")}` : ""}</div>
     </div>
-    <div class="assin"><div>Responsável MIRIAD<br>${usuarioNome || rdo.responsavel_nome || ""}</div><div>Responsável CONTRATANTE<br>&nbsp;</div></div>
+    <div class="assin"><div>Responsável MIRIAD<br>${usuarioNome || rdo.responsavel_nome || ""}</div><div>Responsável CONTRATANTE<br>&nbsp;</div></div>`;
+}
+
+export function gerarPdfRdo(rdo, obra, usuarioNome, funcao) {
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+  <title>RDO ${rdo.numero || ""} — ${obra.codigo || ""}</title>
+  <style>${ESTILO_RDO}</style></head><body>
+    ${corpoRdoHtml(rdo, obra, usuarioNome, funcao)}
     <script>window.onload=()=>{setTimeout(()=>window.print(),350)}</script>
   </body></html>`;
-
   const w = window.open("", "_blank");
   if (!w) { alert("Permita pop-ups para gerar o PDF do RDO."); return; }
+  w.document.write(html); w.document.close();
+}
+
+/* Gera um único documento com VÁRIOS RDOs (uma página por RDO) — usado no PDF em lote
+   por faixa de datas. Cada responsável aparece conforme o RDO (passar usuarioNome = null). */
+export function gerarPdfRdosLote(rdosArr, obra, usuarioNome, funcao) {
+  if (!rdosArr || !rdosArr.length) { alert("Nenhum RDO no período selecionado."); return; }
+  const paginas = rdosArr.map((rdo, i) => `<div style="${i > 0 ? "page-break-before:always;" : ""}">${corpoRdoHtml(rdo, obra, usuarioNome, funcao)}</div>`).join("");
+  const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8">
+  <title>RDOs ${obra.codigo || ""} (${rdosArr.length})</title>
+  <style>${ESTILO_RDO}</style></head><body>
+    ${paginas}
+    <script>window.onload=()=>{setTimeout(()=>window.print(),450)}</script>
+  </body></html>`;
+  const w = window.open("", "_blank");
+  if (!w) { alert("Permita pop-ups para gerar os PDFs do período."); return; }
   w.document.write(html); w.document.close();
 }
 

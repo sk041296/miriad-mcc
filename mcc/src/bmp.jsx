@@ -10,6 +10,10 @@ export function BMPMedicoes({ usuario }) {
   const [medindo, setMedindo] = useState(null); // contrato em medição
   const [aberto, setAberto] = useState({});
   const [busy, setBusy] = useState(null);
+  const [filtroObra, setFiltroObra] = useState("");
+  const [buscaBmp, setBuscaBmp] = useState("");
+  const [pIni, setPIni] = useState("");
+  const [pFim, setPFim] = useState("");
   const podeAprovarBmp = podeAprovarBmpFn(usuario.papel);
 
   const carregar = async () => {
@@ -31,9 +35,41 @@ export function BMPMedicoes({ usuario }) {
     try { await rejeitarBmp(b.id, m); await carregar(); } catch (e) { alert(e.message); } finally { setBusy(null); }
   };
   const baixarPdf = (b, ct, o) => gerarPdfBMP(b, ct, o, usuario.nome);
+  const stBadgeBmp = (st) => st === "aprovado" ? { t: "aprovado · OP gerada", c: C.verde } : st === "rejeitado" ? { t: "rejeitado", c: C.vermelho } : { t: "aguardando aprovação", c: C.amareloAlerta };
+  const boletimRow = (b, ct, o, comObra) => { const st = stBadgeBmp(b.status); return (
+    <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "6px 0", borderBottom: `1px solid ${C.linha}` }}>
+      <span style={{ fontSize: 12, fontWeight: 700 }}>Nº {b.numero}</span>
+      {comObra && <span style={{ fontSize: 11, color: C.dim }}>{o?.codigo || "—"} · {ct?.empresa || "—"}</span>}
+      <span style={{ fontSize: 11, color: C.dim }}>{dataBR(b.criado_em)}</span>
+      <span style={{ fontSize: 12, color: C.verde, fontWeight: 700 }}>{fmtR(b.liquido)}</span>
+      <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: st.c, borderRadius: 5, padding: "1px 7px" }}>{st.t}</span>
+      <div style={{ marginLeft: "auto", display: "flex", gap: 5 }}>
+        <Btn small kind="ghost" onClick={() => baixarPdf(b, ct, o)}>PDF</Btn>
+        {b.status === "aguardando_aprovacao" && podeAprovarBmp && <>
+          <Btn small kind="ghost" disabled={busy === b.id} onClick={() => rejeitar(b)}>Rejeitar</Btn>
+          <Btn small disabled={busy === b.id} onClick={() => aprovar(b)}>{busy === b.id ? "…" : "Aprovar e gerar OP"}</Btn>
+        </>}
+      </div>
+    </div>
+  ); };
   if (!d) return <div style={{ color: C.dim, padding: 20 }}>Carregando contratos…</div>;
   const { contratos, obras, boletins, eapPorObra } = d;
   const obraDe = (id) => obras.find((o) => o.id === id);
+  const contratoDe = (id) => contratos.find((c) => c.id === id);
+
+  // segmentação/busca dos boletins
+  const filtroAtivo = !!(buscaBmp.trim() || pIni || pFim);
+  const nq = normTxt(buscaBmp);
+  const obrasComContrato = obras.filter((o) => contratos.some((c) => c.obra_id === o.id));
+  const boletinsFiltrados = boletins.filter((b) => {
+    const ct = contratoDe(b.contrato_id); const o = obraDe(b.obra_id);
+    if (filtroObra && b.obra_id !== filtroObra) return false;
+    if (pIni && String(b.criado_em).slice(0, 10) < pIni) return false;
+    if (pFim && String(b.criado_em).slice(0, 10) > pFim) return false;
+    if (nq && !(normTxt(ct?.empresa).includes(nq) || normTxt(o?.codigo).includes(nq) || normTxt(String(b.numero)).includes(nq))) return false;
+    return true;
+  }).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+  const contratosVis = filtroObra ? contratos.filter((c) => c.obra_id === filtroObra) : contratos;
 
   const bmpDoContrato = (cid) => boletins.filter((b) => b.contrato_id === cid && b.status !== "rejeitado");
   const medidoContrato = (cid) => sum(bmpDoContrato(cid).map((b) => Number(b.total) || 0));
@@ -41,10 +77,37 @@ export function BMPMedicoes({ usuario }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Card title="Boletins de medição (BMP)">
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 4 }}>
+          <div><Lbl>Obra</Lbl>
+            <select value={filtroObra} onChange={(e) => setFiltroObra(e.target.value)} style={inp({ fontSize: 13, minWidth: 150 })}>
+              <option value="">Todas</option>
+              {obrasComContrato.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
+            </select>
+          </div>
+          <div style={{ flex: 1, minWidth: 180 }}><Lbl>Buscar (prestador, obra ou nº)</Lbl>
+            <input value={buscaBmp} onChange={(e) => setBuscaBmp(e.target.value)} placeholder="ex.: Construtora X · CENSE · 3" style={inp({ width: "100%", boxSizing: "border-box", fontSize: 13 })} />
+          </div>
+          <div><Lbl>Período — de</Lbl><input type="date" value={pIni} onChange={(e) => setPIni(e.target.value)} style={inp({ fontSize: 12 })} /></div>
+          <div><Lbl>até</Lbl><input type="date" value={pFim} onChange={(e) => setPFim(e.target.value)} style={inp({ fontSize: 12 })} /></div>
+          {filtroAtivo && <Btn small kind="ghost" onClick={() => { setBuscaBmp(""); setPIni(""); setPFim(""); }}>Limpar</Btn>}
+        </div>
+        {filtroAtivo ? (
+          <div style={{ marginTop: 10 }}>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 4 }}>{boletinsFiltrados.length} boletim(ns) no filtro/período.</div>
+            {boletinsFiltrados.map((b) => boletimRow(b, contratoDe(b.contrato_id), obraDe(b.obra_id), true))}
+            {boletinsFiltrados.length === 0 && <div style={{ fontSize: 13, color: C.dim, padding: 8 }}>Nenhum boletim encontrado.</div>}
+          </div>
+        ) : (
+          <div style={{ marginTop: 6, fontSize: 12, color: C.dim }}>Mostrando abaixo os cartões por contrato (com os 5 boletins mais recentes de cada). Use a busca ou o período acima para localizar boletins antigos.</div>
+        )}
+      </Card>
+
+      {!filtroAtivo && (
       <Card title="Medições de prestadores (BMP) — OS-is vigentes">
         <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 12 }}>Cada cartão é um contrato de serviço (OS-i). Clique em <b>Gerar medição</b> para medir o avanço do prestador. Ao ser <b>aprovada</b> (Coord. de Obras, Planejamento ou Diretoria), a medição gera automaticamente a <b>OP no financeiro</b> (pelo líquido) e disponibiliza o <b>PDF</b> para envio manual ao prestador.</div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 12 }}>
-          {contratos.map((ct) => {
+          {contratosVis.map((ct) => {
             const o = obraDe(ct.obra_id);
             const valorCt = Number(ct.valor) || 0;
             const medido = medidoContrato(ct.id);
@@ -76,35 +139,24 @@ export function BMPMedicoes({ usuario }) {
                   </table>
                 )}
                 {(() => {
-                  const lista = boletins.filter((b) => b.contrato_id === ct.id).sort((a, b) => (a.numero || 0) - (b.numero || 0));
+                  const lista = boletins.filter((b) => b.contrato_id === ct.id).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
                   if (!lista.length) return null;
-                  const stBadge = (st) => st === "aprovado" ? { t: "aprovado · OP gerada", c: C.verde } : st === "rejeitado" ? { t: "rejeitado", c: C.vermelho } : { t: "aguardando aprovação", c: C.amareloAlerta };
+                  const ultimos = lista.slice(0, 5);
                   return (
                     <div style={{ marginTop: 10, borderTop: `1px solid ${C.linha}`, paddingTop: 8 }}>
-                      <div style={{ fontSize: 10.5, color: C.dim, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>Boletins emitidos</div>
-                      {lista.map((b) => { const st = stBadge(b.status); return (
-                        <div key={b.id} style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", padding: "6px 0", borderBottom: `1px solid ${C.linha}` }}>
-                          <span style={{ fontSize: 12, fontWeight: 700 }}>Nº {b.numero}</span>
-                          <span style={{ fontSize: 12, color: C.verde, fontWeight: 700 }}>{fmtR(b.liquido)}</span>
-                          <span style={{ fontSize: 10, fontWeight: 800, color: "#fff", background: st.c, borderRadius: 5, padding: "1px 7px" }}>{st.t}</span>
-                          <div style={{ marginLeft: "auto", display: "flex", gap: 5 }}>
-                            <Btn small kind="ghost" onClick={() => baixarPdf(b, ct, o)}>PDF</Btn>
-                            {b.status === "aguardando_aprovacao" && podeAprovarBmp && <>
-                              <Btn small kind="ghost" disabled={busy === b.id} onClick={() => rejeitar(b)}>Rejeitar</Btn>
-                              <Btn small disabled={busy === b.id} onClick={() => aprovar(b)}>{busy === b.id ? "…" : "Aprovar e gerar OP"}</Btn>
-                            </>}
-                          </div>
-                        </div>
-                      ); })}
+                      <div style={{ fontSize: 10.5, color: C.dim, fontWeight: 700, textTransform: "uppercase", marginBottom: 4 }}>Boletins recentes{lista.length > 5 ? ` (5 de ${lista.length})` : ""}</div>
+                      {ultimos.map((b) => boletimRow(b, ct, o, false))}
+                      {lista.length > 5 && <div style={{ fontSize: 11, color: C.dim, marginTop: 6 }}>Use a busca/período no topo para ver os demais {lista.length - 5} boletim(ns).</div>}
                     </div>
                   );
                 })()}
               </div>
             );
           })}
-          {contratos.length === 0 && <div style={{ fontSize: 13, color: C.dim }}>Nenhuma OS-i cadastrada.</div>}
+          {contratosVis.length === 0 && <div style={{ fontSize: 13, color: C.dim }}>Nenhuma OS-i {filtroObra ? "para esta obra" : "cadastrada"}.</div>}
         </div>
       </Card>
+      )}
 
       {medindo && <ModalMedicao contrato={medindo} obra={obraDe(medindo.obra_id)} eap={eapPorObra[medindo.obra_id] || []} usuario={usuario}
         numero={(boletins.filter((b) => b.contrato_id === medindo.id).length) + 1}

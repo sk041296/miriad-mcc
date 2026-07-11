@@ -223,6 +223,8 @@ function PendenciasAprovacao({ usuario, obras }) {
    ============================================================ */
 function PainelFurosVerba({ usuario, obras, eapPorObra, ocs, contratos }) {
   const [aberto, setAberto] = useState({});
+  const [obraF, setObraF] = useState("");
+  const [limite, setLimite] = useState(25);
   const papel = usuario && usuario.papel;
   const podeVer = ["ceo", "diretor", "coord_suprimentos", "coord_planejamento", "coord_obras", "coord_orcamentos"].includes(papel);
   if (!podeVer) return null;
@@ -255,7 +257,18 @@ function PainelFurosVerba({ usuario, obras, eapPorObra, ocs, contratos }) {
       </div>
 
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-        {furos.map((f) => {
+        {(() => {
+          const furosF = obraF ? furos.filter((f) => f.obraId === obraF) : furos;
+          const obrasComFuro = obras.filter((o) => furos.some((f) => f.obraId === o.id));
+          return (<>
+            <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4, flexWrap: "wrap" }}>
+              <span style={{ fontSize: 12, color: C.dim }}>Filtrar por obra:</span>
+              <select value={obraF} onChange={(e) => { setObraF(e.target.value); setLimite(25); }} style={{ padding: "5px 10px", borderRadius: 7, border: `1px solid ${C.linha}`, fontSize: 12.5 }}>
+                <option value="">Todas ({furos.length})</option>
+                {obrasComFuro.map((o) => <option key={o.id} value={o.id}>{o.codigo} ({furos.filter((f) => f.obraId === o.id).length})</option>)}
+              </select>
+            </div>
+            {furosF.slice(0, limite).map((f) => {
           const chave = f.obraId + ":" + f.eap;
           const exp = !!aberto[chave];
           return (
@@ -292,6 +305,9 @@ function PainelFurosVerba({ usuario, obras, eapPorObra, ocs, contratos }) {
             </div>
           );
         })}
+            {furosF.length > limite && <div style={{ textAlign: "center", marginTop: 8 }}><button onClick={() => setLimite((l) => l + 25)} style={{ background: "none", border: `1px solid ${C.linha}`, borderRadius: 7, padding: "6px 14px", fontSize: 12, fontWeight: 700, color: C.dim, cursor: "pointer" }}>Mostrar mais ({furosF.length - limite} restantes)</button></div>}
+          </>);
+        })()}
       </div>
     </Card>
   );

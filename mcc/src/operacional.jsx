@@ -8,7 +8,7 @@ import {
   aplicarDesconto, definirMeta, uploadFoto, getConfig, setConfig, casarEapImport, verificarImport, VerifBanner, numBR, extrairItensPlanilha,
   aprovarOrdem, rejeitarOrdem, sugerirComposicaoIA, tornarProjeto,
 } from "./core.jsx";
-import { gerarPdfRdo, gerarPdfMedicao, gerarPdfOC, gerarPdfOrcamento } from "./pdf.js";
+import { gerarPdfRdo, gerarPdfRdosLote, gerarPdfMedicao, gerarPdfOC, gerarPdfOrcamento } from "./pdf.js";
 import { observacoesPorItem, projecaoItem } from "./produtividade.js";
 import { SmI } from "./smi.jsx";
 import { SsI } from "./ssi.jsx";
@@ -487,6 +487,8 @@ function RdosKanban({ rdos, obras, eapPorObra, editandoId, onEditar, onPdf, onEx
   const [obraSel, setObraSel] = useState(null);
   const [limite, setLimite] = useState(10);
   const [busca, setBusca] = useState("");
+  const [pdfIni, setPdfIni] = useState("");
+  const [pdfFim, setPdfFim] = useState("");
   const nrm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const eapDesc = (oid, codigo) => { const e = (eapPorObra[oid] || []).find((x) => x.codigo === codigo); return e ? e.descricao : ""; };
   const medRdo = (r) => sum((r.atividades || []).map((a) => Number(a.medicao) || 0));
@@ -566,6 +568,17 @@ function RdosKanban({ rdos, obras, eapPorObra, editandoId, onEditar, onPdf, onEx
             <Btn small kind="ghost" onClick={() => setObraSel(null)}>← Obras</Btn>
             <b style={{ fontSize: 14 }}>{obraDe(obraSel)?.codigo}</b>
             <span style={{ fontSize: 12, color: C.dim }}>{daObra.length} RDO(s)</span>
+          </div>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 12, padding: 10, background: C.cinza, borderRadius: 8 }}>
+            <div><Lbl>PDF em lote — de</Lbl><input type="date" value={pdfIni} onChange={(e) => setPdfIni(e.target.value)} style={inp({ fontSize: 12 })} /></div>
+            <div><Lbl>até</Lbl><input type="date" value={pdfFim} onChange={(e) => setPdfFim(e.target.value)} style={inp({ fontSize: 12 })} /></div>
+            <Btn small disabled={!pdfIni || !pdfFim} onClick={() => {
+              const ini = pdfIni < pdfFim ? pdfIni : pdfFim, fim = pdfIni < pdfFim ? pdfFim : pdfIni;
+              const sel = daObra.filter((r) => { const dd = String(r.data).slice(0, 10); return dd >= ini && dd <= fim; }).sort((a, b) => (a.data < b.data ? -1 : 1));
+              if (!sel.length) { alert("Nenhum RDO neste período."); return; }
+              gerarPdfRdosLote(sel, obraDe(obraSel) || {}, null);
+            }}>⇩ Gerar PDFs do período</Btn>
+            <span style={{ fontSize: 11, color: C.dim, flex: 1, minWidth: 160 }}>Gera um único arquivo com uma página por RDO no intervalo (Salvar como PDF na impressão).</span>
           </div>
           {daObra.slice(0, limite).map(card)}
           {daObra.length === 0 && <div style={{ fontSize: 13, color: C.dim }}>Esta obra ainda não tem RDOs.</div>}
@@ -1089,6 +1102,7 @@ function Prestadores({ obras, funcionarios, contratos, onMudou }) {
   const [f, setF] = useState(vazio);
   const [filtro, setFiltro] = useState("todos");
   const [busca, setBusca] = useState("");
+  const [limite, setLimite] = useState(50);
   const [busy, setBusy] = useState(false);
   const [customAtribs, setCustomAtribs] = useState([]);
   useEffect(() => { getConfig("atribuicoes").then((v) => setCustomAtribs(Array.isArray(v) ? v : [])).catch(() => {}); }, []);
@@ -1130,13 +1144,14 @@ function Prestadores({ obras, funcionarios, contratos, onMudou }) {
           <div style={{ display: "flex", gap: 4 }}>{["todos", "direto", "indireto"].map((v) => <button key={v} onClick={() => setFiltro(v)} style={{ background: filtro === v ? C.preto : C.branco, color: filtro === v ? "#fff" : C.dim, border: `1px solid ${filtro === v ? C.preto : C.linha}`, borderRadius: 6, padding: "4px 12px", fontSize: 12, fontWeight: 700, cursor: "pointer", textTransform: "capitalize" }}>{v}</button>)}</div>
         </div>}>
         <table style={{ width: "100%", borderCollapse: "collapse" }}><thead><tr><Th>Nome</Th><Th>Atribuição</Th><Th>Vínculo</Th><Th>Obra</Th><Th>Contrato</Th><Th right>Custo mensal</Th><Th /></tr></thead>
-          <tbody>{lista.map((x) => { const o = obras.find((y) => y.id === x.obra_id); const c = contratos.find((y) => y.id === x.contrato_id); return (
+          <tbody>{lista.slice(0, limite).map((x) => { const o = obras.find((y) => y.id === x.obra_id); const c = contratos.find((y) => y.id === x.contrato_id); return (
             <tr key={x.id}><Td style={{ fontWeight: 600 }}>{x.nome}</Td><Td>{x.atribuicao}</Td>
               <Td><span style={{ background: (x.vinculo || "direto") === "direto" ? C.laranja : C.cinza2, color: (x.vinculo || "direto") === "direto" ? "#fff" : C.dim, borderRadius: 5, padding: "2px 9px", fontSize: 11, fontWeight: 700 }}>{x.vinculo || "direto"}</span></Td>
               <Td><select value={x.obra_id || ""} onChange={async (e) => { try { await editar("funcionarios", x.id, { obra_id: e.target.value || null }); onMudou(); } catch (err) { alert(err.message); } }} style={inp({ fontSize: 12, padding: "3px 6px" })}><option value="">—</option>{obras.map((ob) => <option key={ob.id} value={ob.id}>{ob.codigo}</option>)}</select></Td><Td style={{ fontSize: 12 }}>{c ? (c.empresa || c.responsavel) : "—"}</Td><Td right>{x.custo_mensal ? fmtR(x.custo_mensal) : "—"}</Td>
               <Td><button onClick={async () => { if (confirm("Excluir prestador?")) { await remover("funcionarios", x.id); onMudou(); } }} style={{ background: "none", border: "none", color: C.dim, cursor: "pointer" }}>✕</button></Td></tr>
           ); })}
             {lista.length === 0 && <tr><Td colSpan={7} color={C.dim} style={{ padding: 14 }}>Nenhum prestador cadastrado.</Td></tr>}</tbody></table>
+        {lista.length > limite && <div style={{ textAlign: "center", marginTop: 10 }}><Btn small kind="ghost" onClick={() => setLimite((l) => l + 50)}>Mostrar mais ({lista.length - limite} restantes)</Btn></div>}
       </Card>
     </div>
   );

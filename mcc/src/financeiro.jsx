@@ -727,6 +727,7 @@ function KanbanOP() {
   const [obras, setObras] = useState([]);
   const [ocsMat, setOcsMat] = useState({}); // origem_id -> resumo de materiais
   const [filtroObra, setFiltroObra] = useState("");
+  const [buscaOp, setBuscaOp] = useState("");
   const [busy, setBusy] = useState(null);
   const [expand, setExpand] = useState({}); // chave "status:faixa" -> bool
   const [modalOp, setModalOp] = useState(null); // { op, devolver? } -> modal Conferir NF / devolução
@@ -752,7 +753,9 @@ function KanbanOP() {
 
   const nomeObra = (id) => (obras.find((o) => o.id === id) || {}).codigo || "—";
   const matDe = (op) => op.origem_tipo === "oc" ? (ocsMat[op.origem_id] || null) : null;
-  const visiveis = filtroObra ? ops.filter((o) => o.obra_id === filtroObra) : ops;
+  const _nq = buscaOp.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+  const _match = (o) => !_nq || [o.fornecedor, nomeObra(o.obra_id), o.descricao, o.nf_numero, o.centro_custo, matDe(o)].some((v) => String(v == null ? "" : v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(_nq));
+  const visiveis = (filtroObra ? ops.filter((o) => o.obra_id === filtroObra) : ops).filter(_match);
   const porStatus = (s) => visiveis.filter((o) => (o.status || "pendente_nf") === s);
 
   // ---- Gráfico: valores A VENCER (não pagos) em janelas ----
@@ -855,7 +858,7 @@ function KanbanOP() {
           const itens = lista.filter((o) => faixaDe(o) === fid).sort((a, b) => (a.vencimento || "9999").localeCompare(b.vencimento || "9999"));
           if (itens.length === 0) return null;
           const chave = sid + ":" + fid;
-          const aberto = expand[chave] !== false; // começa aberto
+          const aberto = _nq ? true : expand[chave] === true; // sintético: recolhido por padrão; abre ao buscar
           const totalF = sum(itens.map((o) => Number(o.valor) || 0));
           return (
             <div key={fid} style={{ marginBottom: 8 }}>
@@ -896,13 +899,19 @@ function KanbanOP() {
         <Kpi label="Total em aberto" value={fmt(totalGeral - totalPago)} />
         <Kpi label="Já pago" value={fmt(totalPago)} />
         <Kpi label="Nº de OPs" value={String(visiveis.length)} />
-        <div style={{ marginLeft: "auto" }}>
-          <Lbl>Obra</Lbl>
-          <select value={filtroObra} onChange={(e) => setFiltroObra(e.target.value)}
-            style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${C.linha}`, fontSize: 13, fontWeight: 600, color: C.dim }}>
-            <option value="">Todas as obras</option>
-            {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
-          </select>
+        <div style={{ marginLeft: "auto", display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div><Lbl>Buscar</Lbl>
+            <input value={buscaOp} onChange={(e) => setBuscaOp(e.target.value)} placeholder="fornecedor, material, NF, centro de custo…"
+              style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${C.linha}`, fontSize: 13, width: 240 }} />
+          </div>
+          <div>
+            <Lbl>Obra</Lbl>
+            <select value={filtroObra} onChange={(e) => setFiltroObra(e.target.value)}
+              style={{ padding: "7px 12px", borderRadius: 8, border: `1px solid ${C.linha}`, fontSize: 13, fontWeight: 600, color: C.dim }}>
+              <option value="">Todas as obras</option>
+              {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
+            </select>
+          </div>
         </div>
       </div>
 
