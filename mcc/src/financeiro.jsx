@@ -5,8 +5,9 @@ import {
 } from "recharts";
 import {
   C, fmt, fmtK, fmtR, pct, sum, z8, Card, Btn, Kpi, Th, Td, Lbl, NumInput, ChartTip, inp,
-  getFin, setFin, listar, criar, editar, hojeISO, addDiasISO, ymISO,
+  getFin, setFin, listar, criar, editar, remover, acaoData, hojeISO, addDiasISO, ymISO,
 } from "./core.jsx";
+import { CONTAS_DESPESA } from "./planocontas.js";
 import { resumoPmm } from "./pmm.jsx";
 
 /* ================================================================
@@ -101,7 +102,7 @@ function autoAnticipate(p) {
 }
 
 /* ---------- Sub-abas do módulo financeiro ---------- */
-const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"]];
+const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"],["custosfixos","Custos Fixos"]];
 
 export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
   const [subLocal, setSubLocal] = useState("premissas");
@@ -133,6 +134,7 @@ export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
       {sub === "custosdir" && <CustosDiretosAuto />}
       {sub === "medprojetada" && <MedicaoProjetada />}
       {sub === "op" && <KanbanOP />}
+      {sub === "custosfixos" && <CustosFixos />}
     </div>
   );
 }
@@ -722,6 +724,93 @@ function diasAte(venc) {
   return Math.round((v - h) / 86400000);
 }
 
+/* ================= CUSTOS FIXOS ================= */
+function CustosFixos() {
+  const [lista, setLista] = useState(null);
+  const [obras, setObras] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const vazio = { descricao: "", conta_codigo: "", fornecedor: "", valor: 0, dia_vencimento: 5, obra_id: "", ativo: true };
+  const [f, setF] = useState(vazio);
+  const [editId, setEditId] = useState(null);
+  const carregar = () => Promise.all([listar("custos_fixos"), listar("obras")]).then(([c, o]) => { setLista(c); setObras(o); }).catch(() => setLista([]));
+  useEffect(() => { carregar(); }, []);
+  const contaSel = CONTAS_DESPESA.find((c) => c.codigo === f.conta_codigo);
+  const salvar = async () => {
+    if (!f.descricao.trim() || !f.conta_codigo || !(Number(f.valor) > 0)) { alert("Preencha descrição, conta contábil e valor."); return; }
+    setBusy(true);
+    try {
+      const row = {
+        descricao: f.descricao.trim(),
+        conta_codigo: f.conta_codigo, conta_nome: contaSel?.nome || null, conta_natureza: contaSel?.natureza || null,
+        fornecedor: f.fornecedor.trim() || null, valor: Number(f.valor) || 0,
+        dia_vencimento: Math.min(Math.max(parseInt(f.dia_vencimento, 10) || 5, 1), 28),
+        obra_id: f.obra_id || null, ativo: f.ativo !== false,
+      };
+      if (editId) await editar("custos_fixos", editId, row); else await criar("custos_fixos", row);
+      await acaoData({ t: "gerar_custos_fixos_mes" }).catch(() => {});
+      setF(vazio); setEditId(null); await carregar();
+    } catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
+  const editarCF = (c) => { setEditId(c.id); setF({ descricao: c.descricao, conta_codigo: c.conta_codigo || "", fornecedor: c.fornecedor || "", valor: c.valor || 0, dia_vencimento: c.dia_vencimento || 5, obra_id: c.obra_id || "", ativo: c.ativo !== false }); window.scrollTo({ top: 0, behavior: "smooth" }); };
+  const toggleAtivo = async (c) => { try { await editar("custos_fixos", c.id, { ativo: !(c.ativo !== false) }); await carregar(); } catch (e) { alert(e.message); } };
+  const excluir = async (c) => { if (!confirm(`Excluir o custo fixo "${c.descricao}"? As OPs já geradas permanecem no financeiro.`)) return; try { await remover("custos_fixos", c.id); await carregar(); } catch (e) { alert(e.message); } };
+  const gerarMes = async () => { setBusy(true); try { const r = await acaoData({ t: "gerar_custos_fixos_mes" }); alert(`OPs do mês geradas/atualizadas: ${r.geradas}. Veja no Kanban de Ordens de Pagamento.`); } catch (e) { alert(e.message); } finally { setBusy(false); } };
+  if (lista === null) return <div style={{ color: C.dim, padding: 20 }}>Carregando custos fixos…</div>;
+  const total = sum(lista.filter((c) => c.ativo !== false).map((c) => Number(c.valor) || 0));
+  const nomeObra = (id) => obras.find((o) => o.id === id)?.codigo || "—";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Card title={editId ? "Editar custo fixo" : "Novo custo fixo"}>
+        <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 12 }}>O custo fixo cadastrado vira automaticamente uma <b>OP todo mês</b> no Kanban de Ordens de Pagamento (coluna Pendente NF), com vencimento no dia informado. A conta contábil usa exatamente o código do <b>plano de contas</b> da empresa.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px,1fr))", gap: 12 }}>
+          <div><Lbl>Descrição</Lbl><input value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} placeholder="ex.: Aluguel sede Curitiba" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Conta contábil (despesa)</Lbl>
+            <select value={f.conta_codigo} onChange={(e) => setF({ ...f, conta_codigo: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })}>
+              <option value="">Selecione…</option>
+              {CONTAS_DESPESA.map((c) => <option key={c.codigo} value={c.codigo}>{c.codigo} — {c.nome} ({c.natureza})</option>)}
+            </select>
+          </div>
+          <div><Lbl>Fornecedor (opcional)</Lbl><input value={f.fornecedor} onChange={(e) => setF({ ...f, fornecedor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Valor mensal (R$)</Lbl><NumInput value={f.valor} onChange={(v) => setF({ ...f, valor: v })} w={160} /></div>
+          <div><Lbl>Dia de vencimento (1–28)</Lbl><NumInput value={f.dia_vencimento} onChange={(v) => setF({ ...f, dia_vencimento: v })} w={90} /></div>
+          <div><Lbl>Obra / centro (opcional)</Lbl>
+            <select value={f.obra_id} onChange={(e) => setF({ ...f, obra_id: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })}>
+              <option value="">Escritório / geral</option>
+              {obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}
+            </select>
+          </div>
+        </div>
+        {contaSel && <div style={{ fontSize: 11.5, color: C.dim, marginTop: 8 }}>Conta selecionada: <b>{contaSel.codigo}</b> · {contaSel.nome} · natureza <b>{contaSel.natureza}</b></div>}
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <Btn disabled={busy} onClick={salvar}>{busy ? "Salvando…" : editId ? "Salvar alterações" : "Cadastrar custo fixo"}</Btn>
+          {editId && <Btn kind="ghost" onClick={() => { setEditId(null); setF(vazio); }}>Cancelar</Btn>}
+        </div>
+      </Card>
+
+      <Card title={`Custos fixos cadastrados (${lista.length})`} right={<div style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap" }}><span style={{ fontSize: 12, color: C.dim }}>Total ativo/mês: <b style={{ color: C.preto }}>{fmtR(total)}</b></span><Btn small disabled={busy} onClick={gerarMes}>Gerar OPs do mês</Btn></div>}>
+        <div style={{ overflowX: "auto" }}>
+        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 720 }}>
+          <thead><tr style={{ background: C.preto }}>{["Descrição", "Conta contábil", "Fornecedor", "Obra", "Venc.", "Valor/mês", "Ativo", ""].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+          <tbody>{lista.map((c) => (
+            <tr key={c.id} style={{ opacity: c.ativo !== false ? 1 : 0.5 }}>
+              <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{c.descricao}</td>
+              <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{c.conta_codigo} · {c.conta_nome}</td>
+              <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{c.fornecedor || "—"}</td>
+              <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{c.obra_id ? nomeObra(c.obra_id) : "geral"}</td>
+              <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>dia {c.dia_vencimento}</td>
+              <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 700 }}>{fmtR(c.valor)}</td>
+              <td style={{ padding: "7px 10px", borderBottom: `1px solid ${C.linha}` }}><button onClick={() => toggleAtivo(c)} style={{ cursor: "pointer", border: "none", background: (c.ativo !== false) ? C.verde : C.cinza2, color: "#fff", borderRadius: 20, padding: "2px 10px", fontSize: 11, fontWeight: 700 }}>{(c.ativo !== false) ? "ativo" : "inativo"}</button></td>
+              <td style={{ padding: "7px 10px", borderBottom: `1px solid ${C.linha}`, whiteSpace: "nowrap" }}><Btn small kind="ghost" onClick={() => editarCF(c)}>Editar</Btn> <Btn small kind="danger" onClick={() => excluir(c)}>Excluir</Btn></td>
+            </tr>
+          ))}
+          {lista.length === 0 && <tr><td colSpan={8} style={{ padding: 14, color: C.dim, fontSize: 13 }}>Nenhum custo fixo cadastrado ainda.</td></tr>}</tbody>
+        </table>
+        </div>
+      </Card>
+    </div>
+  );
+}
+
 function KanbanOP() {
   const [ops, setOps] = useState(null);
   const [obras, setObras] = useState([]);
@@ -733,6 +822,8 @@ function KanbanOP() {
   const [modalOp, setModalOp] = useState(null); // { op, devolver? } -> modal Conferir NF / devolução
 
   const carregar = () => {
+    // gera (idempotente) as OPs dos custos fixos do mês corrente antes de carregar o kanban
+    acaoData({ t: "gerar_custos_fixos_mes" }).catch(() => {}).finally(() => {
     Promise.all([listar("ordens_pagamento"), listar("obras"), listar("ordens_compra")])
       .then(([o, ob, ocs]) => {
         setOps(o); setObras(ob);
@@ -746,6 +837,7 @@ function KanbanOP() {
         setOcsMat(mp);
       })
       .catch(() => setOps([]));
+    });
   };
   useEffect(carregar, []);
 
@@ -756,12 +848,17 @@ function KanbanOP() {
   const _nq = buscaOp.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const _match = (o) => !_nq || [o.fornecedor, nomeObra(o.obra_id), o.descricao, o.nf_numero, o.centro_custo, matDe(o)].some((v) => String(v == null ? "" : v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(_nq));
   const visiveis = (filtroObra ? ops.filter((o) => o.obra_id === filtroObra) : ops).filter(_match);
-  const porStatus = (s) => visiveis.filter((o) => (o.status || "pendente_nf") === s);
+  const vencido = (op) => op.status !== "paga" && op.vencimento && op.vencimento < hojeISO();
+  const porStatus = (s) => visiveis.filter((o) => (o.status || "pendente_nf") === s && !vencido(o));
+  // OPs vencidas (não pagas, prazo passou) — ordenadas da mais vencida para a menos vencida
+  const vencidas = visiveis.filter(vencido).sort((a, b) => (a.vencimento || "").localeCompare(b.vencimento || ""));
+  const totalVencido = sum(vencidas.map((o) => Number(o.valor) || 0));
 
   // ---- Gráfico: valores A VENCER (não pagos) em janelas ----
   const aVencer = visiveis.filter((o) => o.status !== "paga" && o.vencimento);
   const somaAte = (lim) => sum(aVencer.filter((o) => { const d = diasAte(o.vencimento); return d != null && d <= lim; }).map((o) => Number(o.valor) || 0));
   const dadosGrafico = [
+    { faixa: "Vencidas", valor: totalVencido },
     { faixa: "7 dias", valor: somaAte(7) },
     { faixa: "15 dias", valor: somaAte(15) },
     { faixa: "60 dias", valor: somaAte(60) },
@@ -804,8 +901,6 @@ function KanbanOP() {
     setModalOp(null);
   };
 
-  const vencido = (op) => op.status !== "paga" && op.vencimento && op.vencimento < hojeISO();
-
   // agrupa as OPs de uma coluna por faixa de vencimento
   const faixaDe = (op) => {
     const d = diasAte(op.vencimento);
@@ -824,7 +919,7 @@ function KanbanOP() {
       <div style={{ fontSize: 11, color: C.dim, marginTop: 4, display: "flex", flexWrap: "wrap", gap: "2px 8px" }}>
         <span>{nomeObra(op.obra_id)}</span>
         {op.centro_custo && <span>· {op.centro_custo}</span>}
-        {op.vencimento && <span style={{ color: vencido(op) ? C.laranja : C.dim, fontWeight: vencido(op) ? 700 : 400 }}>· venc {op.vencimento.split("-").reverse().join("/")}</span>}
+        {op.vencimento && <span style={{ color: vencido(op) ? C.vermelho : C.dim, fontWeight: vencido(op) ? 700 : 400 }}>· venc {op.vencimento.split("-").reverse().join("/")}{vencido(op) ? ` (há ${-diasAte(op.vencimento)}d)` : ""}</span>}
       </div>
       {matDe(op) && <div style={{ fontSize: 11, color: "#475569", marginTop: 3, fontStyle: "italic" }}>Material: {matDe(op)}</div>}
       {op.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>{op.descricao}</div>}
@@ -888,7 +983,7 @@ function KanbanOP() {
               <YAxis tickFormatter={(v) => fmtK(v)} tick={{ fontSize: 11 }} />
               <Tooltip content={<ChartTip />} formatter={(v) => fmtR(v)} />
               <Bar dataKey="valor" radius={[6, 6, 0, 0]}>
-                {dadosGrafico.map((d, i) => <Cell key={i} fill={i === 3 ? C.preto : C.laranja} />)}
+                {dadosGrafico.map((d, i) => <Cell key={i} fill={i === 0 ? C.vermelho : i === dadosGrafico.length - 1 ? C.preto : C.laranja} />)}
               </Bar>
             </BarChart>
           </ResponsiveContainer>
@@ -915,7 +1010,15 @@ function KanbanOP() {
         </div>
       </div>
 
-      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12, alignItems: "start" }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, alignItems: "start" }}>
+        <div style={{ background: "#fff4f2", border: `1px solid ${C.vermelho}44`, borderRadius: 12, padding: 10, minHeight: 200 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, paddingLeft: 4 }}>
+            <span style={{ fontWeight: 800, fontSize: 13, color: C.vermelho }}>⚠ Vencidas</span>
+            <span style={{ fontSize: 11, color: C.vermelho, fontWeight: 700 }}>{vencidas.length} · {fmt(totalVencido)}</span>
+          </div>
+          {vencidas.length === 0 ? <div style={{ fontSize: 12, color: C.dim, textAlign: "center", padding: "20px 0" }}>Nenhuma OP vencida 🎉</div>
+            : vencidas.map((op) => card(op, C.vermelho, op.status || "pendente_nf"))}
+        </div>
         {OP_COLS.map(([sid, slabel, scor]) => coluna(sid, slabel, scor))}
       </div>
 

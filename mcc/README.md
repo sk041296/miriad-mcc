@@ -1,5 +1,18 @@
 # Miriad Construction Control (MCC)
 
+## v11.09 — Tab Custos Fixos (vira OP automaticamente todo mês)
+- Nova aba **Custos Fixos** no Financeiro. O financeiro cadastra o custo fixo (descrição, **conta contábil do plano de contas**, fornecedor, valor mensal, dia de vencimento e obra/centro opcional) e o sistema **gera uma OP por mês** no Kanban de Ordens de Pagamento (coluna Pendente NF), com vencimento no dia informado.
+- **Conta contábil por lista suspensa das contas de DESPESA** do plano oficial da Miriad (grupo 3030202 Despesas Gerais e Administrativas — aluguel, energia, água, contabilidade, softwares, seguros, etc. — além de pessoal administrativo), usando **exatamente o código do plano de contas** e mostrando a natureza (Despesa Fixa / Pessoal / Imposto).
+- Geração **idempotente** (não duplica no mês), com botão manual "Gerar OPs do mês" e auto-geração ao abrir o Kanban de OPs. Custos podem ser ativados/inativados, editados e excluídos (as OPs já geradas permanecem).
+
+> **Migração:** rode `supabase/migration_v11_09.sql` (cria a tabela `custos_fixos`).
+>
+> **Obs.:** a lista de contas cobre as despesas administrativas/fixas e de pessoal. Se faltar alguma conta de despesa do seu plano, me envie o plano em Excel/CSV que eu completo a lista com 100% de precisão. A **Folha de Pagamento** (planilha RH) fica para uma versão própria, começando por Colaboradores + Folha CLT + Resumo mensal.
+
+## v11.08 — OPs vencidas (coluna + gráfico + ordenação)
+- Nova coluna **⚠ Vencidas** no Kanban de Ordens de Pagamento: reúne todas as OPs não pagas com prazo vencido, **ordenadas da mais vencida para a menos vencida**, com o rótulo "há N dias" em cada cartão. Essas OPs saem das colunas Pendente NF/Liberada e passam a aparecer só na coluna Vencidas (sem duplicar), com as mesmas ações conforme o status.
+- O **gráfico de barras** agora traz a barra **Vencidas** (em vermelho) com o total vencido, ao lado das faixas a vencer (7/15/60 dias e total).
+
 ## v11.07 — Hotfix: tela de BMP (tela preta)
 - Corrigido o travamento da tela de **Boletins de Medição (BMP)** introduzido na v11.06: a função de normalização usada na nova busca (`normTxt`) não existia no módulo do BMP, causando erro de runtime e tela preta. Agora está definida no próprio módulo. Sem outras mudanças de comportamento.
 

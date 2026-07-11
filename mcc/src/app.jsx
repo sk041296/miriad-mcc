@@ -502,6 +502,7 @@ const FIN_ITENS = [
   { id: "custosdir", label: "Custos diretos (auto)", nota: "Despesas diretas por obra" },
   { id: "medprojetada", label: "Medição projetada", nota: "Previsto dos PMM por obra/mês" },
   { id: "op", label: "Ordens de Pagamento", nota: "Kanban: pendente NF → liberada → paga" },
+  { id: "custosfixos", label: "Custos Fixos", nota: "Cadastro que vira OP todo mês" },
 ];
 /* abas do Financeiro visíveis por papel (Coord. de Planejamento vê só a Medição projetada) */
 const finItensDe = (papel) => {

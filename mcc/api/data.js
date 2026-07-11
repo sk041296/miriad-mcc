@@ -29,6 +29,7 @@ const TABELAS = {
   memoriais_custo: { ordem: "criado_em", asc: false, filtro: "obra_id" },
   memoriais_itens: { ordem: "ordem", asc: true, filtro: "memorial_id" },
   travamentos: { ordem: "criado_em", asc: false },
+  custos_fixos: { ordem: "descricao", asc: true },
   usuarios: { ordem: "nome", asc: true },
 };
 
@@ -446,7 +447,37 @@ export default async function handler(req, res) {
       if (error) return res.status(500).json({ error: error.message });
       return res.status(200).json({ ok: true, semana, sem_necessidade: true });
     }
-    // ---- destravar acesso de um usuário (CEO / Diretor / Coord. de Planejamento) ----
+    // ---- gera as OPs dos custos fixos ativos para um mês (idempotente) ----
+    if (t === "gerar_custos_fixos_mes") {
+      const ym = (req.body && req.body.ym) || new Date().toISOString().slice(0, 7); // "YYYY-MM"
+      const { data: fixos } = await supabase.from("custos_fixos").select("*").eq("ativo", true);
+      let n = 0;
+      for (const cf of (fixos || [])) {
+        const dia = Math.min(Math.max(parseInt(cf.dia_vencimento, 10) || 5, 1), 28);
+        const vencimento = `${ym}-${String(dia).padStart(2, "0")}`;
+        const chaveParc = "CF-" + ym;
+        let centro = cf.centro_custo || null;
+        if (!centro && cf.obra_id) { const { data: ob } = await supabase.from("obras").select("centro_custo").eq("id", cf.obra_id).maybeSingle(); centro = ob?.centro_custo || null; }
+        const op = {
+          origem_tipo: "custo_fixo",
+          origem_id: cf.id,
+          obra_id: cf.obra_id || null,
+          numero: "CF-" + ym + "-" + (cf.conta_codigo || ""),
+          fornecedor: cf.fornecedor || cf.descricao,
+          cnpj: cf.cnpj || null,
+          centro_custo: centro,
+          descricao: "Custo fixo · " + cf.descricao + " (" + (cf.conta_codigo || "") + ") · " + ym,
+          valor: Number(cf.valor) || 0,
+          vencimento,
+          status: "pendente_nf",
+          payload: { parcela: chaveParc, origem: "custo_fixo", conta_codigo: cf.conta_codigo, conta_nome: cf.conta_nome, ym },
+        };
+        const { error } = await supabase.from("ordens_pagamento").upsert(op, { onConflict: "origem_tipo,origem_id,(payload->>'parcela')", ignoreDuplicates: true });
+        if (!error) n++;
+      }
+      return res.status(200).json({ ok: true, ym, geradas: n });
+    }
+
     if (t === "destravar_usuario") {
       if (!ALOCA_SUPERVISOR.has(s.papel)) return res.status(403).json({ error: "Apenas CEO, Diretor ou Coord. de Planejamento podem destravar acessos." });
       const { id } = req.body;
