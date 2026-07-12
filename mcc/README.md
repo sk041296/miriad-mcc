@@ -1,5 +1,14 @@
 # Miriad Construction Control (MCC)
 
+## v11.14 — Cartões de crédito e forma de pagamento (Bloco 2)
+- **Forma de pagamento na OP:** ao clicar em “Marcar paga”, abre um passo para escolher **Pix, TED ou Cartão de crédito** e a data do pagamento. No cartão, seleciona-se qual cartão (do cadastro). O cartão pago fica registrado no cartão da OP.
+- **Cadastro de cartões:** nova aba **Cartões de Crédito** (Financeiro) — nome, bandeira, dia de fechamento, dia de vencimento e limite.
+- **Fatura projetada:** cada OP paga no cartão soma na fatura do cartão. Enquanto o ciclo está aberto, aparece como **PROJETADA** na aba do cartão. Quando o ciclo fecha, a fatura **vira uma OP** (segmento “Empréstimos e cartões”), com vencimento no dia do cartão — geração automática e idempotente ao abrir o Kanban.
+
+> **Migração:** rode `supabase/migration_v11_14.sql` (tabela `cartoes_credito` + colunas `forma_pagamento`, `cartao_id`, `data_pagamento` em `ordens_pagamento`).
+>
+> **Nota de fluxo de caixa:** a OP paga no cartão fica como “paga” (liquidada via cartão) e a fatura entra como nova OP a pagar — o desembolso real de caixa é a fatura.
+
 ## v11.13 — Folha vira OP + segmentação macro do Kanban
 - **Folha → OPs:** ao salvar o Fechamento do mês, cada colaborador CLT gera **uma OP por tipo de despesa**: Salário (pelo **líquido**, já com INSS/IRRF/adiantamento abatidos), Horas extras, VT, VA, Outras adições e Rescisão (quando houver) — vencimento dia 05. Além disso, **INSS e IRRF viram OPs próprias** (vencimento dia 20) no segmento Impostos. Geração idempotente (reabrir/reeditar o fechamento atualiza as OPs, não duplica). Cada OP carrega a conta contábil do plano (salário usa a conta do cargo no organograma).
 - **Segmentação macro no Kanban de OPs:** filtro por segmento — **Custos fixos · Fornecedores (OC/OS) · Folha / Pessoal · Impostos · Empréstimos e cartões** — com contagem por segmento. A categoria é derivada da origem da OP.

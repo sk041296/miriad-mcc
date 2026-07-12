@@ -349,7 +349,7 @@ export const PRECISA_DESIGNACAO = new Set(["sup_obras", "op_suprimentos", "op_pl
 
 /* ===================== Acesso configurável por cargo (v9.3) ===================== */
 export const OP_IDS = ["rdo", "pos", "pmm", "smi", "ssi", "oc", "os", "prestadores", "novoprojeto", "metascusto", "orcamentos", "orccomercial", "eap", "obras"];
-export const FIN_IDS = ["premissas", "antecipacao", "comparativo", "sensibilidade", "resultado", "custos", "custosdir", "medprojetada", "op", "custosfixos"];
+export const FIN_IDS = ["premissas", "antecipacao", "comparativo", "sensibilidade", "resultado", "custos", "custosdir", "medprojetada", "op", "custosfixos", "cartoes"];
 const mapBool = (ids, val) => Object.fromEntries(ids.map((k) => [k, typeof val === "function" ? !!val(k) : !!val]));
 const inc = (papel, ...lista) => lista.includes(papel);
 

@@ -102,7 +102,7 @@ function autoAnticipate(p) {
 }
 
 /* ---------- Sub-abas do módulo financeiro ---------- */
-const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"],["custosfixos","Custos Fixos"]];
+const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"],["custosfixos","Custos Fixos"],["cartoes","Cartões de Crédito"]];
 
 export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
   const [subLocal, setSubLocal] = useState("premissas");
@@ -135,6 +135,7 @@ export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
       {sub === "medprojetada" && <MedicaoProjetada />}
       {sub === "op" && <KanbanOP />}
       {sub === "custosfixos" && <CustosFixos />}
+      {sub === "cartoes" && <Cartoes />}
     </div>
   );
 }
@@ -818,6 +819,80 @@ function CustosFixos() {
   );
 }
 
+/* ================= CARTÕES DE CRÉDITO ================= */
+function Cartoes() {
+  const [lista, setLista] = useState(null);
+  const [ops, setOps] = useState([]);
+  const [busy, setBusy] = useState(false);
+  const vazio = { nome: "", bandeira: "", dia_fechamento: 1, dia_vencimento: 10, limite: 0, ativo: true };
+  const [f, setF] = useState(vazio);
+  const [editId, setEditId] = useState(null);
+  const carregar = () => Promise.all([listar("cartoes_credito"), listar("ordens_pagamento")]).then(([cs, os]) => { setLista(cs); setOps((os || []).filter((o) => o.forma_pagamento === "cartao" && o.cartao_id)); }).catch(() => setLista([]));
+  useEffect(() => { carregar(); }, []);
+  const pad = (x) => String(x).padStart(2, "0");
+  const compDe = (card, dp) => { let [y, m, d] = String(dp).slice(0, 10).split("-").map(Number); if (d > (card.dia_fechamento || 1)) { m++; if (m > 12) { m = 1; y++; } } return `${y}-${pad(m)}`; };
+  const fechamentoDe = (card, comp) => { const [y, m] = comp.split("-").map(Number); return `${y}-${pad(m)}-${pad(Math.min(card.dia_fechamento || 1, 28))}`; };
+  const salvar = async () => {
+    if (!f.nome.trim()) { alert("Informe o nome do cartão."); return; }
+    setBusy(true);
+    try {
+      const row = { nome: f.nome.trim(), bandeira: f.bandeira || null, dia_fechamento: Math.min(Math.max(parseInt(f.dia_fechamento, 10) || 1, 1), 28), dia_vencimento: Math.min(Math.max(parseInt(f.dia_vencimento, 10) || 10, 1), 28), limite: Number(f.limite) || 0, ativo: f.ativo !== false };
+      if (editId) await editar("cartoes_credito", editId, row); else await criar("cartoes_credito", row);
+      setF(vazio); setEditId(null); await carregar();
+    } catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
+  const excluir = async (c) => { if (!confirm(`Excluir o cartão ${c.nome}?`)) return; try { await remover("cartoes_credito", c.id); await carregar(); } catch (e) { alert(e.message); } };
+  if (lista === null) return <div style={{ color: C.dim, padding: 20 }}>Carregando cartões…</div>;
+  const hoje = hojeISO();
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Card title={editId ? "Editar cartão" : "Novo cartão de crédito"}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px,1fr))", gap: 12 }}>
+          <div><Lbl>Nome</Lbl><input value={f.nome} onChange={(e) => setF({ ...f, nome: e.target.value })} placeholder="ex.: Itaú Corp" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Bandeira</Lbl><input value={f.bandeira} onChange={(e) => setF({ ...f, bandeira: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Dia de fechamento</Lbl><NumInput value={f.dia_fechamento} onChange={(v) => setF({ ...f, dia_fechamento: v })} w={80} /></div>
+          <div><Lbl>Dia de vencimento</Lbl><NumInput value={f.dia_vencimento} onChange={(v) => setF({ ...f, dia_vencimento: v })} w={80} /></div>
+          <div><Lbl>Limite (R$)</Lbl><NumInput value={f.limite} onChange={(v) => setF({ ...f, limite: v })} w={130} /></div>
+        </div>
+        <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+          <Btn disabled={busy} onClick={salvar}>{busy ? "Salvando…" : editId ? "Salvar" : "Cadastrar cartão"}</Btn>
+          {editId && <Btn kind="ghost" onClick={() => { setEditId(null); setF(vazio); }}>Cancelar</Btn>}
+        </div>
+      </Card>
+
+      {lista.map((card) => {
+        const doCartao = ops.filter((o) => o.cartao_id === card.id && o.data_pagamento);
+        const porComp = {};
+        doCartao.forEach((o) => { const c = compDe(card, o.data_pagamento); (porComp[c] = porComp[c] || []).push(o); });
+        const comps = Object.keys(porComp).sort((a, b) => b.localeCompare(a));
+        return (
+          <Card key={card.id} title={`${card.nome}${card.bandeira ? " · " + card.bandeira : ""}`} right={<div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <span style={{ fontSize: 11.5, color: C.dim }}>fecha dia {card.dia_fechamento} · vence dia {card.dia_vencimento}{card.limite ? ` · limite ${fmtR(card.limite)}` : ""}</span>
+            <Btn small kind="ghost" onClick={() => { setEditId(card.id); setF({ nome: card.nome, bandeira: card.bandeira || "", dia_fechamento: card.dia_fechamento, dia_vencimento: card.dia_vencimento, limite: card.limite || 0, ativo: card.ativo !== false }); window.scrollTo({ top: 0, behavior: "smooth" }); }}>Editar</Btn>
+            <Btn small kind="danger" onClick={() => excluir(card)}>Excluir</Btn>
+          </div>}>
+            {comps.length === 0 && <div style={{ fontSize: 12.5, color: C.dim }}>Nenhuma compra lançada neste cartão ainda. Ao marcar uma OP como paga com este cartão, ela aparece aqui.</div>}
+            {comps.map((comp) => {
+              const itens = porComp[comp]; const total = sum(itens.map((o) => Number(o.valor) || 0));
+              const aberta = fechamentoDe(card, comp) >= hoje;
+              return (
+                <div key={comp} style={{ border: `1px solid ${aberta ? C.laranja : C.linha}`, borderRadius: 10, padding: 12, marginBottom: 10, background: aberta ? "#fff7f2" : "#fff" }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <b style={{ fontSize: 13 }}>Fatura {comp} {aberta ? <span style={{ fontSize: 11, color: C.laranja, fontWeight: 800 }}>· PROJETADA (ciclo aberto)</span> : <span style={{ fontSize: 11, color: C.verde, fontWeight: 800 }}>· fechada → virou OP</span>}</b>
+                    <b style={{ fontSize: 14 }}>{fmtR(total)}</b>
+                  </div>
+                  {itens.map((o) => <div key={o.id} style={{ display: "flex", justifyContent: "space-between", fontSize: 12, color: C.dim, padding: "2px 0" }}><span>{o.fornecedor || o.descricao} · pago {String(o.data_pagamento).split("-").reverse().join("/")}</span><span>{fmtR(o.valor)}</span></div>)}
+                </div>
+              );
+            })}
+          </Card>
+        );
+      })}
+      {lista.length === 0 && <Card title="Cartões"><div style={{ fontSize: 13, color: C.dim }}>Nenhum cartão cadastrado.</div></Card>}
+    </div>
+  );
+}
+
 const SEGMENTOS = ["Custos fixos", "Fornecedores", "Folha / Pessoal", "Impostos", "Empréstimos e cartões"];
 function segDe(op) {
   const cat = op?.payload?.categoria;
@@ -844,13 +919,18 @@ function KanbanOP() {
   const [busy, setBusy] = useState(null);
   const [expand, setExpand] = useState({}); // chave "status:faixa" -> bool
   const [modalOp, setModalOp] = useState(null); // { op, devolver? } -> modal Conferir NF / devolução
+  const [cartoes, setCartoes] = useState([]);
+  const [pagando, setPagando] = useState(null); // op sendo marcada como paga
+  const [formaPg, setFormaPg] = useState("pix");
+  const [cartaoPg, setCartaoPg] = useState("");
+  const [dataPg, setDataPg] = useState(hojeISO());
 
   const carregar = () => {
-    // gera (idempotente) as OPs dos custos fixos do mês corrente antes de carregar o kanban
-    acaoData({ t: "gerar_custos_fixos_mes" }).catch(() => {}).finally(() => {
-    Promise.all([listar("ordens_pagamento"), listar("obras"), listar("ordens_compra")])
-      .then(([o, ob, ocs]) => {
-        setOps(o); setObras(ob);
+    // gera (idempotente) OPs de custos fixos do mês e fecha faturas de cartão vencidas antes de carregar
+    Promise.all([acaoData({ t: "gerar_custos_fixos_mes" }).catch(() => {}), acaoData({ t: "gerar_faturas_cartao" }).catch(() => {})]).finally(() => {
+    Promise.all([listar("ordens_pagamento"), listar("obras"), listar("ordens_compra"), listar("cartoes_credito")])
+      .then(([o, ob, ocs, cds]) => {
+        setOps(o); setObras(ob); setCartoes(cds || []);
         // monta mapa origem_id -> "material1; material2"
         const mp = {};
         ocs.forEach((oc) => {
@@ -895,13 +975,22 @@ function KanbanOP() {
   const mover = async (op, novoStatus, patchExtra = {}) => {
     setBusy(op.id);
     const patch = { status: novoStatus, atualizado_em: new Date().toISOString(), ...patchExtra };
-    if (novoStatus === "paga" && !op.data_pagamento) patch.data_pagamento = hojeISO();
+    if (novoStatus === "paga" && !patch.data_pagamento && !op.data_pagamento) patch.data_pagamento = hojeISO();
     try {
       await editar("ordens_pagamento", op.id, patch);
       setOps((prev) => prev.map((x) => x.id === op.id ? { ...x, ...patch } : x));
     } catch (e) { alert("Erro ao mover OP: " + (e.message || e)); }
     setBusy(null);
   };
+
+  const confirmarPagamento = async () => {
+    if (!pagando) return;
+    if (formaPg === "cartao" && !cartaoPg) { alert("Selecione o cartão de crédito."); return; }
+    await mover(pagando, "paga", { forma_pagamento: formaPg, cartao_id: formaPg === "cartao" ? cartaoPg : null, data_pagamento: dataPg });
+    setPagando(null);
+    if (formaPg === "cartao") acaoData({ t: "gerar_faturas_cartao" }).catch(() => {});
+  };
+  const nomeCartao = (id) => (cartoes.find((c) => c.id === id) || {}).nome || "cartão";
 
   const liberarOp = async (op, dados) => {
     await mover(op, "liberada", {
@@ -949,14 +1038,14 @@ function KanbanOP() {
       {op.descricao && <div style={{ fontSize: 11, color: C.dim, marginTop: 3 }}>{op.descricao}</div>}
       {op.nf_numero && <div style={{ fontSize: 11, color: "#2563eb", marginTop: 3 }}>NF {op.nf_numero}{op.nf_valor != null ? ` · ${fmt(op.nf_valor)}` : ""}</div>}
       {op.divergencia && op.status !== "paga" && <div style={{ fontSize: 11, color: C.vermelho, marginTop: 4, fontWeight: 700, background: "#fdecec", border: `1px solid ${C.vermelho}22`, borderRadius: 6, padding: "4px 7px" }}>↩ Devolvida p/ suprimentos: {op.divergencia_motivo}</div>}
-      {op.status === "paga" && op.data_pagamento && <div style={{ fontSize: 11, color: C.verde, marginTop: 3 }}>Pago em {op.data_pagamento.split("-").reverse().join("/")}</div>}
+      {op.status === "paga" && op.data_pagamento && <div style={{ fontSize: 11, color: C.verde, marginTop: 3 }}>Pago em {op.data_pagamento.split("-").reverse().join("/")}{op.forma_pagamento ? ` · ${op.forma_pagamento === "cartao" ? "cartão " + nomeCartao(op.cartao_id) : op.forma_pagamento.toUpperCase()}` : ""}</div>}
       <div style={{ display: "flex", gap: 6, marginTop: 9, flexWrap: "wrap" }}>
         {sid === "pendente_nf" && <>
           <Btn small onClick={() => setModalOp({ op })} disabled={busy === op.id}>Conferir NF</Btn>
           <Btn small kind="ghost" onClick={() => setModalOp({ op, devolver: true })} disabled={busy === op.id}>↩ Devolver</Btn>
         </>}
         {sid === "liberada" && <>
-          <Btn small onClick={() => mover(op, "paga")} disabled={busy === op.id}>Marcar paga</Btn>
+          <Btn small onClick={() => { setPagando(op); setFormaPg("pix"); setCartaoPg(cartoes[0]?.id || ""); setDataPg(hojeISO()); }} disabled={busy === op.id}>Marcar paga</Btn>
           <Btn small kind="ghost" onClick={() => mover(op, "pendente_nf", { nf_conferida: false })} disabled={busy === op.id}>← Pendente</Btn>
         </>}
         {sid === "paga" && <Btn small kind="ghost" onClick={() => mover(op, "liberada", { data_pagamento: null })} disabled={busy === op.id}>← Reabrir</Btn>}
@@ -1062,6 +1151,35 @@ function KanbanOP() {
           onLiberar={(dados) => liberarOp(modalOp.op, dados)}
           onDevolver={(motivo) => devolverOp(modalOp.op, motivo)}
         />
+      )}
+      {pagando && (
+        <div onClick={() => setPagando(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.45)", zIndex: 60, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={(e) => e.stopPropagation()} style={{ background: C.branco, borderRadius: 14, padding: 20, width: "100%", maxWidth: 420, boxShadow: "0 12px 40px rgba(0,0,0,.25)" }}>
+            <div style={{ fontWeight: 800, fontSize: 15, marginBottom: 4 }}>Marcar como paga</div>
+            <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 14 }}>{pagando.fornecedor || pagando.descricao} · {fmtR(pagando.valor)}</div>
+            <Lbl>Forma de pagamento</Lbl>
+            <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+              {[["pix", "Pix"], ["ted", "TED"], ["cartao", "Cartão de crédito"]].map(([v, l]) => (
+                <button key={v} onClick={() => setFormaPg(v)} style={{ flex: 1, background: formaPg === v ? C.preto : C.branco, color: formaPg === v ? "#fff" : C.dim, border: `1px solid ${formaPg === v ? C.preto : C.linha}`, borderRadius: 8, padding: "8px 6px", fontSize: 12.5, fontWeight: 700, cursor: "pointer" }}>{l}</button>
+              ))}
+            </div>
+            {formaPg === "cartao" && (
+              <div style={{ marginBottom: 12 }}>
+                <Lbl>Cartão</Lbl>
+                {cartoes.filter((c) => c.ativo !== false).length === 0
+                  ? <div style={{ fontSize: 12, color: C.vermelho }}>Nenhum cartão cadastrado. Cadastre na aba “Cartões de Crédito”.</div>
+                  : <select value={cartaoPg} onChange={(e) => setCartaoPg(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box" })}>{cartoes.filter((c) => c.ativo !== false).map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}</select>}
+                <div style={{ fontSize: 11, color: C.dim, marginTop: 6 }}>A OP entra na fatura projetada do cartão; no fechamento, a fatura vira uma OP no segmento “Empréstimos e cartões”.</div>
+              </div>
+            )}
+            <Lbl>Data do pagamento</Lbl>
+            <input type="date" value={dataPg} onChange={(e) => setDataPg(e.target.value)} style={inp({ width: "100%", boxSizing: "border-box", marginBottom: 16 })} />
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Btn kind="ghost" onClick={() => setPagando(null)}>Cancelar</Btn>
+              <Btn onClick={confirmarPagamento} disabled={busy === pagando.id || (formaPg === "cartao" && !cartaoPg)}>Confirmar pagamento</Btn>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

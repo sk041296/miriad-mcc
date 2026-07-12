@@ -30,6 +30,7 @@ const TABELAS = {
   memoriais_itens: { ordem: "ordem", asc: true, filtro: "memorial_id" },
   travamentos: { ordem: "criado_em", asc: false },
   custos_fixos: { ordem: "descricao", asc: true },
+  cartoes_credito: { ordem: "nome", asc: true },
   rh_colaboradores: { ordem: "nome", asc: true },
   rh_folha: { ordem: "criado_em", asc: false, filtro: "mes" },
   usuarios: { ordem: "nome", asc: true },
@@ -510,6 +511,38 @@ export default async function handler(req, res) {
         }
       }
       return res.status(200).json({ ok: true, ym, geradas: n });
+    }
+
+    // ---- fecha faturas de cartão: soma OPs pagas no cartão por ciclo; ciclo fechado vira OP ----
+    if (t === "gerar_faturas_cartao") {
+      const hoje = new Date().toISOString().slice(0, 10);
+      const pad = (x) => String(x).padStart(2, "0");
+      const compDe = (card, dataPag) => { let [y, m, d] = String(dataPag).slice(0, 10).split("-").map(Number); if (d > (card.dia_fechamento || 1)) { m++; if (m > 12) { m = 1; y++; } } return `${y}-${pad(m)}`; };
+      const fechamentoDe = (card, comp) => { const [y, m] = comp.split("-").map(Number); return `${y}-${pad(m)}-${pad(Math.min(card.dia_fechamento || 1, 28))}`; };
+      const vencDe = (card, comp) => { let [y, m] = comp.split("-").map(Number); if ((card.dia_vencimento || 10) <= (card.dia_fechamento || 1)) { m++; if (m > 12) { m = 1; y++; } } return `${y}-${pad(m)}-${pad(Math.min(card.dia_vencimento || 10, 28))}`; };
+      const { data: cards } = await supabase.from("cartoes_credito").select("*").eq("ativo", true);
+      const { data: pagas } = await supabase.from("ordens_pagamento").select("id,valor,cartao_id,data_pagamento,forma_pagamento").eq("forma_pagamento", "cartao");
+      let n = 0;
+      for (const card of (cards || [])) {
+        const doCartao = (pagas || []).filter((o) => o.cartao_id === card.id && o.data_pagamento);
+        const porComp = {};
+        doCartao.forEach((o) => { const c = compDe(card, o.data_pagamento); porComp[c] = (porComp[c] || 0) + (Number(o.valor) || 0); });
+        for (const comp of Object.keys(porComp)) {
+          if (fechamentoDe(card, comp) >= hoje) continue; // ciclo ainda aberto → "projetada", não gera OP
+          const op = {
+            origem_tipo: "cartao_fatura", origem_id: card.id, obra_id: null,
+            numero: "FAT-" + (card.nome || "").slice(0, 10) + "-" + comp,
+            fornecedor: "Fatura " + (card.nome || "cartão"),
+            descricao: "Fatura cartão " + (card.nome || "") + " · competência " + comp,
+            valor: Math.round(porComp[comp] * 100) / 100,
+            vencimento: vencDe(card, comp), status: "pendente_nf",
+            payload: { parcela: "FAT-" + comp, origem: "cartao_fatura", categoria: "cartao", cartao: card.nome, comp },
+          };
+          const { error } = await supabase.from("ordens_pagamento").upsert(op, { onConflict: "origem_tipo,origem_id,(payload->>'parcela')", ignoreDuplicates: false });
+          if (!error) n++;
+        }
+      }
+      return res.status(200).json({ ok: true, faturas: n });
     }
 
     if (t === "destravar_usuario") {
