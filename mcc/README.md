@@ -1,5 +1,15 @@
 # Miriad Construction Control (MCC)
 
+## v11.12 — Folha de Pagamento: cargos, fechamento completo e Organograma
+- **Abas separadas:** a folha agora tem **Colaboradores** (cadastro), **Folha de pagamento** (quadro: setor, cargo, contrato, admissão, vencimento do contrato, salário), **Fechamento de folha** (cálculo mensal), **Organograma de Cargos** e **Resumo mensal**.
+- **Colaboradores:** seleção de **setor + cargo** a partir do organograma (preenche o salário base automaticamente), além de VT, VA, admissão e **vencimento do contrato**.
+- **Fechamento de folha (mensal):** por colaborador, lança HE, VT, VA, **outras adições**, **outros descontos**, faltas; **adiantamento do dia 20 com check** de quem recebe (valor sugerido 40% do salário, editável); INSS/IRRF calculados (2025) e editáveis; e **opção de rescisão de contrato** (valor da rescisão). Fecha o **líquido a pagar** por pessoa e o total do mês.
+- **Organograma de Cargos:** tabela de salários base por setor (Operacional/MEI, Administrativo, Suprimentos, Orçamentos, Planejamento, Supervisão, Comercial, Marketing, Inovação, Diretoria), **editável apenas por CEO/Diretor** — semeado do organograma oficial.
+
+> **Migração:** rode `supabase/migration_v11_12.sql` (colunas `setor`, `vencimento_contrato`, `vt_valor` em `rh_colaboradores`). O organograma é salvo em configuração (sem tabela nova).
+>
+> **Obs.:** INSS/IRRF seguem como referência 2025 editável — confira com a contabilidade.
+
 ## v11.11 — Hotfix: aba Custos Fixos não aparecia no menu
 - A aba **Custos Fixos** (v11.09) não surgia no menu do Financeiro porque o item novo não estava no `FIN_IDS` (base da matriz de permissões por cargo). Como o item nunca era concedido por padrão, o menu o filtrava. Incluídos `op` (Ordens de Pagamento) e `custosfixos` no `FIN_IDS` — agora ambos são liberados por padrão para CEO/Diretor/Financeiro, sem precisar reconfigurar a tela de Permissões. Correção só de frontend, sem migração.
 
