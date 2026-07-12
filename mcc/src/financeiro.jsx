@@ -102,7 +102,7 @@ function autoAnticipate(p) {
 }
 
 /* ---------- Sub-abas do módulo financeiro ---------- */
-const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"],["custosfixos","Custos Fixos"],["cartoes","Cartões de Crédito"]];
+const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["fluxocaixa","Fluxo de Caixa"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"],["custosfixos","Custos Fixos"],["cartoes","Cartões de Crédito"]];
 
 export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
   const [subLocal, setSubLocal] = useState("premissas");
@@ -136,6 +136,7 @@ export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
       {sub === "op" && <KanbanOP />}
       {sub === "custosfixos" && <CustosFixos />}
       {sub === "cartoes" && <Cartoes />}
+      {sub === "fluxocaixa" && <FluxoCaixa />}
     </div>
   );
 }
@@ -723,6 +724,199 @@ function diasAte(venc) {
   const h = new Date(hojeISO() + "T00:00:00");
   const v = new Date(String(venc).slice(0, 10) + "T00:00:00");
   return Math.round((v - h) / 86400000);
+}
+
+/* ================= FLUXO DE CAIXA (projetada × realizada + antecipações) ================= */
+const _addMesYm = (ym, k) => { let [y, m] = ym.split("-").map(Number); m += k; while (m > 12) { m -= 12; y++; } while (m < 1) { m += 12; y--; } return `${y}-${String(m).padStart(2, "0")}`; };
+const _mesesDiff = (a, b) => { const [ay, am] = String(a).slice(0, 7).split("-").map(Number), [by, bm] = String(b).slice(0, 7).split("-").map(Number); return Math.max(0, (by - ay) * 12 + (bm - am)); };
+const _mesesContig = (ini, fim) => { const out = []; let c = ini, g = 0; while (c <= fim && g < 60) { out.push(c); c = _addMesYm(c, 1); g++; } return out; };
+
+function FluxoCaixa({ usuario }) {
+  const [d, setD] = useState(null);
+  const [view, setView] = useState("projetada");
+  const carregar = async () => {
+    const obras = await listar("obras");
+    const eapPorObra = {}; const rdos = [];
+    await Promise.all(obras.map(async (o) => { eapPorObra[o.id] = await listar("eap_itens", { obra_id: o.id }); (await listar("rdos", { obra_id: o.id })).forEach((r) => rdos.push(r)); }));
+    const [contratos, ocs, pmms, fixos, antec] = await Promise.all([listar("contratos_servico"), listar("ordens_compra"), listar("pmm"), listar("custos_fixos"), listar("antecipacoes")]);
+    setD({ obras, eapPorObra, rdos, contratos, ocs, pmms, fixos, antec });
+  };
+  useEffect(() => { carregar().catch(() => setD({ obras: [], eapPorObra: {}, rdos: [], contratos: [], ocs: [], pmms: [], fixos: [], antec: [] })); }, []);
+  if (!d) return <div style={{ color: C.dim, padding: 20 }}>Carregando fluxo de caixa…</div>;
+
+  const { obras, eapPorObra, rdos, contratos, ocs, pmms, fixos, antec } = d;
+  const custos = computeCustosObras({ obras, eapPorObra, rdos, ocs, contratos });
+  const recReal = {}, recProj = {}, despServProj = {};
+  obras.forEach((o) => {
+    const eap = eapPorObra[o.id] || [];
+    const valEap = {}, qc = {};
+    eap.forEach((e) => { valEap[e.codigo] = Number(e.valor_total) || 0; qc[e.codigo] = Number(e.qtde) || 0; });
+    const osVal = {};
+    contratos.filter((c) => c.obra_id === o.id && c.tipo !== "direto").forEach((c) => {
+      const arr = (Array.isArray(c.itens_eap) && c.itens_eap.length) ? c.itens_eap : (c.escopo_eap ? [{ eap_codigo: c.escopo_eap, valor: c.valor }] : []);
+      arr.forEach((x) => { const cod = String(x.eap_codigo || "").split(" ")[0].trim(); if (cod) osVal[cod] = (osVal[cod] || 0) + (Number(x.valor) || 0); });
+    });
+    rdos.filter((r) => r.obra_id === o.id).forEach((r) => {
+      const m = ymISO(r.data); if (!m) return;
+      (r.atividades || []).forEach((a) => { const q = Number(a.qtde_dia ?? a.avanco) || 0; if (!q) return; const v = valEap[a.eap] || 0, c = qc[a.eap] || 0; if (!v || !c) return; recReal[m] = (recReal[m] || 0) + v * Math.min(q / c, 1); });
+    });
+    pmms.filter((p) => p.obra_id === o.id).forEach((pm) => {
+      const m = ymISO(pm.mes); if (!m) return;
+      (pm.itens || []).forEach((it) => { const cod = it.eap_codigo, c = qc[cod] || 0, prev = Number(it.producao_prevista) || 0; if (!c) return; const frac = Math.min(prev / c, 1); recProj[m] = (recProj[m] || 0) + (valEap[cod] || 0) * frac; despServProj[m] = (despServProj[m] || 0) + (osVal[cod] || 0) * frac; });
+    });
+  });
+  const servReal = {}, matReal = {};
+  obras.forEach((o) => { const p = custos.porObra[o.id]; if (!p) return; Object.entries(p.servico).forEach(([m, v]) => servReal[m] = (servReal[m] || 0) + v); Object.entries(p.material).forEach(([m, v]) => matReal[m] = (matReal[m] || 0) + v); });
+  const custoFixoMensal = sum((fixos || []).filter((f) => f.ativo !== false).map((f) => Number(f.valor) || 0));
+  const antEnt = {}, antSai = {}, antDet = [];
+  (antec || []).forEach((a) => {
+    const mOp = ymISO(a.data_operacao), mVc = ymISO(a.vencimento);
+    const bruto = Number(a.valor_bruto) || 0, meses = _mesesDiff(a.data_operacao, a.vencimento) || 1;
+    const desconto = bruto * ((Number(a.taxa) || 0) / 100) * meses, liq = bruto - desconto;
+    if (mOp) antEnt[mOp] = (antEnt[mOp] || 0) + liq;
+    if (mVc) antSai[mVc] = (antSai[mVc] || 0) + bruto;
+    antDet.push({ ...a, bruto, meses, desconto, liq });
+  });
+  const keys = new Set([...Object.keys(recReal), ...Object.keys(recProj), ...Object.keys(servReal), ...Object.keys(matReal), ...Object.keys(despServProj), ...Object.keys(antEnt), ...Object.keys(antSai)]);
+  let axis = [...keys].sort();
+  axis = axis.length ? _mesesContig(axis[0], axis[axis.length - 1]) : [new Date().toISOString().slice(0, 7)];
+
+  const proj = view === "projetada";
+  const receita = (m) => proj ? (recProj[m] || 0) : (recReal[m] || 0);
+  const dFixo = () => custoFixoMensal;
+  const dServ = (m) => proj ? (despServProj[m] || 0) : (servReal[m] || 0);
+  const dMat = (m) => proj ? ((matReal[m] || 0) + 0.30 * (recProj[m] || 0)) : (matReal[m] || 0);
+  const despesa = (m) => dFixo() + dServ(m) + dMat(m);
+  const saldoMes = (m) => receita(m) + (antEnt[m] || 0) - despesa(m) - (antSai[m] || 0);
+  let acc = 0; const acumulado = {}; axis.forEach((m) => { acc += saldoMes(m); acumulado[m] = acc; });
+  const totalRow = (fn) => sum(axis.map(fn));
+  const chart = axis.map((m) => ({ mes: ymLabel(m), Receita: receita(m) + (antEnt[m] || 0), Despesa: despesa(m) + (antSai[m] || 0), Acumulado: acumulado[m] }));
+
+  const linha = (label, fn, cor, bold) => (
+    <tr>
+      <Td style={{ fontWeight: bold ? 800 : 600, color: cor || C.texto, position: "sticky", left: 0, background: "#fff" }}>{label}</Td>
+      {axis.map((m) => { const v = fn(m); return <Td key={m} right color={v ? (cor || C.texto) : C.dim} style={{ fontWeight: bold ? 700 : 400 }}>{v ? fmt(v) : "—"}</Td>; })}
+      <Td right style={{ fontWeight: 800, color: cor || C.texto }}>{fmt(totalRow(fn))}</Td>
+    </tr>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {[["projetada", "Projetada"], ["realizada", "Realizada"], ["antecipacoes", "Antecipação de recebíveis"]].map(([id, l]) => (
+          <button key={id} onClick={() => setView(id)} style={{ background: view === id ? C.laranja : C.branco, color: view === id ? "#fff" : C.dim, border: `1px solid ${view === id ? C.laranja : C.linha}`, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{l}</button>
+        ))}
+      </div>
+
+      {view === "antecipacoes" ? <Antecipacoes obras={obras} antDet={antDet} onMudou={carregar} />
+        : (
+          <>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              <Kpi dark label={`Receita ${proj ? "projetada" : "realizada"}`} value={fmtR(totalRow(receita))} accent={C.verde} sub={proj ? "PMM das obras" : "reconhecida em RDOs"} />
+              <Kpi label={`Despesa ${proj ? "projetada" : "realizada"}`} value={fmtR(totalRow(despesa))} accent={C.vermelho} sub="fixo + serviços + materiais" />
+              <Kpi label="Antecipações (entrada)" value={fmtR(totalRow((m) => antEnt[m] || 0))} accent={C.azul} sub="líquido recebido" />
+              <Kpi label="Saldo acumulado (fim)" value={fmtR(acumulado[axis[axis.length - 1]] || 0)} accent={(acumulado[axis[axis.length - 1]] || 0) >= 0 ? C.verde : C.vermelho} />
+            </div>
+            <Card title={`Fluxo de caixa — ${proj ? "projetado" : "realizado"}`}>
+              <div style={{ fontSize: 11.5, color: C.dim, marginBottom: 10 }}>
+                {proj
+                  ? "Receita = PMM das obras. Despesa = custo fixo + serviços (PMM × OS-i, evolução necessária do contrato) + materiais (parcelas de OC-i + 30% da medição do PMM). Antecipações somam entrada (líquido) e saída (devolução no vencimento)."
+                  : "Receita = medição reconhecida nos RDOs. Despesa = custo fixo + serviços medidos (OS-i por RDO) + parcelas de OC-i realizadas. Antecipações somam entrada (líquido) e saída (devolução no vencimento)."}
+              </div>
+              <div style={{ overflowX: "auto" }}>
+                <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 640 }}>
+                  <thead><tr><Th>R$</Th>{axis.map((m) => <Th key={m} right>{ymLabel(m)}</Th>)}<Th right>Total</Th></tr></thead>
+                  <tbody>
+                    {linha("(+) Receita" + (proj ? " (PMM)" : " (RDO)"), receita, C.verde, true)}
+                    {linha("(+) Antecipação — entrada", (m) => antEnt[m] || 0, C.azul)}
+                    {linha("(–) Custo fixo", () => dFixo(), C.vermelho)}
+                    {linha("(–) Serviços (OS-i)", dServ, C.vermelho)}
+                    {linha("(–) Materiais (OC-i)", dMat, C.vermelho)}
+                    {linha("(–) Antecipação — devolução", (m) => antSai[m] || 0, C.vermelho)}
+                    <tr style={{ background: C.cinza }}>
+                      <Td style={{ fontWeight: 800, position: "sticky", left: 0, background: C.cinza }}>(=) Saldo do mês</Td>
+                      {axis.map((m) => { const v = saldoMes(m); return <Td key={m} right color={v >= 0 ? C.verde : C.vermelho} style={{ fontWeight: 700 }}>{fmt(v)}</Td>; })}
+                      <Td right style={{ fontWeight: 800 }}>{fmt(totalRow(saldoMes))}</Td>
+                    </tr>
+                    <tr style={{ background: C.preto }}>
+                      <Td style={{ color: "#fff", fontWeight: 800, position: "sticky", left: 0, background: C.preto }}>Saldo acumulado</Td>
+                      {axis.map((m) => <Td key={m} right style={{ color: acumulado[m] >= 0 ? "#7CFFB0" : "#ff9b9b", fontWeight: 800 }}>{fmt(acumulado[m])}</Td>)}
+                      <Td right style={{ color: "#fff", fontWeight: 800 }}>—</Td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </Card>
+            <Card title="Receita × Despesa × Saldo acumulado">
+              <ResponsiveContainer width="100%" height={300}>
+                <ComposedChart data={chart} margin={{ top: 10, right: 12, left: 8, bottom: 0 }}>
+                  <CartesianGrid stroke={C.linha} strokeDasharray="2 4" vertical={false} />
+                  <XAxis dataKey="mes" tick={{ fill: C.dim, fontSize: 10 }} /><YAxis tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} width={66} />
+                  <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+                  <Bar dataKey="Receita" fill={C.verde} radius={[3, 3, 0, 0]} /><Bar dataKey="Despesa" fill={C.vermelho} radius={[3, 3, 0, 0]} />
+                  <Line dataKey="Acumulado" stroke={C.laranja} strokeWidth={2.5} dot={{ r: 2 }} />
+                  <ReferenceLine y={0} stroke={C.dim} />
+                </ComposedChart>
+              </ResponsiveContainer>
+            </Card>
+          </>
+        )}
+    </div>
+  );
+}
+
+function Antecipacoes({ obras, antDet, onMudou }) {
+  const [busy, setBusy] = useState(false);
+  const vazio = { obra_id: "", medicao_ref: "", valor_bruto: 0, taxa: 0, instituicao: "", data_operacao: hojeISO(), vencimento: "", observacao: "" };
+  const [f, setF] = useState(vazio);
+  const salvar = async () => {
+    if (!(Number(f.valor_bruto) > 0) || !f.data_operacao || !f.vencimento) { alert("Informe valor bruto, data da operação e vencimento."); return; }
+    setBusy(true);
+    try { await criar("antecipacoes", { ...f, obra_id: f.obra_id || null, valor_bruto: Number(f.valor_bruto) || 0, taxa: Number(f.taxa) || 0 }); setF(vazio); await onMudou(); }
+    catch (e) { alert(e.message); } finally { setBusy(false); }
+  };
+  const excluir = async (a) => { if (!confirm("Excluir esta operação de antecipação?")) return; try { await remover("antecipacoes", a.id); await onMudou(); } catch (e) { alert(e.message); } };
+  const nomeObra = (id) => (obras.find((o) => o.id === id) || {}).codigo || "—";
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Card title="Nova operação de antecipação de recebíveis">
+        <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 12 }}>A operação lança a <b>entrada</b> do valor líquido (bruto − desconto) no mês da operação e a <b>devolução</b> do valor bruto no mês do vencimento, tanto no fluxo projetado quanto no realizado. Desconto = valor bruto × taxa/mês × nº de meses até o vencimento.</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px,1fr))", gap: 12 }}>
+          <div><Lbl>Obra</Lbl><select value={f.obra_id} onChange={(e) => setF({ ...f, obra_id: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })}><option value="">—</option>{obras.map((o) => <option key={o.id} value={o.id}>{o.codigo}</option>)}</select></div>
+          <div><Lbl>Medição (referência)</Lbl><input value={f.medicao_ref} onChange={(e) => setF({ ...f, medicao_ref: e.target.value })} placeholder="ex.: Medição mai/2026" style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Valor bruto (R$)</Lbl><NumInput value={f.valor_bruto} onChange={(v) => setF({ ...f, valor_bruto: v })} w={140} /></div>
+          <div><Lbl>Taxa (% ao mês)</Lbl><NumInput value={f.taxa} onChange={(v) => setF({ ...f, taxa: v })} w={90} dec={2} /></div>
+          <div><Lbl>Instituição</Lbl><input value={f.instituicao} onChange={(e) => setF({ ...f, instituicao: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Data da operação</Lbl><input type="date" value={f.data_operacao} onChange={(e) => setF({ ...f, data_operacao: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+          <div><Lbl>Vencimento</Lbl><input type="date" value={f.vencimento} onChange={(e) => setF({ ...f, vencimento: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
+        </div>
+        <div style={{ marginTop: 14 }}><Btn disabled={busy} onClick={salvar}>{busy ? "Salvando…" : "Registrar operação"}</Btn></div>
+      </Card>
+      <Card title={`Operações de antecipação (${antDet.length})`}>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+            <thead><tr style={{ background: C.preto }}>{["Obra", "Medição", "Instituição", "Bruto", "Taxa", "Meses", "Desconto", "Líquido", "Operação", "Vencimento", ""].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+            <tbody>{antDet.map((a) => (
+              <tr key={a.id}>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{nomeObra(a.obra_id)}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{a.medicao_ref || "—"}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{a.instituicao || "—"}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12.5, borderBottom: `1px solid ${C.linha}`, fontWeight: 700 }}>{fmtR(a.bruto)}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{a.taxa}%</td>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{a.meses}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, color: C.vermelho }}>{fmtR(a.desconto)}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12.5, borderBottom: `1px solid ${C.linha}`, fontWeight: 700, color: C.verde }}>{fmtR(a.liq)}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{String(a.data_operacao).slice(0, 10).split("-").reverse().join("/")}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{String(a.vencimento).slice(0, 10).split("-").reverse().join("/")}</td>
+                <td style={{ padding: "7px 10px", borderBottom: `1px solid ${C.linha}` }}><Btn small kind="danger" onClick={() => excluir(a)}>Excluir</Btn></td>
+              </tr>
+            ))}
+            {antDet.length === 0 && <tr><td colSpan={11} style={{ padding: 14, color: C.dim, fontSize: 13 }}>Nenhuma operação registrada.</td></tr>}</tbody>
+          </table>
+        </div>
+      </Card>
+    </div>
+  );
 }
 
 /* ================= CUSTOS FIXOS ================= */

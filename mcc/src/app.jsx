@@ -499,6 +499,7 @@ const FIN_ITENS = [
   { id: "comparativo", label: "Antes × Depois", nota: "Impacto da antecipação" },
   { id: "sensibilidade", label: "Sensibilidade", nota: "Variação de taxa e prazo" },
   { id: "resultado", label: "Resultado", nota: "DRE e fluxo consolidado" },
+  { id: "fluxocaixa", label: "Fluxo de Caixa", nota: "Projetada × realizada + antecipações" },
   { id: "custos", label: "Custos por obra", nota: "Serviço × material por mês" },
   { id: "custosdir", label: "Custos diretos (auto)", nota: "Despesas diretas por obra" },
   { id: "medprojetada", label: "Medição projetada", nota: "Previsto dos PMM por obra/mês" },

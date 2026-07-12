@@ -349,7 +349,7 @@ export const PRECISA_DESIGNACAO = new Set(["sup_obras", "op_suprimentos", "op_pl
 
 /* ===================== Acesso configurável por cargo (v9.3) ===================== */
 export const OP_IDS = ["rdo", "pos", "pmm", "smi", "ssi", "oc", "os", "prestadores", "novoprojeto", "metascusto", "orcamentos", "orccomercial", "eap", "obras"];
-export const FIN_IDS = ["premissas", "antecipacao", "comparativo", "sensibilidade", "resultado", "custos", "custosdir", "medprojetada", "op", "custosfixos", "cartoes"];
+export const FIN_IDS = ["premissas", "antecipacao", "comparativo", "sensibilidade", "resultado", "custos", "custosdir", "medprojetada", "op", "custosfixos", "cartoes", "fluxocaixa"];
 const mapBool = (ids, val) => Object.fromEntries(ids.map((k) => [k, typeof val === "function" ? !!val(k) : !!val]));
 const inc = (papel, ...lista) => lista.includes(papel);
 
@@ -360,7 +360,7 @@ export function acessoPadrao(papel) {
   return {
     painel: !!P.painel, usuarios: !!P.usuarios, ranking: dir, gerencial: dir,
     op: mapBool(OP_IDS, !!P.operacional),
-    fin: mapBool(FIN_IDS, finFull ? true : (papel === "coord_planejamento" ? (k) => k === "medprojetada" : false)),
+    fin: (() => { const b = mapBool(FIN_IDS, finFull ? true : (papel === "coord_planejamento" ? (k) => k === "medprojetada" : false)); b.fluxocaixa = dir; return b; })(),
     cap: {
       smi_criar: inc(papel, "sup_obras", "coord_planejamento"),
       ssi_criar: inc(papel, "sup_obras", "coord_planejamento"),

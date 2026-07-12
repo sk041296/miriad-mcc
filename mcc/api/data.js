@@ -31,6 +31,7 @@ const TABELAS = {
   travamentos: { ordem: "criado_em", asc: false },
   custos_fixos: { ordem: "descricao", asc: true },
   cartoes_credito: { ordem: "nome", asc: true },
+  antecipacoes: { ordem: "criado_em", asc: false },
   rh_colaboradores: { ordem: "nome", asc: true },
   rh_folha: { ordem: "criado_em", asc: false, filtro: "mes" },
   usuarios: { ordem: "nome", asc: true },

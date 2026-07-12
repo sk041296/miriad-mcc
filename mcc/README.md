@@ -1,5 +1,16 @@
 # Miriad Construction Control (MCC)
 
+## v11.15 — Fluxo de Caixa (Projetada × Realizada) + Antecipação de recebíveis
+- Nova aba **Fluxo de Caixa** no Financeiro, **visível apenas para CEO e Diretor**. Três visões:
+  - **Projetada:** Receita = **PMM das obras**. Despesa = **custo fixo** + **serviços** (cruzamento PMM × OS-i: quanto o contrato do prestador precisa evoluir para atingir a medição projetada) + **materiais** (parcelas de OC-i já adquiridas + **30% da medição do PMM** como material a adquirir).
+  - **Realizada:** Receita = **medição reconhecida nos RDOs**. Despesa = **custo fixo** + **serviços medidos** (OS-i por RDO) + **parcelas de OC-i realizadas**.
+  - **Antecipação de recebíveis:** cadastro de operações (obra, medição, valor bruto, taxa %/mês, instituição, data e vencimento). Cada operação lança a **entrada** (líquido = bruto − desconto) no mês da operação e a **devolução** (bruto) no vencimento, refletindo nos dois fluxos.
+- Tabela mês a mês (receita, antecipação-entrada, custo fixo, serviços, materiais, antecipação-devolução, saldo do mês e **saldo acumulado**) + gráfico Receita × Despesa × Acumulado.
+
+> **Migração:** rode `supabase/migration_v11_15.sql` (tabela `antecipacoes`).
+>
+> **Validação recomendada:** os cruzamentos (PMM × OS-i para serviços e 30% do PMM para materiais) seguem a regra combinada e devem ser conferidos contra dados reais antes de decisões — a base realizada (RDO/OC-i/OS-i) reutiliza o mesmo motor das abas Custos diretos e Medição projetada.
+
 ## v11.14 — Cartões de crédito e forma de pagamento (Bloco 2)
 - **Forma de pagamento na OP:** ao clicar em “Marcar paga”, abre um passo para escolher **Pix, TED ou Cartão de crédito** e a data do pagamento. No cartão, seleciona-se qual cartão (do cadastro). O cartão pago fica registrado no cartão da OP.
 - **Cadastro de cartões:** nova aba **Cartões de Crédito** (Financeiro) — nome, bandeira, dia de fechamento, dia de vencimento e limite.
