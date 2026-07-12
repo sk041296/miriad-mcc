@@ -1,5 +1,14 @@
 # Miriad Construction Control (MCC)
 
+## v11.13 — Folha vira OP + segmentação macro do Kanban
+- **Folha → OPs:** ao salvar o Fechamento do mês, cada colaborador CLT gera **uma OP por tipo de despesa**: Salário (pelo **líquido**, já com INSS/IRRF/adiantamento abatidos), Horas extras, VT, VA, Outras adições e Rescisão (quando houver) — vencimento dia 05. Além disso, **INSS e IRRF viram OPs próprias** (vencimento dia 20) no segmento Impostos. Geração idempotente (reabrir/reeditar o fechamento atualiza as OPs, não duplica). Cada OP carrega a conta contábil do plano (salário usa a conta do cargo no organograma).
+- **Segmentação macro no Kanban de OPs:** filtro por segmento — **Custos fixos · Fornecedores (OC/OS) · Folha / Pessoal · Impostos · Empréstimos e cartões** — com contagem por segmento. A categoria é derivada da origem da OP.
+- **Custos Fixos com categoria:** o cadastro de custo fixo agora tem **categoria (Custo fixo / Empréstimo-Financiamento / Imposto)**, que direciona a OP para o segmento certo — é assim que os **empréstimos** entram no segmento “Empréstimos e cartões”.
+
+> **Migração:** rode `supabase/migration_v11_13.sql` (coluna `categoria` em `custos_fixos`).
+>
+> **Próxima etapa (bloco 2):** fluxo de cartão de crédito — cadastro de cartões, forma de pagamento (Pix/TED/Cartão) na OP, acúmulo “projetado” das compras no cartão e a fatura virando OP no vencimento.
+
 ## v11.12 — Folha de Pagamento: cargos, fechamento completo e Organograma
 - **Abas separadas:** a folha agora tem **Colaboradores** (cadastro), **Folha de pagamento** (quadro: setor, cargo, contrato, admissão, vencimento do contrato, salário), **Fechamento de folha** (cálculo mensal), **Organograma de Cargos** e **Resumo mensal**.
 - **Colaboradores:** seleção de **setor + cargo** a partir do organograma (preenche o salário base automaticamente), além de VT, VA, admissão e **vencimento do contrato**.

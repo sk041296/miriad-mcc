@@ -729,7 +729,7 @@ function CustosFixos() {
   const [lista, setLista] = useState(null);
   const [obras, setObras] = useState([]);
   const [busy, setBusy] = useState(false);
-  const vazio = { descricao: "", conta_codigo: "", fornecedor: "", valor: 0, dia_vencimento: 5, obra_id: "", ativo: true };
+  const vazio = { descricao: "", conta_codigo: "", fornecedor: "", valor: 0, dia_vencimento: 5, obra_id: "", categoria: "custo_fixo", ativo: true };
   const [f, setF] = useState(vazio);
   const [editId, setEditId] = useState(null);
   const carregar = () => Promise.all([listar("custos_fixos"), listar("obras")]).then(([c, o]) => { setLista(c); setObras(o); }).catch(() => setLista([]));
@@ -744,7 +744,7 @@ function CustosFixos() {
         conta_codigo: f.conta_codigo, conta_nome: contaSel?.nome || null, conta_natureza: contaSel?.natureza || null,
         fornecedor: f.fornecedor.trim() || null, valor: Number(f.valor) || 0,
         dia_vencimento: Math.min(Math.max(parseInt(f.dia_vencimento, 10) || 5, 1), 28),
-        obra_id: f.obra_id || null, ativo: f.ativo !== false,
+        obra_id: f.obra_id || null, ativo: f.ativo !== false, categoria: f.categoria || "custo_fixo",
       };
       if (editId) await editar("custos_fixos", editId, row); else await criar("custos_fixos", row);
       await acaoData({ t: "gerar_custos_fixos_mes" }).catch(() => {});
@@ -773,6 +773,13 @@ function CustosFixos() {
           <div><Lbl>Fornecedor (opcional)</Lbl><input value={f.fornecedor} onChange={(e) => setF({ ...f, fornecedor: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })} /></div>
           <div><Lbl>Valor mensal (R$)</Lbl><NumInput value={f.valor} onChange={(v) => setF({ ...f, valor: v })} w={160} /></div>
           <div><Lbl>Dia de vencimento (1–28)</Lbl><NumInput value={f.dia_vencimento} onChange={(v) => setF({ ...f, dia_vencimento: v })} w={90} /></div>
+          <div><Lbl>Categoria (segmento)</Lbl>
+            <select value={f.categoria} onChange={(e) => setF({ ...f, categoria: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })}>
+              <option value="custo_fixo">Custo fixo</option>
+              <option value="emprestimo">Empréstimo / Financiamento</option>
+              <option value="imposto">Imposto</option>
+            </select>
+          </div>
           <div><Lbl>Obra / centro (opcional)</Lbl>
             <select value={f.obra_id} onChange={(e) => setF({ ...f, obra_id: e.target.value })} style={inp({ width: "100%", boxSizing: "border-box" })}>
               <option value="">Escritório / geral</option>
@@ -811,12 +818,29 @@ function CustosFixos() {
   );
 }
 
+const SEGMENTOS = ["Custos fixos", "Fornecedores", "Folha / Pessoal", "Impostos", "Empréstimos e cartões"];
+function segDe(op) {
+  const cat = op?.payload?.categoria;
+  if (cat === "custo_fixo") return "Custos fixos";
+  if (cat === "emprestimo") return "Empréstimos e cartões";
+  if (cat === "imposto") return "Impostos";
+  if (cat === "folha") return "Folha / Pessoal";
+  if (cat === "cartao") return "Empréstimos e cartões";
+  const o = op?.origem_tipo;
+  if (o === "custo_fixo") return "Custos fixos";
+  if (o === "folha") return "Folha / Pessoal";
+  if (o === "cartao_fatura") return "Empréstimos e cartões";
+  if (o === "oc" || o === "bmp" || o === "os" || o === "contrato_servico") return "Fornecedores";
+  return "Fornecedores";
+}
+
 function KanbanOP() {
   const [ops, setOps] = useState(null);
   const [obras, setObras] = useState([]);
   const [ocsMat, setOcsMat] = useState({}); // origem_id -> resumo de materiais
   const [filtroObra, setFiltroObra] = useState("");
   const [buscaOp, setBuscaOp] = useState("");
+  const [segmento, setSegmento] = useState("");
   const [busy, setBusy] = useState(null);
   const [expand, setExpand] = useState({}); // chave "status:faixa" -> bool
   const [modalOp, setModalOp] = useState(null); // { op, devolver? } -> modal Conferir NF / devolução
@@ -847,7 +871,7 @@ function KanbanOP() {
   const matDe = (op) => op.origem_tipo === "oc" ? (ocsMat[op.origem_id] || null) : null;
   const _nq = buscaOp.trim().toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   const _match = (o) => !_nq || [o.fornecedor, nomeObra(o.obra_id), o.descricao, o.nf_numero, o.centro_custo, matDe(o)].some((v) => String(v == null ? "" : v).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "").includes(_nq));
-  const visiveis = (filtroObra ? ops.filter((o) => o.obra_id === filtroObra) : ops).filter(_match);
+  const visiveis = (filtroObra ? ops.filter((o) => o.obra_id === filtroObra) : ops).filter(_match).filter((o) => !segmento || segDe(o) === segmento);
   const vencido = (op) => op.status !== "paga" && op.vencimento && op.vencimento < hojeISO();
   const porStatus = (s) => visiveis.filter((o) => (o.status || "pendente_nf") === s && !vencido(o));
   // OPs vencidas (não pagas, prazo passou) — ordenadas da mais vencida para a menos vencida
@@ -1010,6 +1034,12 @@ function KanbanOP() {
         </div>
       </div>
 
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+        {["", ...SEGMENTOS].map((sg) => {
+          const cnt = (filtroObra ? ops.filter((o) => o.obra_id === filtroObra) : ops).filter(_match).filter((o) => !sg || segDe(o) === sg).length;
+          return <button key={sg || "todos"} onClick={() => setSegmento(sg)} style={{ background: segmento === sg ? C.laranja : C.branco, color: segmento === sg ? "#fff" : C.dim, border: `1px solid ${segmento === sg ? C.laranja : C.linha}`, borderRadius: 20, padding: "5px 14px", fontSize: 12, fontWeight: 700, cursor: "pointer" }}>{sg || "Todos os segmentos"} <span style={{ opacity: .7 }}>({cnt})</span></button>;
+        })}
+      </div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(4, 1fr)", gap: 12, alignItems: "start" }}>
         <div style={{ background: "#fff4f2", border: `1px solid ${C.vermelho}44`, borderRadius: 12, padding: 10, minHeight: 200 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 10, paddingLeft: 4 }}>

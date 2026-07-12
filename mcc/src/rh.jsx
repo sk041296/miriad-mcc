@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { C, fmt, fmtR, sum, Card, Btn, Lbl, inp, NumInput, listar, criar, editar, remover, getConfig, setConfig } from "./core.jsx";
+import { C, fmt, fmtR, sum, Card, Btn, Lbl, inp, NumInput, listar, criar, editar, remover, acaoData, getConfig, setConfig } from "./core.jsx";
 import { ORGANOGRAMA_PADRAO, SETORES } from "./organograma.js";
 
 /* ---------- encargos (referência 2025 — editáveis por linha) ---------- */
@@ -34,7 +34,7 @@ export function ModuloRH({ usuario }) {
       {org === null ? <div style={{ color: C.dim, padding: 20 }}>Carregando…</div> : <>
         {sub === "colaboradores" && <Colaboradores org={org} />}
         {sub === "folha" && <FolhaCadastral org={org} />}
-        {sub === "fechamento" && <Fechamento usuario={usuario} />}
+        {sub === "fechamento" && <Fechamento usuario={usuario} org={org} />}
         {sub === "organograma" && <Organograma usuario={usuario} org={org} setOrg={setOrg} />}
         {sub === "resumo" && <ResumoMensal />}
       </>}
@@ -189,7 +189,7 @@ function calcLinha(d) {
   return { valorHora, he, peric, insal, descFaltas, adicoes, baseEncargos, inss, irrf, adiant, descontos, liquido, rescisaoVal };
 }
 
-function Fechamento({ usuario }) {
+function Fechamento({ usuario, org }) {
   const [mes, setMes] = useState(nowYM());
   const [colabs, setColabs] = useState(null);
   const [folha, setFolha] = useState({});
@@ -222,7 +222,27 @@ function Fechamento({ usuario }) {
         const row = { mes, colaborador_id: c.id, dados: { ...d, _rowId: undefined }, bruto: Math.round(r.adicoes * 100) / 100, descontos: Math.round(r.descontos * 100) / 100, liquido: Math.round(r.liquido * 100) / 100 };
         if (d._rowId) await editar("rh_folha", d._rowId, row); else await criar("rh_folha", row);
       }
-      await carregar(); alert("Fechamento do mês salvo.");
+      // gera as OPs da folha (uma por colaborador e por tipo de despesa)
+      const contaCargo = (c) => { const arr = (org && org[c.setor]) || []; const m = arr.find((x) => x.cargo === c.cargo); return m ? m.conta : null; };
+      const v05 = `${mes}-05`, v20 = `${mes}-20`;
+      const itens = colabs.map((c) => {
+        const d = folha[c.id]; const r = calcLinha(d);
+        const base = Number(d.salario_base) || 0;
+        const salarioLiq = base + r.peric + r.insal - r.descFaltas - r.inss - r.irrf - r.adiant;
+        const comps = [
+          { tipo: "Salário", valor: salarioLiq, categoria: "folha", conta_codigo: contaCargo(c) || "3030201002", conta_nome: "Salários e ordenados", vencimento: v05 },
+          { tipo: "Horas extras", valor: r.he, categoria: "folha", conta_codigo: "3030201003", conta_nome: "Horas extras / DSR", vencimento: v05 },
+          { tipo: "VT", valor: Number(d.vt) || 0, categoria: "folha", conta_codigo: "3030201015", conta_nome: "Vale transporte", vencimento: v05 },
+          { tipo: "VA", valor: Number(d.va) || 0, categoria: "folha", conta_codigo: "3030201014", conta_nome: "Vale refeição / alimentação", vencimento: v05 },
+          { tipo: "Outras adições", valor: Number(d.outras_adicoes) || 0, categoria: "folha", conta_codigo: null, conta_nome: "Outras adições", vencimento: v05 },
+          { tipo: "Rescisão", valor: r.rescisaoVal, categoria: "folha", conta_codigo: null, conta_nome: "Rescisão de contrato", vencimento: v05 },
+          { tipo: "INSS", valor: r.inss, categoria: "imposto", conta_codigo: "3030201009", conta_nome: "INSS", vencimento: v20 },
+          { tipo: "IRRF", valor: r.irrf, categoria: "imposto", conta_codigo: null, conta_nome: "IRRF retido", vencimento: v20 },
+        ];
+        return { colaborador_id: c.id, nome: c.nome, comps };
+      });
+      await acaoData({ t: "gerar_folha_ops", ym: mes, itens }).catch(() => {});
+      await carregar(); alert("Fechamento salvo e OPs geradas no Kanban (Salário pelo líquido; INSS/IRRF em Impostos).");
     } catch (e) { alert(e.message); } finally { setBusy(false); }
   };
   if (colabs === null) return <div style={{ color: C.dim, padding: 20 }}>Carregando fechamento…</div>;

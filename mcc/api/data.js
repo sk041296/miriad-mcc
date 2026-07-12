@@ -476,10 +476,38 @@ export default async function handler(req, res) {
           valor: Number(cf.valor) || 0,
           vencimento,
           status: "pendente_nf",
-          payload: { parcela: chaveParc, origem: "custo_fixo", conta_codigo: cf.conta_codigo, conta_nome: cf.conta_nome, ym },
+          payload: { parcela: chaveParc, origem: "custo_fixo", categoria: cf.categoria || "custo_fixo", conta_codigo: cf.conta_codigo, conta_nome: cf.conta_nome, ym },
         };
         const { error } = await supabase.from("ordens_pagamento").upsert(op, { onConflict: "origem_tipo,origem_id,(payload->>'parcela')", ignoreDuplicates: true });
         if (!error) n++;
+      }
+      return res.status(200).json({ ok: true, ym, geradas: n });
+    }
+
+    // ---- gera as OPs da folha (uma por colaborador e por tipo de despesa) ----
+    if (t === "gerar_folha_ops") {
+      const ym = (req.body && req.body.ym) || new Date().toISOString().slice(0, 7);
+      const itens = (req.body && req.body.itens) || [];
+      let n = 0;
+      for (const it of itens) {
+        for (const comp of (it.comps || [])) {
+          const valor = Math.round((Number(comp.valor) || 0) * 100) / 100;
+          if (!valor) continue; // não gera OP de componente zerado
+          const op = {
+            origem_tipo: "folha",
+            origem_id: it.colaborador_id,
+            obra_id: null,
+            numero: "FL-" + ym + "-" + (comp.tipo || "").slice(0, 12),
+            fornecedor: it.nome,
+            descricao: (comp.tipo || "Folha") + " · " + it.nome + " · " + ym,
+            valor,
+            vencimento: comp.vencimento || `${ym}-05`,
+            status: "pendente_nf",
+            payload: { parcela: ym + "|" + comp.tipo, origem: "folha", categoria: comp.categoria || "folha", tipo: comp.tipo, conta_codigo: comp.conta_codigo || null, conta_nome: comp.conta_nome || null, colaborador: it.nome, ym },
+          };
+          const { error } = await supabase.from("ordens_pagamento").upsert(op, { onConflict: "origem_tipo,origem_id,(payload->>'parcela')", ignoreDuplicates: false });
+          if (!error) n++;
+        }
       }
       return res.status(200).json({ ok: true, ym, geradas: n });
     }
