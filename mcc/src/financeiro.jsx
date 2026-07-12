@@ -102,7 +102,7 @@ function autoAnticipate(p) {
 }
 
 /* ---------- Sub-abas do módulo financeiro ---------- */
-const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["fluxocaixa","Fluxo de Caixa"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"],["custosfixos","Custos Fixos"],["cartoes","Cartões de Crédito"]];
+const FIN_TABS = [["premissas","Premissas"],["antecipacao","Antecipação"],["comparativo","Antes × Depois"],["sensibilidade","Sensibilidade"],["resultado","Resultado"],["fluxocaixa","Fluxo de Caixa"],["planejamento","Planejamento Mensal"],["custos","Custos por obra"],["custosdir","Custos diretos (auto)"],["medprojetada","Medição projetada"],["op","Ordens de Pagamento"],["custosfixos","Custos Fixos"],["cartoes","Cartões de Crédito"]];
 
 export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
   const [subLocal, setSubLocal] = useState("premissas");
@@ -137,6 +137,7 @@ export function ModuloFinanceiro({ sub: subProp, setSub: setSubProp }) {
       {sub === "custosfixos" && <CustosFixos />}
       {sub === "cartoes" && <Cartoes />}
       {sub === "fluxocaixa" && <FluxoCaixa />}
+      {sub === "planejamento" && <PlanejamentoMensal />}
     </div>
   );
 }
@@ -724,6 +725,167 @@ function diasAte(venc) {
   const h = new Date(hojeISO() + "T00:00:00");
   const v = new Date(String(venc).slice(0, 10) + "T00:00:00");
   return Math.round((v - h) / 86400000);
+}
+
+/* ================= PLANEJAMENTO FINANCEIRO MENSAL (semanas) ================= */
+function PlanejamentoMensal() {
+  const [ym, setYm] = useState(new Date().toISOString().slice(0, 7));
+  const [d, setD] = useState(null);
+  const [cfg, setCfg] = useState({ investimentoObras: 0, overrides: {} });
+  const [mostrarNec, setMostrarNec] = useState(false);
+
+  const carregar = async () => {
+    const obras = await listar("obras");
+    const eapPorObra = {}; const rdos = [];
+    await Promise.all(obras.map(async (o) => { eapPorObra[o.id] = await listar("eap_itens", { obra_id: o.id }); (await listar("rdos", { obra_id: o.id })).forEach((r) => rdos.push(r)); }));
+    const [ops, pmms, antec] = await Promise.all([listar("ordens_pagamento"), listar("pmm"), listar("antecipacoes")]);
+    setD({ obras, eapPorObra, rdos, ops, pmms, antec });
+  };
+  useEffect(() => { carregar().catch(() => setD({ obras: [], eapPorObra: {}, rdos: [], ops: [], pmms: [], antec: [] })); }, []);
+  useEffect(() => { getFin(`planej:${ym}`).then((v) => setCfg(v && v.overrides ? v : { investimentoObras: 0, overrides: {} })).catch(() => setCfg({ investimentoObras: 0, overrides: {} })); setMostrarNec(false); }, [ym]);
+  const salvarCfg = (next) => { setCfg(next); setFin(`planej:${ym}`, next).catch(() => {}); };
+  const setInvest = (v) => salvarCfg({ ...cfg, investimentoObras: Number(v) || 0 });
+  const setOverride = (id, patch) => { const ov = cfg.overrides || {}; salvarCfg({ ...cfg, overrides: { ...ov, [id]: { ...(ov[id] || {}), ...patch } } }); };
+
+  if (!d) return <div style={{ color: C.dim, padding: 20 }}>Carregando planejamento…</div>;
+  const [Y, M] = ym.split("-").map(Number);
+  const diasNoMes = new Date(Y, M, 0).getDate();
+  const nSem = diasNoMes >= 29 ? 5 : 4;
+  const semanas = Array.from({ length: nSem }, (_, i) => i);
+  const semDoDia = (day) => Math.min(nSem - 1, Math.floor((day - 1) / 7));
+  const semRange = (i) => { const ini = i * 7 + 1; const fim = i === nSem - 1 ? diasNoMes : (i + 1) * 7; return `dia ${ini}–${fim}`; };
+  const ov = cfg.overrides || {};
+
+  // ---- DESPESAS: OPs não pagas com vencimento no mês (exceto marcadas p/ próximo mês) ----
+  const opsMes = d.ops.filter((o) => o.status !== "paga" && o.vencimento && ymISO(o.vencimento) === ym);
+  const proxMes = opsMes.filter((o) => ov[o.id] && ov[o.id].proximoMes);
+  const despVis = opsMes.filter((o) => !(ov[o.id] && ov[o.id].proximoMes));
+  const semOf = (o) => { const x = ov[o.id]; if (x && x.semana != null) return x.semana; return semDoDia(Number(String(o.vencimento).slice(8, 10))); };
+  const despSemSeg = {}; SEGMENTOS.forEach((s) => despSemSeg[s] = Array(nSem).fill(0));
+  const porSeg = {}; SEGMENTOS.forEach((s) => porSeg[s] = []);
+  despVis.forEach((o) => { const s = segDe(o); const w = semOf(o); (despSemSeg[s] = despSemSeg[s] || Array(nSem).fill(0))[w] += Number(o.valor) || 0; (porSeg[s] = porSeg[s] || []).push(o); });
+  const despSem = semanas.map((w) => SEGMENTOS.reduce((a, s) => a + despSemSeg[s][w], 0));
+
+  // ---- RECEITAS ----
+  const recRealSem = Array(nSem).fill(0); let recProjMes = 0;
+  d.obras.forEach((o) => {
+    const eap = d.eapPorObra[o.id] || []; const valEap = {}, qc = {};
+    eap.forEach((e) => { valEap[e.codigo] = Number(e.valor_total) || 0; qc[e.codigo] = Number(e.qtde) || 0; });
+    d.rdos.filter((r) => r.obra_id === o.id && ymISO(r.data) === ym).forEach((r) => { const w = semDoDia(Number(String(r.data).slice(8, 10))); (r.atividades || []).forEach((a) => { const q = Number(a.qtde_dia ?? a.avanco) || 0; if (!q) return; const v = valEap[a.eap] || 0, c = qc[a.eap] || 0; if (!v || !c) return; recRealSem[w] += v * Math.min(q / c, 1); }); });
+    d.pmms.filter((p) => p.obra_id === o.id && ymISO(p.mes) === ym).forEach((pm) => { (pm.itens || []).forEach((it) => { const c = qc[it.eap_codigo] || 0, prev = Number(it.producao_prevista) || 0; if (!c) return; recProjMes += (valEap[it.eap_codigo] || 0) * Math.min(prev / c, 1); }); });
+  });
+  const antEntSem = Array(nSem).fill(0);
+  d.antec.forEach((a) => { if (ymISO(a.data_operacao) !== ym) return; const w = semDoDia(Number(String(a.data_operacao).slice(8, 10))); const bruto = Number(a.valor_bruto) || 0, meses = Math.max(1, _mesesDiff(a.data_operacao, a.vencimento)); antEntSem[w] += bruto - bruto * ((Number(a.taxa) || 0) / 100) * meses; });
+
+  const investMensal = Number(cfg.investimentoObras) || 0;
+  const invSem = Array(nSem).fill(investMensal / nSem);
+  const entradaSem = semanas.map((w) => recRealSem[w] + antEntSem[w]);
+  const saidaSem = semanas.map((w) => despSem[w] + invSem[w]);
+  const saldoSem = semanas.map((w) => entradaSem[w] - saidaSem[w]);
+  let acc = 0; const acumSem = semanas.map((w) => { acc += saldoSem[w]; return acc; });
+  const T = (arr) => sum(arr);
+  const saidaMes = T(saidaSem), entradaMes = T(entradaSem);
+  const necessidade = Math.max(0, saidaMes - entradaMes);
+  const picoDeficit = Math.max(0, -Math.min(0, ...acumSem));
+
+  const cellNum = (label, arr, cor, bold) => (
+    <tr>
+      <Td style={{ fontWeight: bold ? 800 : 600, color: cor || C.texto, position: "sticky", left: 0, background: "#fff" }}>{label}</Td>
+      {arr.map((v, w) => <Td key={w} right color={v ? (cor || C.texto) : C.dim} style={{ fontWeight: bold ? 700 : 400 }}>{v ? fmt(v) : "—"}</Td>)}
+      <Td right style={{ fontWeight: 800, color: cor || C.texto }}>{fmt(T(arr))}</Td>
+    </tr>
+  );
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <Card title="Planejamento financeiro mensal" right={<div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+        <div><Lbl>Mês</Lbl><input type="month" value={ym} onChange={(e) => setYm(e.target.value)} style={inp({ fontSize: 13 })} /></div>
+        <div><Lbl>Investimento mensal em obras (R$)</Lbl><NumInput value={cfg.investimentoObras} onChange={setInvest} w={150} /></div>
+        <div style={{ alignSelf: "flex-end" }}><Btn onClick={() => setMostrarNec(true)}>Calcular necessidade de antecipação</Btn></div>
+      </div>}>
+        <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 8 }}>Despesas puxadas das Ordens de Pagamento não pagas (custos fixos, OCs, OSs, folha, cartões) e alocadas na semana do vencimento. Receita projetada pelo PMM e realizada pelos RDOs. Ajuste a semana ou empurre para o próximo mês na lista abaixo.</div>
+        <div style={{ overflowX: "auto" }}>
+          <table style={{ borderCollapse: "collapse", width: "100%", minWidth: 620 }}>
+            <thead><tr><Th>R$</Th>{semanas.map((w) => <Th key={w} right>Sem {w + 1}<div style={{ fontWeight: 400, fontSize: 9, color: C.dim }}>{semRange(w)}</div></Th>)}<Th right>Total</Th></tr></thead>
+            <tbody>
+              {cellNum("(+) Receita realizada (RDO)", recRealSem, C.verde, true)}
+              {antEntSem.some((v) => v) && cellNum("(+) Antecipação — entrada", antEntSem, C.azul)}
+              {SEGMENTOS.map((s) => despSemSeg[s].some((v) => v) ? <React.Fragment key={s}>{cellNum("(–) " + s, despSemSeg[s], C.vermelho)}</React.Fragment> : null)}
+              {investMensal > 0 && cellNum("(–) Investimento em obras", invSem, C.vermelho)}
+              <tr style={{ background: C.cinza }}>
+                <Td style={{ fontWeight: 800, position: "sticky", left: 0, background: C.cinza }}>(=) Saldo da semana</Td>
+                {saldoSem.map((v, w) => <Td key={w} right color={v >= 0 ? C.verde : C.vermelho} style={{ fontWeight: 700 }}>{fmt(v)}</Td>)}
+                <Td right style={{ fontWeight: 800 }}>{fmt(T(saldoSem))}</Td>
+              </tr>
+              <tr style={{ background: C.preto }}>
+                <Td style={{ color: "#fff", fontWeight: 800, position: "sticky", left: 0, background: C.preto }}>Saldo acumulado</Td>
+                {acumSem.map((v, w) => <Td key={w} right style={{ color: v >= 0 ? "#7CFFB0" : "#ff9b9b", fontWeight: 800 }}>{fmt(v)}</Td>)}
+                <Td right style={{ color: "#fff", fontWeight: 800 }}>—</Td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div style={{ fontSize: 11.5, color: C.dim, marginTop: 8 }}>Receita projetada do mês (PMM): <b style={{ color: C.texto }}>{fmtR(recProjMes)}</b> — teto disponível para antecipação.</div>
+      </Card>
+
+      {mostrarNec && (
+        <Card title="Necessidade de antecipação de recebível">
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
+            <Kpi label="Saídas do mês" value={fmtR(saidaMes)} accent={C.vermelho} sub="despesas + investimento em obras" />
+            <Kpi label="Entradas do mês" value={fmtR(entradaMes)} accent={C.verde} sub="RDO realizado + antecipações" />
+            <Kpi dark label="Necessidade de antecipação" value={fmtR(necessidade)} accent={necessidade > 0 ? C.laranja : C.verde} sub={necessidade > 0 ? "para fechar o mês no zero" : "mês fecha positivo"} />
+            {picoDeficit > 0 && <Kpi label="Pico de déficit semanal" value={fmtR(picoDeficit)} accent={C.amareloAlerta} sub="maior caixa negativo acumulado" />}
+          </div>
+          <div style={{ fontSize: 12.5, color: C.dim }}>
+            Cálculo: saídas ({fmtR(saidaMes)}) − entradas ({fmtR(entradaMes)}) = <b style={{ color: necessidade > 0 ? C.laranja : C.verde }}>{fmtR(necessidade)}</b>.
+            {necessidade > 0 && recProjMes > 0 && necessidade > recProjMes && <span style={{ color: C.vermelho }}> ⚠ A necessidade excede a receita projetada do mês ({fmtR(recProjMes)}) — não há recebível suficiente para antecipar tudo.</span>}
+            {necessidade > 0 && necessidade <= recProjMes && <span> Há PMM suficiente para antecipar ({fmtR(recProjMes)} projetado).</span>}
+          </div>
+        </Card>
+      )}
+
+      <Card title={`Despesas do mês — ajuste de semana e adiamento (${despVis.length})`}>
+        {despVis.length === 0 ? <div style={{ fontSize: 13, color: C.dim }}>Nenhuma OP não paga com vencimento neste mês.</div> : SEGMENTOS.map((s) => porSeg[s] && porSeg[s].length ? (
+          <div key={s} style={{ marginBottom: 14 }}>
+            <div style={{ fontWeight: 800, fontSize: 12.5, color: C.laranja, marginBottom: 4, textTransform: "uppercase" }}>{s} · {fmtR(sum(porSeg[s].map((o) => Number(o.valor) || 0)))}</div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 620 }}>
+                <tbody>{porSeg[s].sort((a, b) => (a.vencimento || "").localeCompare(b.vencimento || "")).map((o) => (
+                  <tr key={o.id}>
+                    <Td style={{ fontWeight: 600, fontSize: 12.5 }}>{o.fornecedor || o.descricao}</Td>
+                    <Td style={{ fontSize: 12, color: C.dim }}>venc {String(o.vencimento).slice(0, 10).split("-").reverse().join("/")}</Td>
+                    <Td right style={{ fontWeight: 700, fontSize: 12.5 }}>{fmtR(o.valor)}</Td>
+                    <Td>
+                      <select value={semOf(o)} onChange={(e) => setOverride(o.id, { semana: Number(e.target.value) })} style={inp({ fontSize: 12, padding: "4px 6px" })}>
+                        {semanas.map((w) => <option key={w} value={w}>Semana {w + 1}</option>)}
+                      </select>
+                    </Td>
+                    <Td>
+                      <label style={{ display: "flex", gap: 5, alignItems: "center", fontSize: 11.5, color: C.dim, cursor: "pointer", whiteSpace: "nowrap" }}>
+                        <input type="checkbox" checked={!!(ov[o.id] && ov[o.id].proximoMes)} onChange={(e) => setOverride(o.id, { proximoMes: e.target.checked })} style={{ accentColor: C.laranja }} />
+                        → próximo mês
+                      </label>
+                    </Td>
+                  </tr>
+                ))}</tbody>
+              </table>
+            </div>
+          </div>
+        ) : null)}
+        {proxMes.length > 0 && (
+          <div style={{ marginTop: 8, paddingTop: 10, borderTop: `1px solid ${C.linha}` }}>
+            <div style={{ fontSize: 12, color: C.dim, marginBottom: 6 }}>Adiadas para o próximo mês ({proxMes.length} · {fmtR(sum(proxMes.map((o) => Number(o.valor) || 0)))}):</div>
+            {proxMes.map((o) => (
+              <div key={o.id} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 12, padding: "3px 0", opacity: .7 }}>
+                <span>{o.fornecedor || o.descricao} · {fmtR(o.valor)}</span>
+                <button onClick={() => setOverride(o.id, { proximoMes: false })} style={{ border: "none", background: "transparent", color: C.azul, cursor: "pointer", fontSize: 12, fontWeight: 700 }}>trazer de volta</button>
+              </div>
+            ))}
+          </div>
+        )}
+      </Card>
+    </div>
+  );
 }
 
 /* ================= FLUXO DE CAIXA (projetada × realizada + antecipações) ================= */

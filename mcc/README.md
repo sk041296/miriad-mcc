@@ -1,5 +1,15 @@
 # Miriad Construction Control (MCC)
 
+## v11.16 — Planejamento Financeiro Mensal (por semanas)
+- Nova aba **Planejamento Mensal** no Financeiro. Divide o mês em **semanas** (dia 1–7, 8–14, …) e monta o plano semana a semana.
+- **Despesas** puxadas das Ordens de Pagamento não pagas (custos fixos, OCs, OSs, folha, cartões), **agrupadas por segmento** e **alocadas na semana do vencimento**. Por despesa é possível **trocar a semana de pagamento** e **empurrar para o próximo mês** (mesmo com vencimento no mês corrente) — ajustes salvos por mês.
+- **Receitas:** projetada pelo **PMM** (total do mês, teto de antecipação) e **realizada pelos RDOs** por semana.
+- **Investimento mensal em obras:** célula manual (valor estimado ainda a adquirir para atingir as medições), distribuído nas semanas.
+- Tabela com receita, antecipações, despesas por segmento, investimento, **saldo da semana** e **saldo acumulado**.
+- Botão **Calcular necessidade de antecipação**: saídas do mês (despesas + investimento) − entradas (RDO + antecipações) = quanto antecipar para fechar o mês, comparando com o teto do PMM e mostrando o pico de déficit semanal.
+
+> Sem migração. Preferências do planejamento (semana/adiamento e investimento) são salvas por mês no estado financeiro.
+
 ## v11.15 — Fluxo de Caixa (Projetada × Realizada) + Antecipação de recebíveis
 - Nova aba **Fluxo de Caixa** no Financeiro, **visível apenas para CEO e Diretor**. Três visões:
   - **Projetada:** Receita = **PMM das obras**. Despesa = **custo fixo** + **serviços** (cruzamento PMM × OS-i: quanto o contrato do prestador precisa evoluir para atingir a medição projetada) + **materiais** (parcelas de OC-i já adquiridas + **30% da medição do PMM** como material a adquirir).
