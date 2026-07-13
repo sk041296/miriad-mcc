@@ -1,5 +1,18 @@
 # Miriad Construction Control (MCC)
 
+## v11.17 — "Ranking" vira "Remuneração Variável" + nota do Coordenador de Planejamento
+- Aba **Ranking renomeada para Remuneração Variável** (título, menu e permissão). O ranking/nota dos **Supervisores** continua igual.
+- Novo card **Remuneração Variável — Coordenador de Planejamento**, com nota da empresa como um todo pelos critérios e pesos aprovados:
+  - **Dentro do custo planejado — 30%** (verba × consumido por EAP, média ponderada por valor de contrato)
+  - **Assertividade do PMM vs RDO — 25%** (previsto no PMM × realizado nos RDOs, ponderada por valor do item)
+  - **Obras no prazo — 20%** (avanço × tempo decorrido, ponderada por valor de contrato)
+  - **RDOs no prazo — 10%** (empresa como um todo)
+  - **POS no prazo — 8%** (empresa como um todo)
+  - **SM-i — 7%** (proxy: proporção de SM-i não emergenciais = planejamento antecipado)
+- Métricas sem dados no período contam como zero. Os demais coordenadores entram em versões seguintes, cada um com seus critérios.
+
+> Sem migração.
+
 ## v11.16 — Planejamento Financeiro Mensal (por semanas)
 - Nova aba **Planejamento Mensal** no Financeiro. Divide o mês em **semanas** (dia 1–7, 8–14, …) e monta o plano semana a semana.
 - **Despesas** puxadas das Ordens de Pagamento não pagas (custos fixos, OCs, OSs, folha, cartões), **agrupadas por segmento** e **alocadas na semana do vencimento**. Por despesa é possível **trocar a semana de pagamento** e **empurrar para o próximo mês** (mesmo com vencimento no mês corrente) — ajustes salvos por mês.
