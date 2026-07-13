@@ -166,7 +166,7 @@ function notaCustoPlanejado(obras, eapPorObra, ocs, contratos) {
 }
 
 /* ===== Nota do Coordenador de Suprimentos ===== */
-function calcCoordSuprimentos({ usuarios, obras, eapPorObra, ocs, contratos, sm, ss, ops }) {
+function calcCoordSuprimentos({ usuarios, obras, eapPorObra, ocs, contratos, sm, ss, ops, boletins }) {
   const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
   const prazoRef = (item, diasPadrao) => { if (item.data_necessidade) return new Date(String(item.data_necessidade).slice(0, 10) + "T23:59:59"); return addDias(new Date(item.criado_em), diasPadrao); };
   const noPrazo = (item, diasPadrao) => { if (item.status === "cancelada") return null; const venc = prazoRef(item, diasPadrao); const aberta = item.status === "aberta"; return !(aberta && venc < hoje); };
@@ -175,17 +175,25 @@ function calcCoordSuprimentos({ usuarios, obras, eapPorObra, ocs, contratos, sm,
   (sm || []).forEach((x) => { const r = noPrazo(x, 7); if (r == null) return; atTot++; if (r) atOk++; });
   (ss || []).forEach((x) => { const r = noPrazo(x, 15); if (r == null) return; atTot++; if (r) atOk++; });
   const sAtend = atTot ? atOk / atTot : null;
-  // 2) retorno de OPs por inconsistência de NF (OC e OS)
+  // 2) índice de criação de OPs a partir de OCs/OSs aprovadas (cobertura simples)
+  const aprovada = (x) => (x.status_aprovacao || "aprovada") === "aprovada";
+  const ocsAp = (ocs || []).filter(aprovada), ossAp = (contratos || []).filter(aprovada);
+  const ocCoberta = (oc) => (ops || []).some((o) => o.origem_tipo === "oc" && o.origem_id === oc.id);
+  const osCoberta = (os) => (ops || []).some((o) => o.origem_tipo === "os" && o.origem_id === os.id) || (boletins || []).some((b) => b.contrato_id === os.id && b.op_gerada);
+  const totAp = ocsAp.length + ossAp.length;
+  const cobertas = ocsAp.filter(ocCoberta).length + ossAp.filter(osCoberta).length;
+  const sCriacao = totAp ? cobertas / totAp : null;
+  // 3) retorno de OPs por inconsistência de NF (OC e OS)
   const ehForn = (o) => ["oc", "bmp", "os", "contrato_servico"].includes(o.origem_tipo);
   const conferidas = (ops || []).filter((o) => ehForn(o) && (o.nf_conferida || o.divergencia));
   const devolvidas = conferidas.filter((o) => o.divergencia === true);
   const sNf = conferidas.length ? 1 - devolvidas.length / conferidas.length : null;
-  // 3) obras dentro do custo planejado
+  // 4) obras dentro do custo planejado
   const sCusto = notaCustoPlanejado(obras, eapPorObra, ocs, contratos);
   const v = (x) => x == null ? 0 : x;
-  const nota = v(sAtend) * 0.50 + v(sNf) * 0.25 + v(sCusto) * 0.25;
+  const nota = v(sAtend) * 0.40 + v(sCriacao) * 0.20 + v(sNf) * 0.20 + v(sCusto) * 0.20;
   const coords = usuarios.filter((u) => u.papel === "coord_suprimentos");
-  return { coords, sAtend, sNf, sCusto, nota, devolvidas: devolvidas.length, conferidas: conferidas.length };
+  return { coords, sAtend, sCriacao, sNf, sCusto, nota, devolvidas: devolvidas.length, conferidas: conferidas.length, cobertas, totAp };
 }
 
 const Cel = ({ v }) => {
@@ -200,11 +208,11 @@ const thc = { padding: "8px 10px", fontSize: 10.5, color: "#fff", textTransform:
 export function Ranking() {
   const [d, setD] = useState(null);
   useEffect(() => { (async () => {
-    const [usuarios, obras, designacoes, pos, pmm, sm, ss, ocs, contratos, ops] = await Promise.all([listar("usuarios"), listar("obras"), listar("designacoes"), listar("pos"), listar("pmm"), listar("sm_itens"), listar("ss_itens"), listar("ordens_compra"), listar("contratos_servico"), listar("ordens_pagamento")]);
+    const [usuarios, obras, designacoes, pos, pmm, sm, ss, ocs, contratos, ops, boletins] = await Promise.all([listar("usuarios"), listar("obras"), listar("designacoes"), listar("pos"), listar("pmm"), listar("sm_itens"), listar("ss_itens"), listar("ordens_compra"), listar("contratos_servico"), listar("ordens_pagamento"), listar("boletins_medicao")]);
     const eapPorObra = {}, rdos = [];
     await Promise.all(obras.map(async (o) => { eapPorObra[o.id] = await listar("eap_itens", { obra_id: o.id }); (await listar("rdos", { obra_id: o.id })).forEach((r) => rdos.push(r)); }));
-    setD({ usuarios, obras, designacoes, eapPorObra, rdos, pos, pmm, sm, ss, ocs, contratos, ops });
-  })().catch(() => setD({ usuarios: [], obras: [], designacoes: [], eapPorObra: {}, rdos: [], pos: [], pmm: [], sm: [], ss: [], ocs: [], contratos: [], ops: [] })); }, []);
+    setD({ usuarios, obras, designacoes, eapPorObra, rdos, pos, pmm, sm, ss, ocs, contratos, ops, boletins });
+  })().catch(() => setD({ usuarios: [], obras: [], designacoes: [], eapPorObra: {}, rdos: [], pos: [], pmm: [], sm: [], ss: [], ocs: [], contratos: [], ops: [], boletins: [] })); }, []);
   if (!d) return <div style={{ color: C.dim, padding: 20 }}>Calculando ranking…</div>;
 
   const linhas = calcular(d);
@@ -260,18 +268,18 @@ export function Ranking() {
 
     <Card title="Remuneração Variável — Coordenador de Suprimentos">
       <div style={{ fontSize: 12, color: C.dim, marginBottom: 12 }}>
-        Pesos: Atendimento de SM-i e SS-i no prazo 50% · Retorno de OPs por inconsistência de NF (OC/OS) 25% · Obras dentro do custo planejado 25%. SM-i no prazo = atendida antes da necessidade (SLA 7 dias sem data); SS-i SLA 15 dias. Retorno de NF = 1 − OPs devolvidas ÷ OPs de fornecedor conferidas{coordSup.conferidas ? ` (${coordSup.devolvidas}/${coordSup.conferidas})` : ""}. Custo = verba × consumido, ponderado por contrato. Métricas sem dados contam como zero.
+        Pesos: Atendimento de SM-i e SS-i no prazo 40% · Índice de criação de OPs (OC/OS) 20% · Retorno de OPs por inconsistência de NF 20% · Obras dentro do custo planejado 20%. SM-i no prazo = atendida antes da necessidade (SLA 7 dias sem data); SS-i SLA 15 dias. Criação de OPs = OCs/OSs aprovadas com ao menos uma OP vinculada{coordSup.totAp ? ` (${coordSup.cobertas}/${coordSup.totAp})` : ""}. Retorno de NF = 1 − OPs devolvidas ÷ OPs de fornecedor conferidas{coordSup.conferidas ? ` (${coordSup.devolvidas}/${coordSup.conferidas})` : ""}. Custo = verba × consumido, ponderado por contrato. Métricas sem dados contam como zero.
       </div>
       <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
         <thead><tr style={{ background: C.preto }}>
           <th style={{ ...thc, textAlign: "left" }}>Coordenador</th>
-          <th style={thc}>Atend. SM-i/SS-i (50%)</th><th style={thc}>Qualidade NF (25%)</th><th style={thc}>Custo planej. (25%)</th><th style={thc}>Nota</th>
+          <th style={thc}>Atend. SM-i/SS-i (40%)</th><th style={thc}>Criação de OPs (20%)</th><th style={thc}>Qualidade NF (20%)</th><th style={thc}>Custo planej. (20%)</th><th style={thc}>Nota</th>
         </tr></thead>
         <tbody>
           {(coordSup.coords.length ? coordSup.coords : [{ id: "_", nome: "— (sem coordenador de suprimentos cadastrado)" }]).map((c) => (
             <tr key={c.id}>
               <td style={{ padding: "8px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{c.nome}</td>
-              <Cel v={coordSup.sAtend} /><Cel v={coordSup.sNf} /><Cel v={coordSup.sCusto} />
+              <Cel v={coordSup.sAtend} /><Cel v={coordSup.sCriacao} /><Cel v={coordSup.sNf} /><Cel v={coordSup.sCusto} />
               <td style={{ padding: "8px 10px", borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}><span style={{ background: C.preto, color: "#fff", borderRadius: 7, padding: "3px 12px", fontSize: 14, fontWeight: 800 }}>{Math.round(coordSup.nota * 100)}</span></td>
             </tr>
           ))}

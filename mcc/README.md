@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v11.19 — Coordenador de Suprimentos: índice de criação de OPs
+- Novo critério **Índice de criação de OPs (OC/OS)** na nota do Coordenador de Suprimentos: OCs/OSs **aprovadas** com ao menos uma OP vinculada ÷ total de OCs/OSs aprovadas (cobertura simples; OC pela OP origem "oc", OS pela OP origem "os" ou por boletim de medição com OP gerada).
+- Pesos rebalanceados: **Atendimento SM-i/SS-i 40% · Criação de OPs 20% · Retorno de OPs por NF 20% · Custo planejado 20%**.
+- A legenda mostra as frações apuradas (cobertas/total e devolvidas/conferidas). Métricas sem dados contam como zero.
+
+> Sem migração.
+
 ## v11.18 — Remuneração Variável: nota do Coordenador de Suprimentos
 - Novo card **Remuneração Variável — Coordenador de Suprimentos**, com os critérios e pesos aprovados:
   - **Atendimento de SM-i e SS-i no prazo — 50%** (SM-i no prazo = atendida antes da data de necessidade, SLA padrão de 7 dias quando sem data; SS-i SLA de 15 dias; índice único somando as duas).
