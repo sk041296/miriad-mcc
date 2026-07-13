@@ -728,8 +728,14 @@ export default function App() {
   useEffect(() => { if (getToken() && !conviteToken) listar("obras").catch((e) => { if (e instanceof AuthError) sair(); }); }, [sair, conviteToken]);
   useEffect(() => {
     if (!usuario) { setAcessoMap(null); return; }
-    getConfig("acesso").then((ov) => setAcessoMap(mesclarAcesso(mapaAcessoPadrao(), ov || {}))).catch(() => setAcessoMap(mapaAcessoPadrao()));
-    listar("papeis_customizados").then(registrarPapeisCustom).catch(() => {});
+    // registra os papéis customizados ANTES de montar o mapa de acesso, para que
+    // cargos customizados resolvam corretamente a base e as permissões salvas.
+    listar("papeis_customizados")
+      .then((ps) => { registrarPapeisCustom(ps || []); })
+      .catch(() => {})
+      .then(() => getConfig("acesso"))
+      .then((ov) => setAcessoMap(mesclarAcesso(mapaAcessoPadrao(), ov || {})))
+      .catch(() => setAcessoMap(mapaAcessoPadrao()));
   }, [usuario]);
   if (conviteToken && !usuario) return <DefinirSenha token={conviteToken} onEntrar={setUsuario} />;
   if (!usuario) return <Login onEntrar={setUsuario} />;

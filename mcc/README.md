@@ -1,5 +1,9 @@
 # Miriad Construction Control (MCC)
 
+## v11.23 — Correção: permissões de cargos customizados (Folha não aparecia)
+- Corrigida a **ordem de carregamento**: os papéis customizados agora são **registrados antes** de montar o mapa de permissões. Antes, o mapa podia ser montado sem os papéis customizados registrados, fazendo um cargo customizado (ex.: Analista de RH) não resolver corretamente a base/permissões — inclusive a visibilidade da aba **Folha de Pagamento** mesmo com a permissão concedida.
+- Sem migração. Após subir, a Analista de RH deve dar um **Ctrl+Shift+R** (ou reabrir o app) para pegar o build novo.
+
 ## v11.22 — Autorização de SM-i/SS-i emergencial como permissão
 - A autorização de **SM-i e SS-i emergenciais** virou a capacidade **"Autorizar SM-i/SS-i emergencial"** na tela de Permissões (grupo Capacidades dos entregáveis).
 - **Coordenador de Suprimentos** passou a ter essa autorização por padrão (junto de Coord. de Obras, Coord. de Planejamento e Diretoria) — antes a SS-i emergencial só liberava para Coord. de Obras e Diretoria.
