@@ -310,7 +310,7 @@ export function SmI({ usuario, obras, eapPorObra, colaboradores = [], acesso, on
       {podeCriar && !(ehSup && compSup?.travado) && <FormSmI obras={obras} eapPorObra={eapPorObra} usuario={usuario} onCriou={carregar} />}
 
       {gestor && <PainelDiretoria sms={sms} obras={obras} />}
-      {(ehCoordObras || ehCoord || ehCoordPlan || gestor) && <PainelAutorizaEmergSm usuario={usuario} sms={sms} obras={obras} onMudou={carregar} />}
+      {(acesso?.emerg_autorizar ?? (ehCoordObras || ehCoord || ehCoordPlan || gestor)) && <PainelAutorizaEmergSm usuario={usuario} sms={sms} obras={obras} onMudou={carregar} />}
       {(ehCoordObras || gestor) && <PainelConformidadeSm obras={obras} />}
 
       {(ehOperador || ehCoord || gestor) && urgentes.length > 0 && (

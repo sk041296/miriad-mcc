@@ -222,7 +222,7 @@ export function SsI({ usuario, obras, eapPorObra, colaboradores = [], acesso, on
         </div>
       )}
 
-      {(ehCoordObras || gestor) && <PainelAutorizaSs usuario={usuario} sss={sss} obras={obras} colaboradores={colaboradores} onMudou={carregar} />}
+      {(acesso?.emerg_autorizar ?? (ehCoordObras || ehCoord || gestor)) && <PainelAutorizaSs usuario={usuario} sss={sss} obras={obras} colaboradores={colaboradores} onMudou={carregar} />}
 
       {(ehCoord || gestor) && abertasAntigas.length > 0 && (
         <div style={{ background: `${C.vermelho}10`, border: `1px solid ${C.vermelho}55`, borderRadius: 8, padding: "10px 14px" }}>

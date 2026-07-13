@@ -520,6 +520,7 @@ const CAP_LABELS = [
   ["ssi_criar", "Criar SS-i"], ["ssi_gestao", "Ver / gerir SS-i"], ["ssi_kanban", "Ver kanban SS-i"],
   ["pos_criar", "Criar POS"], ["pos_gestao", "Gerir POS"],
   ["pmm_criar", "Criar PMM"], ["pmm_gestao", "Gerir PMM"],
+  ["emerg_autorizar", "Autorizar SM-i/SS-i emergencial"],
 ];
 
 function Permissoes({ acessoMap, onSaved }) {

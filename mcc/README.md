@@ -1,5 +1,10 @@
 # Miriad Construction Control (MCC)
 
+## v11.22 — Autorização de SM-i/SS-i emergencial como permissão
+- A autorização de **SM-i e SS-i emergenciais** virou a capacidade **"Autorizar SM-i/SS-i emergencial"** na tela de Permissões (grupo Capacidades dos entregáveis).
+- **Coordenador de Suprimentos** passou a ter essa autorização por padrão (junto de Coord. de Obras, Coord. de Planejamento e Diretoria) — antes a SS-i emergencial só liberava para Coord. de Obras e Diretoria.
+- Pode ser concedida/removida por cargo (inclusive cargos customizados). Sem migração.
+
 ## v11.21 — Cargos customizados nas Permissões + Folha como permissão
 - **Cargos customizados** (ex.: Analista de RH) agora **aparecem no seletor da tela de Permissões** e herdam as permissões-padrão do seu cargo-base (antes ficavam de fora e não eram configuráveis).
 - **Folha de Pagamento** virou uma **permissão concedível por cargo** (toggle na tela de Permissões, ao lado de Medições/BMP). O backend respeita a permissão: acessa a folha quem for CEO/Diretor/Financeiro, ou cargo que **herda** de um desses, ou que recebeu a permissão "Folha de Pagamento".

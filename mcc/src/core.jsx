@@ -373,6 +373,7 @@ export function acessoPadrao(papel) {
       ssi_gestao: inc(pp, "op_suprimentos", "coord_suprimentos", "coord_obras", "coord_planejamento", "ceo", "diretor"),
       pos_gestao: inc(pp, "coord_planejamento", "ceo", "diretor"),
       pmm_gestao: inc(pp, "coord_obras", "coord_planejamento", "ceo", "diretor"),
+      emerg_autorizar: inc(pp, "coord_obras", "coord_suprimentos", "coord_planejamento", "ceo", "diretor"),
     },
   };
 }
