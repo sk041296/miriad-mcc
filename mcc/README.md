@@ -1,5 +1,9 @@
 # Miriad Construction Control (MCC)
 
+## v11.20 — BMP como permissão configurável por cargo
+- A visualização de **Medições (BMP)** virou uma **permissão** na tela de Permissões por cargo (junto de Painel Geral, Usuários, Remuneração Variável e Painel Gerencial). Agora um diretor/CEO pode liberar o BMP para qualquer cargo.
+- Padrão de fábrica mantém o acesso de antes (CEO, Diretor, Supervisor de obras e Coord. de Planejamento); os demais cargos podem ser habilitados marcando a permissão. Ajustes salvos por cargo (sem migração).
+
 ## v11.19 — Coordenador de Suprimentos: índice de criação de OPs
 - Novo critério **Índice de criação de OPs (OC/OS)** na nota do Coordenador de Suprimentos: OCs/OSs **aprovadas** com ao menos uma OP vinculada ÷ total de OCs/OSs aprovadas (cobertura simples; OC pela OP origem "oc", OS pela OP origem "os" ou por boletim de medição com OP gerada).
 - Pesos rebalanceados: **Atendimento SM-i/SS-i 40% · Criação de OPs 20% · Retorno de OPs por NF 20% · Custo planejado 20%**.

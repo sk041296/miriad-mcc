@@ -561,6 +561,7 @@ function Permissoes({ acessoMap, onSaved }) {
         <Check on={a.usuarios} onClick={() => setTop("usuarios", !a.usuarios)} label="Usuários" />
         <Check on={a.ranking} onClick={() => setTop("ranking", !a.ranking)} label="Remuneração Variável" />
         <Check on={a.gerencial} onClick={() => setTop("gerencial", !a.gerencial)} label="Painel Gerencial" />
+        <Check on={a.bmp} onClick={() => setTop("bmp", !a.bmp)} label="Medições (BMP)" />
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 800, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", margin: "14px 0 6px" }}>Operacional (telas)</div>
@@ -611,7 +612,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
   const podeFolha = ehDir || p === "financeiro";
   const ehSupObras = p === "sup_obras";
   const podeAlocar = ehDir || p === "coord_planejamento";
-  const podeBmp = ehSupObras || p === "coord_planejamento" || ehDir;
+  const podeBmp = A.bmp;
   const mobile = useIsMobile();
   const [drawer, setDrawer] = useState(false);
 

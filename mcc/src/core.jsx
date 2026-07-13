@@ -358,7 +358,7 @@ export function acessoPadrao(papel) {
   const dir = papel === "ceo" || papel === "diretor";
   const finFull = dir || papel === "financeiro";
   return {
-    painel: !!P.painel, usuarios: !!P.usuarios, ranking: dir, gerencial: dir,
+    painel: !!P.painel, usuarios: !!P.usuarios, ranking: dir, gerencial: dir, bmp: dir || papel === "sup_obras" || papel === "coord_planejamento",
     op: mapBool(OP_IDS, !!P.operacional),
     fin: (() => { const b = mapBool(FIN_IDS, finFull ? true : (papel === "coord_planejamento" ? (k) => k === "medprojetada" : false)); b.fluxocaixa = dir; return b; })(),
     cap: {
@@ -379,7 +379,7 @@ export function mesclarAcesso(base, ov) {
   Object.keys(ov || {}).forEach((p) => {
     if (!out[p]) out[p] = acessoPadrao(p);
     const o = ov[p] || {};
-    ["painel", "usuarios", "ranking", "gerencial"].forEach((k) => { if (typeof o[k] === "boolean") out[p][k] = o[k]; });
+    ["painel", "usuarios", "ranking", "gerencial", "bmp"].forEach((k) => { if (typeof o[k] === "boolean") out[p][k] = o[k]; });
     ["op", "fin", "cap"].forEach((g) => { if (o[g]) out[p][g] = { ...out[p][g], ...o[g] }; });
   });
   return out;
