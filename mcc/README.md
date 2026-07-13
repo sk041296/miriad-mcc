@@ -1,5 +1,12 @@
 # Miriad Construction Control (MCC)
 
+## v11.24 — Painel Gerencial: aba "Avanço × PMM"
+- O Painel Gerencial ganhou **abas**: "Visão geral" (o dashboard atual) e a nova **"Avanço × PMM"**.
+- **Gráfico de barras por mês** (empilhado): verde = **avançado** (medido nos RDOs) sobre o que foi planejado no PMM; laranja = **falta avançar** para atingir a medição esperada. KPIs de planejado, avançado (% do plano) e falta.
+- **Drill-down:** ao **clicar numa barra**, abre a visão analítica só dos **itens de EAP com produção prevista no PMM daquele mês**, mostrando previsto (qtd), realizado (qtd), % de avanço, e valores planejado/avançado/**falta** por item — ordenados pelo que mais falta.
+
+> Sem migração. Usa PMM, RDOs e EAP já existentes.
+
 ## v11.23 — Correção: permissões de cargos customizados (Folha não aparecia)
 - Corrigida a **ordem de carregamento**: os papéis customizados agora são **registrados antes** de montar o mapa de permissões. Antes, o mapa podia ser montado sem os papéis customizados registrados, fazendo um cargo customizado (ex.: Analista de RH) não resolver corretamente a base/permissões — inclusive a visibilidade da aba **Folha de Pagamento** mesmo com a permissão concedida.
 - Sem migração. Após subir, a Analista de RH deve dar um **Ctrl+Shift+R** (ou reabrir o app) para pegar o build novo.

@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
-import { C, fmt, fmtR, pct, sum, dataBR, Card, Btn, Kpi, Lbl, inp, NumInput, listar, getFin, setFin, dispararNotificacoes } from "./core.jsx";
+import { C, fmt, fmtR, fmtK, pct, sum, dataBR, Card, Btn, Kpi, Lbl, inp, NumInput, ChartTip, listar, getFin, setFin, dispararNotificacoes } from "./core.jsx";
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { resumoPmm } from "./pmm.jsx";
 
 const DIA = 86400000;
@@ -34,6 +35,7 @@ export function PainelGerencial() {
   const [cfg, setCfg] = useState({ folha: 0, despFin: 0, outras: 0, prazoReceb: 30 });
   const [salvo, setSalvo] = useState(false);
   const [notif, setNotif] = useState(null);
+  const [aba, setAba] = useState("geral");
 
   useEffect(() => { (async () => {
     const [obras, usuarios, designacoes, pos, pmm, sm, ss, ocs, contratos] = await Promise.all([
@@ -127,6 +129,11 @@ export function PainelGerencial() {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {[["geral", "Visão geral"], ["avancopmm", "Avanço × PMM"]].map(([id, l]) => <button key={id} onClick={() => setAba(id)} style={{ background: aba === id ? C.preto : C.branco, color: aba === id ? "#fff" : C.dim, border: `1px solid ${aba === id ? C.preto : C.linha}`, borderRadius: 8, padding: "7px 16px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>{l}</button>)}
+      </div>
+      {aba === "avancopmm" && <AvancoPmm d={d} />}
+      {aba === "geral" && <>
       {/* Pendências */}
       <Card title="Pendências de envio" right={<div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 12, color: C.dim }}>{notif && notif !== "enviando" ? notif : ""}</span><Btn small kind="ghost" disabled={notif === "enviando"} onClick={notificar}>{notif === "enviando" ? "Enviando…" : "✉ Notificar pendências"}</Btn></div>}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -234,6 +241,90 @@ export function PainelGerencial() {
           </div>
         ))}
       </Card>
+      </>}
+    </div>
+  );
+}
+
+/* ===== Avanço × PMM: barras por mês (avançado × falta) + drill-down por item de EAP ===== */
+function AvancoPmm({ d }) {
+  const { obras, eapPorObra, rdos, pmm } = d;
+  const [mesSel, setMesSel] = useState(null);
+
+  // quantidade realizada por obra|eap|mês (RDO)
+  const realQ = {};
+  rdos.forEach((r) => { const ym = String(r.data || r.criado_em).slice(0, 7); (r.atividades || []).forEach((a) => { const q = Number(a.qtde_dia ?? a.avanco) || 0; if (!q) return; const k = `${r.obra_id}|${a.eap}|${ym}`; realQ[k] = (realQ[k] || 0) + q; }); });
+
+  const meses = {}; const itensPorMes = {};
+  pmm.forEach((p) => {
+    const ym = String(p.mes).slice(0, 7);
+    const eap = eapPorObra[p.obra_id] || [];
+    const obra = obras.find((o) => o.id === p.obra_id);
+    (p.itens || []).forEach((it) => {
+      const prev = Number(it.producao_prevista) || 0; if (prev <= 0) return;
+      const e = eap.find((x) => x.codigo === it.eap_codigo); if (!e) return;
+      const unit = valorUnit(e);
+      const rq = realQ[`${p.obra_id}|${it.eap_codigo}|${ym}`] || 0;
+      const planV = prev * unit; const avancQ = Math.min(rq, prev); const avancV = avancQ * unit; const faltaV = Math.max(0, planV - avancV);
+      if (!meses[ym]) meses[ym] = { planej: 0, avanc: 0, falta: 0 };
+      meses[ym].planej += planV; meses[ym].avanc += avancV; meses[ym].falta += faltaV;
+      (itensPorMes[ym] = itensPorMes[ym] || []).push({ obra: obra?.codigo || "—", eap: it.eap_codigo, desc: e.descricao || e.servico || e.item || "", prev, rq, unit, planV, avancV, faltaV, pct: prev > 0 ? Math.min(rq / prev, 1) : 0 });
+    });
+  });
+  const axis = Object.keys(meses).sort();
+  const chart = axis.map((ym) => ({ ym, mes: ymLabel(ym), Avançado: Math.round(meses[ym].avanc), Falta: Math.round(meses[ym].falta) }));
+
+  const totPlan = sum(axis.map((m) => meses[m].planej));
+  const totAv = sum(axis.map((m) => meses[m].avanc));
+  const itens = mesSel ? (itensPorMes[mesSel] || []).slice().sort((a, b) => b.faltaV - a.faltaV) : [];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+      <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+        <Kpi dark label="Planejado (PMM)" value={fmtR(totPlan)} sub="todos os meses com PMM" />
+        <Kpi label="Avançado (RDO)" value={fmtR(totAv)} accent={C.verde} sub={totPlan ? pct(totAv / totPlan) + " do planejado" : "—"} />
+        <Kpi label="Falta avançar" value={fmtR(Math.max(0, totPlan - totAv))} accent={C.laranja} />
+      </div>
+      <Card title="Avanço × PMM por mês">
+        {chart.length === 0 ? <div style={{ fontSize: 13, color: C.dim }}>Nenhum item com produção prevista lançada no PMM.</div> : <>
+          <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 8 }}>Barra empilhada por mês: <b style={{ color: C.verde }}>verde = avançado</b> (RDO) sobre o planejado no PMM, <b style={{ color: C.laranja }}>laranja = falta avançar</b>. Clique numa barra para abrir os itens de EAP daquele mês.</div>
+          <ResponsiveContainer width="100%" height={330}>
+            <BarChart data={chart} margin={{ top: 8, right: 12, left: 8, bottom: 0 }} onClick={(e) => { const p = e && e.activePayload && e.activePayload[0] && e.activePayload[0].payload; if (p && p.ym) setMesSel(p.ym); }}>
+              <CartesianGrid stroke={C.linha} strokeDasharray="2 4" vertical={false} />
+              <XAxis dataKey="mes" tick={{ fill: C.dim, fontSize: 11 }} />
+              <YAxis tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} width={66} />
+              <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="Avançado" stackId="a" fill={C.verde} cursor="pointer" radius={[0, 0, 0, 0]} />
+              <Bar dataKey="Falta" stackId="a" fill={C.laranja} cursor="pointer" radius={[3, 3, 0, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </>}
+      </Card>
+
+      {mesSel && (
+        <Card title={`Itens de EAP com avanço previsto no PMM — ${ymLabel(mesSel)}`} right={<Btn small kind="ghost" onClick={() => setMesSel(null)}>Fechar</Btn>}>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>Apenas itens com produção prevista no PMM deste mês. Falta = valor previsto ainda não medido nos RDOs para atingir a medição esperada.</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
+              <thead><tr style={{ background: C.preto }}>{["Obra", "EAP", "Descrição", "Prev. (qtd)", "Realiz. (qtd)", "% avanço", "Planejado R$", "Avançado R$", "Falta R$"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 10.5, color: "#fff", textAlign: h === "Obra" || h === "EAP" || h === "Descrição" ? "left" : "right", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+              <tbody>{itens.map((x, i) => (
+                <tr key={i}>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{x.obra}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{x.eap}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 11.5, borderBottom: `1px solid ${C.linha}`, color: C.dim, maxWidth: 260, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.desc}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}>{fmt(x.prev)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}>{fmt(x.rq)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right", fontWeight: 700, color: x.pct >= 1 ? C.verde : x.pct >= 0.5 ? C.texto : C.vermelho }}>{pct(x.pct)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}>{fmtR(x.planV)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right", color: C.verde }}>{fmtR(x.avancV)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right", color: C.laranja, fontWeight: 700 }}>{fmtR(x.faltaV)}</td>
+                </tr>
+              ))}
+              {itens.length === 0 && <tr><td colSpan={9} style={{ padding: 12, color: C.dim, fontSize: 13 }}>Nenhum item neste mês.</td></tr>}</tbody>
+            </table>
+          </div>
+        </Card>
+      )}
     </div>
   );
 }
