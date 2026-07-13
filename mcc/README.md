@@ -1,5 +1,14 @@
 # Miriad Construction Control (MCC)
 
+## v11.18 — Remuneração Variável: nota do Coordenador de Suprimentos
+- Novo card **Remuneração Variável — Coordenador de Suprimentos**, com os critérios e pesos aprovados:
+  - **Atendimento de SM-i e SS-i no prazo — 50%** (SM-i no prazo = atendida antes da data de necessidade, SLA padrão de 7 dias quando sem data; SS-i SLA de 15 dias; índice único somando as duas).
+  - **Retorno de OPs por inconsistência de NF (OC/OS) — 25%** (1 − OPs de fornecedor devolvidas por divergência ÷ OPs de fornecedor conferidas).
+  - **Obras dentro do custo planejado — 25%** (verba × consumido por EAP, média ponderada por valor de contrato).
+- Métricas sem dados no período contam como zero. Cálculo de custo agora é um helper compartilhado com o Coordenador de Planejamento.
+
+> Sem migração.
+
 ## v11.17 — "Ranking" vira "Remuneração Variável" + nota do Coordenador de Planejamento
 - Aba **Ranking renomeada para Remuneração Variável** (título, menu e permissão). O ranking/nota dos **Supervisores** continua igual.
 - Novo card **Remuneração Variável — Coordenador de Planejamento**, com nota da empresa como um todo pelos critérios e pesos aprovados:

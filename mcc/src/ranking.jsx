@@ -141,22 +141,51 @@ function calcCoordPlanejamento({ usuarios, obras, eapPorObra, rdos, pos, pmm, sm
   const sPrazo = prazoDen ? prazoNum / prazoDen : null;
 
   // 6) Obras dentro do custo planejado (verba × consumido, média ponderada por contrato)
-  let custoNum = 0, custoDen = 0;
-  obras.forEach((o) => {
-    const eap = eapPorObra[o.id] || []; const contrato = contratoObra(o); if (!contrato) return;
-    const consumido = consumidoPorEapObra(ocs, contratos, o.id);
-    let verbaTot = 0, gastoTot = 0;
-    eap.forEach((e) => { const vb = verbaEfetivaItem(e); if (!(vb > 0)) return; verbaTot += vb; gastoTot += (consumido[String(e.codigo).split(" ")[0].trim()] || 0); });
-    if (verbaTot <= 0) return;
-    const nota = gastoTot <= 0 ? 1 : Math.min(verbaTot / gastoTot, 1);
-    custoNum += nota * contrato; custoDen += contrato;
-  });
-  const sCusto = custoDen ? custoNum / custoDen : null;
+  const sCusto = notaCustoPlanejado(obras, eapPorObra, ocs, contratos);
 
   const v = (x) => x == null ? 0 : x;
   const nota = v(sCusto) * 0.30 + v(sAss) * 0.25 + v(sPrazo) * 0.20 + v(sRdo) * 0.10 + v(sPos) * 0.08 + v(sSm) * 0.07;
   const coords = usuarios.filter((u) => u.papel === "coord_planejamento");
   return { coords, sRdo, sPos, sSm, sAss, sPrazo, sCusto, nota };
+}
+
+/* média ponderada (por valor de contrato) de obras dentro do custo planejado (verba × consumido) */
+function notaCustoPlanejado(obras, eapPorObra, ocs, contratos) {
+  let num = 0, den = 0;
+  obras.forEach((o) => {
+    const eap = eapPorObra[o.id] || [];
+    const contrato = sum(eap.map((e) => Number(e.valor_total) || 0)); if (!contrato) return;
+    const consumido = consumidoPorEapObra(ocs, contratos, o.id);
+    let verbaTot = 0, gastoTot = 0;
+    eap.forEach((e) => { const vb = verbaEfetivaItem(e); if (!(vb > 0)) return; verbaTot += vb; gastoTot += (consumido[String(e.codigo).split(" ")[0].trim()] || 0); });
+    if (verbaTot <= 0) return;
+    const nota = gastoTot <= 0 ? 1 : Math.min(verbaTot / gastoTot, 1);
+    num += nota * contrato; den += contrato;
+  });
+  return den ? num / den : null;
+}
+
+/* ===== Nota do Coordenador de Suprimentos ===== */
+function calcCoordSuprimentos({ usuarios, obras, eapPorObra, ocs, contratos, sm, ss, ops }) {
+  const hoje = new Date(); hoje.setHours(0, 0, 0, 0);
+  const prazoRef = (item, diasPadrao) => { if (item.data_necessidade) return new Date(String(item.data_necessidade).slice(0, 10) + "T23:59:59"); return addDias(new Date(item.criado_em), diasPadrao); };
+  const noPrazo = (item, diasPadrao) => { if (item.status === "cancelada") return null; const venc = prazoRef(item, diasPadrao); const aberta = item.status === "aberta"; return !(aberta && venc < hoje); };
+  // 1) atendimento SM-i + SS-i no prazo
+  let atOk = 0, atTot = 0;
+  (sm || []).forEach((x) => { const r = noPrazo(x, 7); if (r == null) return; atTot++; if (r) atOk++; });
+  (ss || []).forEach((x) => { const r = noPrazo(x, 15); if (r == null) return; atTot++; if (r) atOk++; });
+  const sAtend = atTot ? atOk / atTot : null;
+  // 2) retorno de OPs por inconsistência de NF (OC e OS)
+  const ehForn = (o) => ["oc", "bmp", "os", "contrato_servico"].includes(o.origem_tipo);
+  const conferidas = (ops || []).filter((o) => ehForn(o) && (o.nf_conferida || o.divergencia));
+  const devolvidas = conferidas.filter((o) => o.divergencia === true);
+  const sNf = conferidas.length ? 1 - devolvidas.length / conferidas.length : null;
+  // 3) obras dentro do custo planejado
+  const sCusto = notaCustoPlanejado(obras, eapPorObra, ocs, contratos);
+  const v = (x) => x == null ? 0 : x;
+  const nota = v(sAtend) * 0.50 + v(sNf) * 0.25 + v(sCusto) * 0.25;
+  const coords = usuarios.filter((u) => u.papel === "coord_suprimentos");
+  return { coords, sAtend, sNf, sCusto, nota, devolvidas: devolvidas.length, conferidas: conferidas.length };
 }
 
 const Cel = ({ v }) => {
@@ -171,15 +200,16 @@ const thc = { padding: "8px 10px", fontSize: 10.5, color: "#fff", textTransform:
 export function Ranking() {
   const [d, setD] = useState(null);
   useEffect(() => { (async () => {
-    const [usuarios, obras, designacoes, pos, pmm, sm, ocs, contratos] = await Promise.all([listar("usuarios"), listar("obras"), listar("designacoes"), listar("pos"), listar("pmm"), listar("sm_itens"), listar("ordens_compra"), listar("contratos_servico")]);
+    const [usuarios, obras, designacoes, pos, pmm, sm, ss, ocs, contratos, ops] = await Promise.all([listar("usuarios"), listar("obras"), listar("designacoes"), listar("pos"), listar("pmm"), listar("sm_itens"), listar("ss_itens"), listar("ordens_compra"), listar("contratos_servico"), listar("ordens_pagamento")]);
     const eapPorObra = {}, rdos = [];
     await Promise.all(obras.map(async (o) => { eapPorObra[o.id] = await listar("eap_itens", { obra_id: o.id }); (await listar("rdos", { obra_id: o.id })).forEach((r) => rdos.push(r)); }));
-    setD({ usuarios, obras, designacoes, eapPorObra, rdos, pos, pmm, sm, ocs, contratos });
-  })().catch(() => setD({ usuarios: [], obras: [], designacoes: [], eapPorObra: {}, rdos: [], pos: [], pmm: [], sm: [], ocs: [], contratos: [] })); }, []);
+    setD({ usuarios, obras, designacoes, eapPorObra, rdos, pos, pmm, sm, ss, ocs, contratos, ops });
+  })().catch(() => setD({ usuarios: [], obras: [], designacoes: [], eapPorObra: {}, rdos: [], pos: [], pmm: [], sm: [], ss: [], ocs: [], contratos: [], ops: [] })); }, []);
   if (!d) return <div style={{ color: C.dim, padding: 20 }}>Calculando ranking…</div>;
 
   const linhas = calcular(d);
   const coord = calcCoordPlanejamento(d);
+  const coordSup = calcCoordSuprimentos(d);
   const medalha = ["🥇", "🥈", "🥉"];
 
   return (
@@ -222,6 +252,27 @@ export function Ranking() {
               <td style={{ padding: "8px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{c.nome}</td>
               <Cel v={coord.sCusto} /><Cel v={coord.sAss} /><Cel v={coord.sPrazo} /><Cel v={coord.sRdo} /><Cel v={coord.sPos} /><Cel v={coord.sSm} />
               <td style={{ padding: "8px 10px", borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}><span style={{ background: C.preto, color: "#fff", borderRadius: 7, padding: "3px 12px", fontSize: 14, fontWeight: 800 }}>{Math.round(coord.nota * 100)}</span></td>
+            </tr>
+          ))}
+        </tbody>
+      </table></div>
+    </Card>
+
+    <Card title="Remuneração Variável — Coordenador de Suprimentos">
+      <div style={{ fontSize: 12, color: C.dim, marginBottom: 12 }}>
+        Pesos: Atendimento de SM-i e SS-i no prazo 50% · Retorno de OPs por inconsistência de NF (OC/OS) 25% · Obras dentro do custo planejado 25%. SM-i no prazo = atendida antes da necessidade (SLA 7 dias sem data); SS-i SLA 15 dias. Retorno de NF = 1 − OPs devolvidas ÷ OPs de fornecedor conferidas{coordSup.conferidas ? ` (${coordSup.devolvidas}/${coordSup.conferidas})` : ""}. Custo = verba × consumido, ponderado por contrato. Métricas sem dados contam como zero.
+      </div>
+      <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+        <thead><tr style={{ background: C.preto }}>
+          <th style={{ ...thc, textAlign: "left" }}>Coordenador</th>
+          <th style={thc}>Atend. SM-i/SS-i (50%)</th><th style={thc}>Qualidade NF (25%)</th><th style={thc}>Custo planej. (25%)</th><th style={thc}>Nota</th>
+        </tr></thead>
+        <tbody>
+          {(coordSup.coords.length ? coordSup.coords : [{ id: "_", nome: "— (sem coordenador de suprimentos cadastrado)" }]).map((c) => (
+            <tr key={c.id}>
+              <td style={{ padding: "8px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{c.nome}</td>
+              <Cel v={coordSup.sAtend} /><Cel v={coordSup.sNf} /><Cel v={coordSup.sCusto} />
+              <td style={{ padding: "8px 10px", borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}><span style={{ background: C.preto, color: "#fff", borderRadius: 7, padding: "3px 12px", fontSize: 14, fontWeight: 800 }}>{Math.round(coordSup.nota * 100)}</span></td>
             </tr>
           ))}
         </tbody>
