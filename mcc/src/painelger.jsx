@@ -250,6 +250,7 @@ export function PainelGerencial() {
 function AvancoPmm({ d }) {
   const { obras, eapPorObra, rdos, pmm } = d;
   const [mesSel, setMesSel] = useState(null);
+  const [obraSel, setObraSel] = useState(null);
 
   // quantidade realizada por obra|eap|mês (RDO)
   const realQ = {};
@@ -268,7 +269,7 @@ function AvancoPmm({ d }) {
       const planV = prev * unit; const avancQ = Math.min(rq, prev); const avancV = avancQ * unit; const faltaV = Math.max(0, planV - avancV);
       if (!meses[ym]) meses[ym] = { planej: 0, avanc: 0, falta: 0 };
       meses[ym].planej += planV; meses[ym].avanc += avancV; meses[ym].falta += faltaV;
-      (itensPorMes[ym] = itensPorMes[ym] || []).push({ obra: obra?.codigo || "—", eap: it.eap_codigo, desc: e.descricao || e.servico || e.item || "", prev, rq, unit, planV, avancV, faltaV, pct: prev > 0 ? Math.min(rq / prev, 1) : 0 });
+      (itensPorMes[ym] = itensPorMes[ym] || []).push({ obraId: p.obra_id, obra: obra?.codigo || "—", eap: it.eap_codigo, desc: e.descricao || e.servico || e.item || "", prev, rq, unit, planV, avancV, faltaV, pct: prev > 0 ? Math.min(rq / prev, 1) : 0 });
     });
   });
   const axis = Object.keys(meses).sort();
@@ -277,6 +278,18 @@ function AvancoPmm({ d }) {
   const totPlan = sum(axis.map((m) => meses[m].planej));
   const totAv = sum(axis.map((m) => meses[m].avanc));
   const itens = mesSel ? (itensPorMes[mesSel] || []).slice().sort((a, b) => b.faltaV - a.faltaV) : [];
+
+  // agregação por obra (todas as competências do PMM)
+  const porObra = {};
+  Object.values(itensPorMes).forEach((arr) => arr.forEach((x) => {
+    const o = (porObra[x.obraId] = porObra[x.obraId] || { obraId: x.obraId, obra: x.obra, planej: 0, avanc: 0, falta: 0, itens: {} });
+    o.planej += x.planV; o.avanc += x.avancV; o.falta += x.faltaV;
+    const it = (o.itens[x.eap] = o.itens[x.eap] || { eap: x.eap, desc: x.desc, prev: 0, rq: 0, planV: 0, avancV: 0, faltaV: 0 });
+    it.prev += x.prev; it.rq += x.rq; it.planV += x.planV; it.avancV += x.avancV; it.faltaV += x.faltaV;
+  }));
+  const obrasArr = Object.values(porObra).filter((o) => o.planej > 0).sort((a, b) => b.planej - a.planej);
+  const chartObra = obrasArr.map((o) => ({ obraId: o.obraId, obra: o.obra, Avançado: Math.round(o.avanc), Falta: Math.round(o.falta) }));
+  const obraDet = obraSel && porObra[obraSel] ? Object.values(porObra[obraSel].itens).map((it) => ({ ...it, pct: it.prev > 0 ? Math.min(it.rq / it.prev, 1) : 0 })).sort((a, b) => b.faltaV - a.faltaV) : [];
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
@@ -321,6 +334,45 @@ function AvancoPmm({ d }) {
                 </tr>
               ))}
               {itens.length === 0 && <tr><td colSpan={9} style={{ padding: 12, color: C.dim, fontSize: 13 }}>Nenhum item neste mês.</td></tr>}</tbody>
+            </table>
+          </div>
+        </Card>
+      )}
+
+      <Card title="Avanço × PMM por obra">
+        {chartObra.length === 0 ? <div style={{ fontSize: 13, color: C.dim }}>Nenhuma obra com produção prevista no PMM.</div> : <>
+          <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 8 }}>Uma barra por obra com avanço previsto (todas as competências do PMM). Clique numa obra para ver seus itens de EAP e o que falta avançar.</div>
+          <ResponsiveContainer width="100%" height={Math.max(220, chartObra.length * 46)}>
+            <BarChart layout="vertical" data={chartObra} margin={{ top: 4, right: 16, left: 8, bottom: 0 }} onClick={(e) => { const p = e && e.activePayload && e.activePayload[0] && e.activePayload[0].payload; if (p && p.obraId) setObraSel(p.obraId); }}>
+              <CartesianGrid stroke={C.linha} strokeDasharray="2 4" horizontal={false} />
+              <XAxis type="number" tickFormatter={fmtK} tick={{ fill: C.dim, fontSize: 10 }} />
+              <YAxis type="category" dataKey="obra" width={130} tick={{ fill: C.texto, fontSize: 11 }} />
+              <Tooltip content={<ChartTip />} /><Legend wrapperStyle={{ fontSize: 11 }} />
+              <Bar dataKey="Avançado" stackId="a" fill={C.verde} cursor="pointer" />
+              <Bar dataKey="Falta" stackId="a" fill={C.laranja} cursor="pointer" radius={[0, 3, 3, 0]} />
+            </BarChart>
+          </ResponsiveContainer>
+        </>}
+      </Card>
+
+      {obraSel && porObra[obraSel] && (
+        <Card title={`Itens de EAP com avanço previsto — ${porObra[obraSel].obra}`} right={<Btn small kind="ghost" onClick={() => setObraSel(null)}>Fechar</Btn>}>
+          <div style={{ fontSize: 12, color: C.dim, marginBottom: 8 }}>Consolidado de todas as competências do PMM desta obra. Falta = valor previsto ainda não medido nos RDOs.</div>
+          <div style={{ overflowX: "auto" }}>
+            <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 760 }}>
+              <thead><tr style={{ background: C.preto }}>{["EAP", "Descrição", "Prev. (qtd)", "Realiz. (qtd)", "% avanço", "Planejado R$", "Avançado R$", "Falta R$"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 10.5, color: "#fff", textAlign: h === "EAP" || h === "Descrição" ? "left" : "right", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+              <tbody>{obraDet.map((x, i) => (
+                <tr key={i}>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, fontWeight: 600 }}>{x.eap}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 11.5, borderBottom: `1px solid ${C.linha}`, color: C.dim, maxWidth: 280, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{x.desc}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}>{fmt(x.prev)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}>{fmt(x.rq)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right", fontWeight: 700, color: x.pct >= 1 ? C.verde : x.pct >= 0.5 ? C.texto : C.vermelho }}>{pct(x.pct)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right" }}>{fmtR(x.planV)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right", color: C.verde }}>{fmtR(x.avancV)}</td>
+                  <td style={{ padding: "6px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, textAlign: "right", color: C.laranja, fontWeight: 700 }}>{fmtR(x.faltaV)}</td>
+                </tr>
+              ))}</tbody>
             </table>
           </div>
         </Card>

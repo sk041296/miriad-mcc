@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v11.25 — Avanço × PMM: visão por obra com drill-down
+- Na aba **Avanço × PMM** do Painel Gerencial, além da informação geral (por mês), foi adicionado o gráfico **Avanço × PMM por obra**: uma barra por obra que já tem avanço previsto no PMM (verde = avançado, laranja = falta), consolidando todas as competências.
+- **Drill-down por obra:** ao clicar numa obra, abre a visão analítica dos itens de EAP daquela obra — previsto (qtd), realizado (qtd), % de avanço e valores planejado/avançado/falta por item, ordenados pelo que mais falta.
+
+> Sem migração.
+
 ## v11.24 — Painel Gerencial: aba "Avanço × PMM"
 - O Painel Gerencial ganhou **abas**: "Visão geral" (o dashboard atual) e a nova **"Avanço × PMM"**.
 - **Gráfico de barras por mês** (empilhado): verde = **avançado** (medido nos RDOs) sobre o que foi planejado no PMM; laranja = **falta avançar** para atingir a medição esperada. KPIs de planejado, avançado (% do plano) e falta.
