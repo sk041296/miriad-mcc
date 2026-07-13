@@ -354,32 +354,35 @@ const mapBool = (ids, val) => Object.fromEntries(ids.map((k) => [k, typeof val =
 const inc = (papel, ...lista) => lista.includes(papel);
 
 export function acessoPadrao(papel) {
-  const P = PERMS[papel] || {};
-  const dir = papel === "ceo" || papel === "diretor";
-  const finFull = dir || papel === "financeiro";
+  const pp = basePapel(papel);
+  const P = PERMS[pp] || {};
+  const dir = pp === "ceo" || pp === "diretor";
+  const finFull = dir || pp === "financeiro";
   return {
-    painel: !!P.painel, usuarios: !!P.usuarios, ranking: dir, gerencial: dir, bmp: dir || papel === "sup_obras" || papel === "coord_planejamento",
+    painel: !!P.painel, usuarios: !!P.usuarios, ranking: dir, gerencial: dir,
+    bmp: dir || pp === "sup_obras" || pp === "coord_planejamento",
+    folha: dir || pp === "financeiro",
     op: mapBool(OP_IDS, !!P.operacional),
-    fin: (() => { const b = mapBool(FIN_IDS, finFull ? true : (papel === "coord_planejamento" ? (k) => k === "medprojetada" : false)); b.fluxocaixa = dir; return b; })(),
+    fin: (() => { const b = mapBool(FIN_IDS, finFull ? true : (pp === "coord_planejamento" ? (k) => k === "medprojetada" : false)); b.fluxocaixa = dir; return b; })(),
     cap: {
-      smi_criar: inc(papel, "sup_obras", "coord_planejamento"),
-      ssi_criar: inc(papel, "sup_obras", "coord_planejamento"),
-      pos_criar: inc(papel, "sup_obras", "coord_planejamento"),
-      pmm_criar: inc(papel, "sup_obras", "coord_planejamento"),
-      smi_gestao: inc(papel, "op_suprimentos", "coord_suprimentos", "coord_obras", "coord_planejamento", "ceo", "diretor"),
-      ssi_gestao: inc(papel, "op_suprimentos", "coord_suprimentos", "coord_obras", "coord_planejamento", "ceo", "diretor"),
-      pos_gestao: inc(papel, "coord_planejamento", "ceo", "diretor"),
-      pmm_gestao: inc(papel, "coord_obras", "coord_planejamento", "ceo", "diretor"),
+      smi_criar: inc(pp, "sup_obras", "coord_planejamento"),
+      ssi_criar: inc(pp, "sup_obras", "coord_planejamento"),
+      pos_criar: inc(pp, "sup_obras", "coord_planejamento"),
+      pmm_criar: inc(pp, "sup_obras", "coord_planejamento"),
+      smi_gestao: inc(pp, "op_suprimentos", "coord_suprimentos", "coord_obras", "coord_planejamento", "ceo", "diretor"),
+      ssi_gestao: inc(pp, "op_suprimentos", "coord_suprimentos", "coord_obras", "coord_planejamento", "ceo", "diretor"),
+      pos_gestao: inc(pp, "coord_planejamento", "ceo", "diretor"),
+      pmm_gestao: inc(pp, "coord_obras", "coord_planejamento", "ceo", "diretor"),
     },
   };
 }
-export function mapaAcessoPadrao() { const m = {}; Object.keys(PAPEIS).forEach((p) => (m[p] = acessoPadrao(p))); return m; }
+export function mapaAcessoPadrao() { const m = {}; [...Object.keys(PAPEIS), ...Object.keys(PAPEIS_CUSTOM)].forEach((p) => (m[p] = acessoPadrao(p))); return m; }
 export function mesclarAcesso(base, ov) {
   const out = JSON.parse(JSON.stringify(base));
   Object.keys(ov || {}).forEach((p) => {
     if (!out[p]) out[p] = acessoPadrao(p);
     const o = ov[p] || {};
-    ["painel", "usuarios", "ranking", "gerencial", "bmp"].forEach((k) => { if (typeof o[k] === "boolean") out[p][k] = o[k]; });
+    ["painel", "usuarios", "ranking", "gerencial", "bmp", "folha"].forEach((k) => { if (typeof o[k] === "boolean") out[p][k] = o[k]; });
     ["op", "fin", "cap"].forEach((g) => { if (o[g]) out[p][g] = { ...out[p][g], ...o[g] }; });
   });
   return out;

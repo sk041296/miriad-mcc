@@ -38,6 +38,17 @@ const TABELAS = {
 };
 const RH_TABELAS = new Set(["rh_colaboradores", "rh_folha"]);
 const RH_ROLES = new Set(["ceo", "diretor", "financeiro"]);
+// pode acessar a folha? papel base RH, ou cargo customizado que herda de base RH, ou permissão "folha" concedida
+async function podeRh(supabase, s) {
+  if (RH_ROLES.has(s.papel)) return true;
+  try {
+    const { data: pc } = await supabase.from("papeis_customizados").select("papel_base").eq("chave", s.papel).maybeSingle();
+    if (pc && RH_ROLES.has(pc.papel_base)) return true;
+    const { data: cfg } = await supabase.from("app_config").select("valor").eq("chave", "acesso").maybeSingle();
+    if (cfg && cfg.valor && cfg.valor[s.papel] && cfg.valor[s.papel].folha === true) return true;
+  } catch (e) { /* ignora */ }
+  return false;
+}
 
 // Grupos de papéis
 const VE_FINANCEIRO   = new Set(["ceo", "diretor", "financeiro"]);
@@ -250,7 +261,7 @@ export default async function handler(req, res) {
 
     const cfg = TABELAS[t];
     if (!cfg) return res.status(400).json({ error: "Recurso não permitido" });
-    if (RH_TABELAS.has(t) && !RH_ROLES.has(s.papel)) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
+    if (RH_TABELAS.has(t) && !(await podeRh(supabase, s))) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
     if (t === "usuarios" && !GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
     let q = supabase.from(t).select(t === "usuarios" ? "id,nome,email,papel,ativo,criado_em,obra_id,senha_definida,travado" : "*").order(cfg.ordem, { ascending: cfg.asc });
     if (cfg.filtro && req.query[cfg.filtro]) q = q.eq(cfg.filtro, req.query[cfg.filtro]);
@@ -267,7 +278,7 @@ export default async function handler(req, res) {
 
   if (req.method === "POST") {
     const { t, row, obra, itens } = req.body || {};
-    if (RH_TABELAS.has(t) && !RH_ROLES.has(s.papel)) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
+    if (RH_TABELAS.has(t) && !(await podeRh(supabase, s))) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
 
     // alocação de supervisor numa obra + e-mail de comunicação
     if (t === "aprovar_ordem" || t === "rejeitar_ordem") {
@@ -767,7 +778,7 @@ export default async function handler(req, res) {
   if (req.method === "PATCH") {
     const { t, id, patch } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
-    if (RH_TABELAS.has(t) && !RH_ROLES.has(s.papel)) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
+    if (RH_TABELAS.has(t) && !(await podeRh(supabase, s))) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
     if (t === "usuarios") {
       if (!GERENCIA_USUARIOS.has(s.papel)) return res.status(403).json({ error: "Acesso restrito" });
       // coordenadores só podem (des)travar ou (in)ativar; editar cadastro é CEO/Diretor
@@ -791,7 +802,7 @@ export default async function handler(req, res) {
   if (req.method === "DELETE") {
     const { t, id } = req.body || {};
     if (!TABELAS[t]) return res.status(400).json({ error: "Recurso não permitido" });
-    if (RH_TABELAS.has(t) && !RH_ROLES.has(s.papel)) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
+    if (RH_TABELAS.has(t) && !(await podeRh(supabase, s))) return res.status(403).json({ error: "Acesso restrito à folha de pagamento." });
     if (t === "usuarios") {
       // coord_planejamento pode solicitar exclusão (exceto CEO/Diretor), mas passa por aprovação
       if (s.papel === "coord_planejamento") {

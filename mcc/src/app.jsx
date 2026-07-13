@@ -550,7 +550,7 @@ function Permissoes({ acessoMap, onSaved }) {
     <Card title="Permissões por cargo" right={<span style={{ fontSize: 12, color: msg ? C.verde : C.dim, fontWeight: 700 }}>{msg}</span>}>
       <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 12 }}>Defina o que cada cargo enxerga e pode fazer. Itens sensíveis (dados financeiros, gestão de usuários) continuam protegidos no servidor independentemente desta tela.</div>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 16 }}>
-        <div style={{ minWidth: 240 }}><Lbl>Cargo</Lbl><select value={papel} onChange={(e) => setPapel(e.target.value)} style={inp({ width: "100%" })}>{Object.keys(PAPEIS).map((p) => <option key={p} value={p}>{PAPEIS[p]}</option>)}</select></div>
+        <div style={{ minWidth: 240 }}><Lbl>Cargo</Lbl><select value={papel} onChange={(e) => setPapel(e.target.value)} style={inp({ width: "100%" })}>{[...Object.keys(PAPEIS), ...Object.keys(PAPEIS_CUSTOM)].map((p) => <option key={p} value={p}>{nomePapel(p)}</option>)}</select></div>
         <Btn small kind="ghost" onClick={restaurar}>Restaurar padrão deste cargo</Btn>
         <Btn small disabled={busy} onClick={salvar}>{busy ? "Salvando…" : "Salvar permissões"}</Btn>
       </div>
@@ -562,6 +562,7 @@ function Permissoes({ acessoMap, onSaved }) {
         <Check on={a.ranking} onClick={() => setTop("ranking", !a.ranking)} label="Remuneração Variável" />
         <Check on={a.gerencial} onClick={() => setTop("gerencial", !a.gerencial)} label="Painel Gerencial" />
         <Check on={a.bmp} onClick={() => setTop("bmp", !a.bmp)} label="Medições (BMP)" />
+        <Check on={a.folha} onClick={() => setTop("folha", !a.folha)} label="Folha de Pagamento" />
       </div>
 
       <div style={{ fontSize: 11, fontWeight: 800, color: C.preto, textTransform: "uppercase", letterSpacing: ".05em", margin: "14px 0 6px" }}>Operacional (telas)</div>
@@ -609,7 +610,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
   const [bmpAberto, setBmpAberto] = useState(false);
   const [folhaAberta, setFolhaAberta] = useState(false);
   const ehDir = p === "ceo" || p === "diretor";
-  const podeFolha = ehDir || p === "financeiro";
+  const podeFolha = A.folha;
   const ehSupObras = p === "sup_obras";
   const podeAlocar = ehDir || p === "coord_planejamento";
   const podeBmp = A.bmp;

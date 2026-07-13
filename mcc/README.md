@@ -1,5 +1,11 @@
 # Miriad Construction Control (MCC)
 
+## v11.21 — Cargos customizados nas Permissões + Folha como permissão
+- **Cargos customizados** (ex.: Analista de RH) agora **aparecem no seletor da tela de Permissões** e herdam as permissões-padrão do seu cargo-base (antes ficavam de fora e não eram configuráveis).
+- **Folha de Pagamento** virou uma **permissão concedível por cargo** (toggle na tela de Permissões, ao lado de Medições/BMP). O backend respeita a permissão: acessa a folha quem for CEO/Diretor/Financeiro, ou cargo que **herda** de um desses, ou que recebeu a permissão "Folha de Pagamento".
+- **Custos Fixos** já era concedível no grupo Financeiro (checkbox "Custos Fixos") — continua lá.
+- Padrões de fábrica preservados; ajustes salvos por cargo. Sem migração.
+
 ## v11.20 — BMP como permissão configurável por cargo
 - A visualização de **Medições (BMP)** virou uma **permissão** na tela de Permissões por cargo (junto de Painel Geral, Usuários, Remuneração Variável e Painel Gerencial). Agora um diretor/CEO pode liberar o BMP para qualquer cargo.
 - Padrão de fábrica mantém o acesso de antes (CEO, Diretor, Supervisor de obras e Coord. de Planejamento); os demais cargos podem ser habilitados marcando a permissão. Ajustes salvos por cargo (sem migração).
