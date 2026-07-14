@@ -18,6 +18,9 @@ const nowYM = () => new Date().toISOString().slice(0, 7);
 const CONTRATOS = ["CLT", "Estagiário", "MEI/Sócio", "Prestador"];
 const norm = (s) => String(s == null ? "" : s).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 const dBR = (d) => d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—";
+const diasAte = (d) => d ? Math.ceil((new Date(String(d).slice(0, 10) + "T00:00:00") - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00")) / 86400000) : null;
+const prazoTxt = (dias) => dias == null ? "—" : dias < 0 ? `vencido há ${-dias}d` : `${dias} dias`;
+const prazoCor = (dias) => dias == null ? C.dim : dias < 0 ? C.vermelho : dias <= 45 ? C.laranja : C.verde;
 
 export function ModuloRH({ usuario }) {
   const [sub, setSub] = useState("fechamento");
@@ -145,7 +148,7 @@ function FolhaCadastral() {
     </div>}>
       <div style={{ overflowX: "auto" }}>
         <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 820 }}>
-          <thead><tr style={{ background: C.preto }}>{["Colaborador", "Setor", "Cargo", "Contrato", "Admissão", "Venc. contrato", "Salário base"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
+          <thead><tr style={{ background: C.preto }}>{["Colaborador", "Setor", "Cargo", "Contrato", "Admissão", "Venc. contrato", "Prazo", "Salário base"].map((h) => <th key={h} style={{ padding: "8px 10px", fontSize: 11, color: "#fff", textAlign: "left", textTransform: "uppercase" }}>{h}</th>)}</tr></thead>
           <tbody>{filtrados.map((c) => {
             const vencido = c.vencimento_contrato && String(c.vencimento_contrato).slice(0, 10) < hoje;
             return (
@@ -156,11 +159,12 @@ function FolhaCadastral() {
                 <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{c.tipo_contrato}</td>
                 <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}` }}>{dBR(c.admissao)}</td>
                 <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, color: vencido ? C.vermelho : C.texto, fontWeight: vencido ? 700 : 400 }}>{dBR(c.vencimento_contrato)}{vencido ? " ⚠" : ""}</td>
+                <td style={{ padding: "7px 10px", fontSize: 12, borderBottom: `1px solid ${C.linha}`, color: prazoCor(diasAte(c.vencimento_contrato)), fontWeight: 700 }}>{prazoTxt(diasAte(c.vencimento_contrato))}</td>
                 <td style={{ padding: "7px 10px", fontSize: 13, borderBottom: `1px solid ${C.linha}`, fontWeight: 700 }}>{fmtR(c.salario_base)}</td>
               </tr>
             );
           })}
-          {filtrados.length === 0 && <tr><td colSpan={7} style={{ padding: 14, color: C.dim, fontSize: 13 }}>Nenhum colaborador.</td></tr>}</tbody>
+          {filtrados.length === 0 && <tr><td colSpan={8} style={{ padding: 14, color: C.dim, fontSize: 13 }}>Nenhum colaborador.</td></tr>}</tbody>
         </table>
       </div>
     </Card>

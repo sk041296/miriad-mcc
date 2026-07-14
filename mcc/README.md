@@ -1,5 +1,10 @@
 # Miriad Construction Control (MCC)
 
+## v11.26 — Prazo de contrato na Folha + alerta de vencimento no Painel Gerencial
+- **Folha de Pagamento → aba Folha de pagamento:** nova coluna **Prazo**, mostrando os dias até o vencimento do contrato de cada colaborador (verde acima de 45 dias, laranja em ≤45, vermelho quando vencido).
+- **Painel Gerencial (Visão geral):** novo card **"Contratos a vencer em até 45 dias"** listando os colaboradores com contrato próximo do vencimento (ou vencido), com botão **Resolvido** — restrito a **CEO/Diretor**. Ao marcar como resolvido, o item some do alerta; se o contrato for renovado (data alterada), o alerta reaparece para a nova data.
+- O alerta só carrega para quem tem acesso a RH (CEO/Diretor/Financeiro); a ação Resolvido é exclusiva de CEO/Diretor. Persistência em configuração (sem migração).
+
 ## v11.25 — Avanço × PMM: visão por obra com drill-down
 - Na aba **Avanço × PMM** do Painel Gerencial, além da informação geral (por mês), foi adicionado o gráfico **Avanço × PMM por obra**: uma barra por obra que já tem avanço previsto no PMM (verde = avançado, laranja = falta), consolidando todas as competências.
 - **Drill-down por obra:** ao clicar numa obra, abre a visão analítica dos itens de EAP daquela obra — previsto (qtd), realizado (qtd), % de avanço e valores planejado/avançado/falta por item, ordenados pelo que mais falta.

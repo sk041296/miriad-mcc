@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from "react";
-import { C, fmt, fmtR, fmtK, pct, sum, dataBR, Card, Btn, Kpi, Lbl, inp, NumInput, ChartTip, listar, getFin, setFin, dispararNotificacoes } from "./core.jsx";
+import { C, fmt, fmtR, fmtK, pct, sum, dataBR, Card, Btn, Kpi, Lbl, inp, NumInput, ChartTip, listar, getFin, setFin, getConfig, setConfig, dispararNotificacoes } from "./core.jsx";
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from "recharts";
 import { resumoPmm } from "./pmm.jsx";
 
@@ -134,6 +134,7 @@ export function PainelGerencial() {
       </div>
       {aba === "avancopmm" && <AvancoPmm d={d} />}
       {aba === "geral" && <>
+      <AlertaContratos usuario={usuario} />
       {/* Pendências */}
       <Card title="Pendências de envio" right={<div style={{ display: "flex", alignItems: "center", gap: 10 }}><span style={{ fontSize: 12, color: C.dim }}>{notif && notif !== "enviando" ? notif : ""}</span><Btn small kind="ghost" disabled={notif === "enviando"} onClick={notificar}>{notif === "enviando" ? "Enviando…" : "✉ Notificar pendências"}</Btn></div>}>
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -378,5 +379,47 @@ function AvancoPmm({ d }) {
         </Card>
       )}
     </div>
+  );
+}
+
+/* ===== Alerta de vencimento de contrato de colaboradores (≤45 dias) ===== */
+function AlertaContratos({ usuario }) {
+  const ehDir = usuario && (usuario.papel === "ceo" || usuario.papel === "diretor");
+  const [colabs, setColabs] = useState(null);
+  const [resolvidos, setResolvidos] = useState({});
+  const [busy, setBusy] = useState(null);
+  const carregar = () => {
+    listar("rh_colaboradores").then(setColabs).catch(() => setColabs([]));
+    getConfig("rh_contrato_alertas").then((v) => setResolvidos(v || {})).catch(() => setResolvidos({}));
+  };
+  useEffect(() => { carregar(); }, []);
+  if (colabs === null) return null;
+  const diasAte = (d) => d ? Math.ceil((new Date(String(d).slice(0, 10) + "T00:00:00") - new Date(new Date().toISOString().slice(0, 10) + "T00:00:00")) / 86400000) : null;
+  const alertas = colabs
+    .filter((c) => c.ativo !== false && c.vencimento_contrato)
+    .map((c) => ({ c, dias: diasAte(c.vencimento_contrato), venc: String(c.vencimento_contrato).slice(0, 10) }))
+    .filter((x) => x.dias != null && x.dias <= 45 && resolvidos[x.c.id] !== x.venc)
+    .sort((a, b) => a.dias - b.dias);
+  if (alertas.length === 0) return null;
+  const resolver = async (x) => {
+    setBusy(x.c.id);
+    try { const next = { ...resolvidos, [x.c.id]: x.venc }; await setConfig("rh_contrato_alertas", next); setResolvidos(next); }
+    catch (e) { alert(e.message); } finally { setBusy(null); }
+  };
+  return (
+    <Card title={`⚠ Contratos a vencer em até 45 dias (${alertas.length})`}>
+      <div style={{ fontSize: 12.5, color: C.dim, marginBottom: 10 }}>Colaboradores com vencimento de contrato próximo. {ehDir ? "Use “Resolvido” após tratar a renovação/desligamento." : "A ação “Resolvido” é restrita a CEO/Diretor."}</div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {alertas.map((x) => (
+          <div key={x.c.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, padding: "8px 12px", borderRadius: 10, border: `1px solid ${x.dias < 0 ? C.vermelho : C.laranja}`, background: x.dias < 0 ? "#fff4f2" : "#fff8f2" }}>
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 13 }}>{x.c.nome} <span style={{ color: C.dim, fontWeight: 400, fontSize: 11.5 }}>· {x.c.cargo || "—"}{x.c.setor ? ` · ${x.c.setor}` : ""}</span></div>
+              <div style={{ fontSize: 12, color: x.dias < 0 ? C.vermelho : C.laranja, fontWeight: 700 }}>{x.dias < 0 ? `Vencido há ${-x.dias} dias` : `Vence em ${x.dias} dias`} · {x.venc.split("-").reverse().join("/")}</div>
+            </div>
+            {ehDir && <Btn small onClick={() => resolver(x)} disabled={busy === x.c.id}>{busy === x.c.id ? "…" : "Resolvido"}</Btn>}
+          </div>
+        ))}
+      </div>
+    </Card>
   );
 }
