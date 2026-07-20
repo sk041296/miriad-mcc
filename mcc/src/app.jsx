@@ -677,7 +677,7 @@ function Shell({ usuario, onSair, acessoMap, setAcessoMap, irPara }) {
         : meusAberto && ehSupObras ? <MeusProjetos usuario={usuario} />
         : alocAberto && podeAlocar ? <AlocacaoSupervisor usuario={usuario} />
         : permsAberto && ehDir ? <Permissoes acessoMap={acessoMap} onSaved={setAcessoMap} />
-        : gerencialAberto && ehDir ? <PainelGerencial />
+        : gerencialAberto && ehDir ? <PainelGerencial usuario={usuario} />
         : rankingAberto && ehDir ? <Ranking />
         : usuariosAberto && pode(p, "usuarios") ? <Usuarios usuario={usuario} />
         : secao === "painel" && A.painel ? <PainelGeralWrap usuario={usuario} />

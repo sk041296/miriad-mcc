@@ -30,7 +30,7 @@ function ultimoAvanco(obra, rdos) {
   return comAvanco.map((r) => String(r.data || r.criado_em).slice(0, 10)).sort().reverse()[0];
 }
 
-export function PainelGerencial() {
+export function PainelGerencial({ usuario }) {
   const [d, setD] = useState(null);
   const [cfg, setCfg] = useState({ folha: 0, despFin: 0, outras: 0, prazoReceb: 30 });
   const [salvo, setSalvo] = useState(false);

@@ -1,5 +1,9 @@
 # Miriad Construction Control (MCC)
 
+## v11.27 — Hotfix: crash do Painel Gerencial
+- Corrigido o travamento (tela preta) do **Painel Gerencial**: o card de alerta de contratos (v11.26) referenciava `usuario`, mas o componente `PainelGerencial` não recebia essa propriedade — gerando um erro de execução ao abrir a tela. Agora o usuário logado é passado corretamente.
+- Sem migração.
+
 ## v11.26 — Prazo de contrato na Folha + alerta de vencimento no Painel Gerencial
 - **Folha de Pagamento → aba Folha de pagamento:** nova coluna **Prazo**, mostrando os dias até o vencimento do contrato de cada colaborador (verde acima de 45 dias, laranja em ≤45, vermelho quando vencido).
 - **Painel Gerencial (Visão geral):** novo card **"Contratos a vencer em até 45 dias"** listando os colaboradores com contrato próximo do vencimento (ou vencido), com botão **Resolvido** — restrito a **CEO/Diretor**. Ao marcar como resolvido, o item some do alerta; se o contrato for renovado (data alterada), o alerta reaparece para a nova data.
